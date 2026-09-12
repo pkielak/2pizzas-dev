@@ -1,0 +1,80 @@
+networks:
+  gitea:
+    external: false
+
+services:
+  server:
+    image: docker.gitea.com/gitea:1.27.2
+    container_name: gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=postgres
+      - GITEA__database__HOST=db:5432
+      - GITEA__database__NAME=${POSTGRES_DB}
+      - GITEA__database__USER=${POSTGRES_USER}
+      - GITEA__database__PASSWD=${POSTGRES_PASSWORD}
+    restart: always
+    extra_hosts:
+      - "host.openshell.internal:host-gateway"
+    networks:
+      - gitea
+    volumes:
+      - ./gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3000:3000"
+      - "222:22"
+    depends_on:
+      - db
+
+  db:
+    image: docker.io/library/postgres:14
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - gitea
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+
+  # ── Existing runner (runc) ──────────────────────────────────
+  runner:
+    image: docker.io/gitea/runner:3
+    container_name: gitea-runner
+    restart: always
+    environment:
+      - CONFIG_FILE=/config.yaml
+      - GITEA_INSTANCE_URL=http://gitea:3000/
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_REGISTRATION_TOKEN}
+      - GITEA_RUNNER_NAME=my-runner
+      - GITEA_RUNNER_LABELS=ubuntu-latest:docker://docker.gitea.com/runner-images:ubuntu-latest
+    networks:
+      - gitea
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner/config.yaml:/config.yaml
+
+  # ── Agent runner (gVisor) ───────────────────────────────────
+  agent-runner:
+    image: docker.io/gitea/runner:3
+    container_name: gitea-agent-runner
+    restart: always
+    environment:
+      - CONFIG_FILE=/config.yaml
+      - GITEA_INSTANCE_URL=http://gitea:3000/
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_AGENT_RUNNER_REGISTRATION_TOKEN}
+      - GITEA_TOKEN=${GITEA_TOKEN}
+      - AGENT_TOKEN=${AGENT_TOKEN}
+      - GITEA_RUNNER_NAME=agent-runner
+      - GITEA_RUNNER_LABELS=agent-pi:docker://agent-sandbox:pi,agent-opencode:docker://agent-sandbox:opencode
+    networks:
+      - gitea
+    volumes:
+      - ./data-agent:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner-agent/config.yaml:/config.yaml

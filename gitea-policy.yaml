@@ -1,0 +1,47 @@
+version: 1
+
+# ── Static (locked at sandbox creation) ──────────────────────
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /proc
+    - /dev/urandom
+    - /app
+    - /etc
+    - /var/log
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# ── Dynamic (hot-reloadable) ─────────────────────────────────
+
+network_policies:
+  gitea:
+    name: gitea
+    endpoints:
+      - host: host.openshell.internal
+        port: 3000
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+        deny_rules:
+          - method: DELETE
+            path: "/api/v1/repos/**"
+    binaries:
+      - { path: /usr/local/bin/claude }
+      - { path: /usr/local/bin/opencode }
+      - { path: /usr/bin/curl }
+      - { path: /usr/bin/git }
+      - { path: /sandbox/bin/tea }
+      - { path: /usr/local/bin/tea }

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "llama.cpp/Qwen3.8-27B",
+  "provider": {
+    "llama.cpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama.cpp",
+      "options": {
+        "baseURL": "http://<LLAMA_CPP_HOST:PORT>/v1",
+        "apiKey": "YOUR_API_KEY"
+      },
+      "models": {
+        "Ornith-1.5-35B": { "name": "Ornith-1.5-35B" },
+        "Qwen3.8-27B": { "name": "Qwen3.8-27B" },
+        "Ornith-1.5-9B": { "name": "Ornith-1.5-9B" },
+        "Muse-Glimmer-30B": { "name": "Muse-Glimmer-30B" }
+      }
+    }
+  }
+}

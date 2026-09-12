@@ -1,0 +1,11 @@
+# Secrets
+.env
+agent-sandbox/pi/pi-settings/models.json
+agent-sandbox/opencode/opencode-config/opencode.json
+
+# Container runtime data (auto-populated)
+data/
+data-agent/
+gitea/
+postgres/
+

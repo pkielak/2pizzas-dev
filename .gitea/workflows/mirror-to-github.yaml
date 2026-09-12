@@ -1,0 +1,40 @@
+name: Mirror main to GitHub
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '.gitea/workflows/**'
+
+
+permissions:
+  contents: read
+
+jobs:
+  mirror-to-github:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push main to GitHub
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          MIRROR_REPO: ${{ vars.MIRROR_REPO || 'pkiel/platform-fall' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MIRROR_TOKEN:-}" ]; then
+            echo "::error::No MIRROR_TOKEN secret set."
+            exit 1
+          fi
+
+          remote_url="https://x-access-token:${MIRROR_TOKEN}@github.com/${MIRROR_REPO}.git"
+
+          git remote remove github >/dev/null 2>&1 || true
+          git remote add github "${remote_url}"
+
+          git push github HEAD:main

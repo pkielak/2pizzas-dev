@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Runs on Gitea Actions' runner (same as the mirror workflow above), so only
+# actions/checkout@v4 — which the mirror already proves resolves — is used.
+# The runner image ships Node/npm, so no setup-node step is needed.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm ci
+
+      # ESLint prints nothing on success; echo a marker so the log is
+      # self-evident. --max-warnings=0 (in the script) makes warnings fail.
+      - run: |
+          npm run lint
+          echo "lint: OK (0 errors, 0 warnings)"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          echo "node $(node -v)"
+          npm ci
+
+      - run: npm test
+
+      - run: npm run test:coverage
