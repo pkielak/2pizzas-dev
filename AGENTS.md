@@ -19,9 +19,11 @@ container means the change has no effect.
    that contains a secret: commit `<name>.example` with placeholders, gitignore
    the real file, and add a build guard (`test -f ... || (echo hint && false)`)
    in the Dockerfile. See `pi/pi-settings/` and `opencode/opencode-config/`.
-3. **`.gitea/workflows/` is a mirror** of the `agents-actions` template repo on
-   Gitea. If you change a workflow here, it must be synced to that repo too
-   (and to any repo using it, e.g. `platform-fall`) — ask before pushing.
+3. **`agents-actions/` is the source of truth** for the `agents-actions`
+   template repo on Gitea — `seed.sh` pushes it (force). `.gitea/workflows/`
+   is a separate staging copy for `platform-fall`. Workflow changes belong in
+   `agents-actions/` first, then sync to `.gitea/workflows/` and any repo
+   using them (e.g. `platform-fall`) — ask before pushing.
 4. **Runtime state dirs are off-limits**: `gitea/`, `postgres/`, `data/`,
    `data-agent/` — container-populated, gitignored.
 
@@ -30,6 +32,8 @@ container means the change has no effect.
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, both runners (env injection: `${VAR}` from `.env`) |
+| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, runners — safe to re-run |
+| `agents-actions/` | exact content of the template repo (README + `.gitea/workflows/`) |
 | `runner-agent/config.yaml` | agent-runner: labels (`agent-pi`, `agent-opencode`) + job envs (`GITEA_TOKEN`, `AGENT_TOKEN`) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label |
 | `agent-sandbox/**/Dockerfile` | job container images (`agent-sandbox:base` → `:pi` / `:opencode`) |
@@ -41,6 +45,9 @@ container means the change has no effect.
 ## Useful commands
 
 ```bash
+# Bootstrap (idempotent — users/tokens/repos/runners; re-runnable)
+./seed.sh
+
 # Stack
 docker compose ps
 docker compose logs -f <server|db|runner|agent-runner>

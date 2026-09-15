@@ -1,0 +1,83 @@
+name: PR Review Assist
+
+# Inline review comments on PRs ONLY — this event never fires on regular
+# issues, so there are no ghost runs. Jobs are gated by mention and by the
+# agent-marker (post-comment.sh) to prevent reply loops. Agents act as the
+# 'bot' user so their commits/PRs/comments can be reviewed.
+on:
+  pull_request_review_comment:
+    types: [created]
+
+env:
+  GITEA_API: ${{ gitea.api_url }}
+  GITEA_REPO: ${{ gitea.repository }}
+  GITEA_SERVER: ${{ gitea.server_url }}
+
+jobs:
+  review-pi:
+    name: Review (pi)
+    if: "contains(gitea.event.comment.body, '@pi') && !contains(gitea.event.comment.body, '<!-- via:agent -->')"
+    runs-on: agent-pi
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure bot identity
+        run: |
+          git config --global user.name bot
+          git config --global user.email bot@localhost
+          host="${GITEA_SERVER#http://}"; host="${host%/}"
+          git remote set-url origin "http://bot:${AGENT_TOKEN}@${host}/${GITEA_REPO}.git"
+
+      - name: Review with pi
+        env:
+          PR_NO: ${{ gitea.event.issue.number }}
+          COMMENT_BODY: ${{ gitea.event.comment.body }}
+          COMMENT_PATH: ${{ gitea.event.comment.path }}
+          COMMENT_LINE: ${{ gitea.event.comment.line }}
+        run: |
+          set -euo pipefail
+          REQUEST="$(printf '%s' "$COMMENT_BODY" | sed 's/@pi[[:space:]]*//g')"
+
+          pi -p --mode json "A reviewer left an inline comment in PR #$PR_NO${COMMENT_PATH:+ on $COMMENT_PATH}${COMMENT_LINE:+ at line $COMMENT_LINE}:
+          $REQUEST
+
+          Find the PR head branch: curl -s -H 'Authorization: token $AGENT_TOKEN' $GITEA_API/repos/$GITEA_REPO/pulls/$PR_NO | jq -r .head.ref
+          Then: git fetch origin pull/$PR_NO/head && git checkout FETCH_HEAD
+          Address the review comment: make the changes, commit, and push to the head branch.
+
+          When done, write a short reply (what you changed) to /tmp/reply.md and post it:
+          bash .gitea/workflows/post-comment.sh $PR_NO /tmp/reply.md" | jq -j -f .gitea/workflows/output_filter.jq
+
+  review-opencode:
+    name: Review (opencode)
+    if: "contains(gitea.event.comment.body, '@opencode') && !contains(gitea.event.comment.body, '<!-- via:agent -->')"
+    runs-on: agent-opencode
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure bot identity
+        run: |
+          git config --global user.name bot
+          git config --global user.email bot@localhost
+          host="${GITEA_SERVER#http://}"; host="${host%/}"
+          git remote set-url origin "http://bot:${AGENT_TOKEN}@${host}/${GITEA_REPO}.git"
+
+      - name: Review with opencode
+        env:
+          PR_NO: ${{ gitea.event.issue.number }}
+          COMMENT_BODY: ${{ gitea.event.comment.body }}
+          COMMENT_PATH: ${{ gitea.event.comment.path }}
+          COMMENT_LINE: ${{ gitea.event.comment.line }}
+        run: |
+          set -euo pipefail
+          REQUEST="$(printf '%s' "$COMMENT_BODY" | sed 's/@opencode[[:space:]]*//g')"
+
+          opencode run "A reviewer left an inline comment in PR #$PR_NO${COMMENT_PATH:+ on $COMMENT_PATH}${COMMENT_LINE:+ at line $COMMENT_LINE}:
+          $REQUEST
+
+          Find the PR head branch: curl -s -H 'Authorization: token $AGENT_TOKEN' $GITEA_API/repos/$GITEA_REPO/pulls/$PR_NO | jq -r .head.ref
+          Then: git fetch origin pull/$PR_NO/head && git checkout FETCH_HEAD
+          Address the review comment: make the changes, commit, and push to the head branch.
+
+          When done, write a short reply (what you changed) to /tmp/reply.md and post it:
+          bash .gitea/workflows/post-comment.sh $PR_NO /tmp/reply.md"

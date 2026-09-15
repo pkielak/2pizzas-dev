@@ -16,15 +16,19 @@ with a summary, all under a reviewable `bot` user.
 | `agent-sandbox:*` images | Docker images the agent jobs run in: a base image + one variant per agent (pi, opencode), each preconfigured with a local llama.cpp model provider |
 
 The workflow files that make the agents work live in a separate **template
-repo, [`agents-actions`](../agents-actions)** — any repo created from that
-template gets the agent behavior out of the box.
+repo, `owner/agents-actions`** — any repo created from that template gets
+the agent behavior out of the box. The authoritative copy of its content is
+the `agents-actions/` directory in this repo (`seed.sh` pushes it); edit
+workflows there, not on Gitea.
 
 ## Repository layout
 
 ```
 docker-compose.yml          # gitea + db + both runners
+seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
 gitea-policy.yaml           # sandbox egress policy for agent binaries (network allowlist)
+agents-actions/             # exact content of the agents-actions template repo (source of truth)
 agent-sandbox/
   Dockerfile                # base image: git, curl, jq, node
   pi/Dockerfile             # + pi coding agent + settings
@@ -33,7 +37,7 @@ agent-sandbox/
   opencode/opencode-config/ # opencode.json (gitignored) + .example
 runner/config.yaml          # my-runner: ubuntu-latest label
 runner-agent/config.yaml    # agent-runner: agent-pi / agent-opencode labels + job envs
-.gitea/workflows/           # working copy of the agent workflows (mirror of agents-actions)
+.gitea/workflows/           # working copy of the agent workflows (staging for platform-fall)
 ```
 
 Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
@@ -53,40 +57,32 @@ Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
 
 ```bash
 cp .env.example .env
-$EDITOR .env   # postgres user/password
+$EDITOR .env   # postgres user/password at minimum
 ```
 
-### 2. Start Gitea
+### 2. Start and seed
 
 ```bash
 docker compose up -d db server
+./seed.sh
 ```
 
-Open http://localhost:3000 and create the admin user on first run.
+`seed.sh` is idempotent and does the rest:
 
-### 3. Create the bot user and tokens
+1. waits for Gitea on `:3000`
+2. creates the admin (`ADMIN_USER`) and `bot` users — passwords from `.env`,
+   generated and written back if absent
+3. generates all API tokens (`GITEA_TOKEN`, `AGENT_TOKEN`, `ADMIN_TOKEN`) and
+   writes them into `.env`
+4. creates and pushes both repos — this checkout as `gitea-with-agents`, the
+   `agents-actions/` directory as the template — and marks it `template: true`
+5. mints the runner registration tokens via the admin API → `.env`
+6. starts both runners (they self-register)
 
-Agents act as a dedicated `bot` user so you can review their work:
+Agents act as a dedicated `bot` user so you can review their work (commits,
+PRs, comments all show up under `bot`).
 
-```bash
-# bot user
-docker exec -u git gitea gitea admin user create \
-  --username bot --email bot@localhost --password '<generate one>'
-
-# token for the bot (printed once — put it in .env as AGENT_TOKEN)
-docker exec -u git gitea gitea admin user generate-access-token \
-  --username bot --token-name runner --scopes write:issue,write:repository
-
-# full-scope token for repo management (ADMIN_TOKEN in .env)
-docker exec -u git gitea gitea admin user generate-access-token \
-  --username <admin> --token-name repo-admin --scopes all --raw
-```
-
-Fill `GITEA_TOKEN` (owner token, needs at least `write:issue,write:repository`
-— and *not* just those for repo creation), `AGENT_TOKEN`, `ADMIN_TOKEN` in
-`.env`.
-
-### 4. Build the agent images
+### 3. Build the agent images
 
 ```bash
 # base first, then the variants
@@ -103,20 +99,7 @@ docker build -t agent-sandbox:opencode ..
 The real config files (`models.json`, `opencode.json`) contain the llama.cpp
 API key and are gitignored; the builds fail fast with a hint if they're missing.
 
-### 5. Register the runners
-
-1. In Gitea: *Admin Console → Actions → Runners* (or a repo's *Settings →
-   Actions → Runners*) → create two registration tokens.
-2. Put them in `.env`: `GITEA_RUNNER_REGISTRATION_TOKEN` (for my-runner) and
-   `GITEA_AGENT_RUNNER_REGISTRATION_TOKEN` (for agent-runner).
-3. Start them:
-
-```bash
-docker compose up -d runner agent-runner
-docker logs -f gitea-agent-runner   # "runner registered" = done
-```
-
-### 6. Create a repo from the template
+### 4. Create a repo from the template
 
 1. New Repository → **Create from template → agents-actions**
 2. Add `bot` as collaborator with **write** (Settings → Collaborators), or:
