@@ -37,9 +37,10 @@ container means the change has no effect.
 | `seed.sh` | idempotent bootstrap: users, tokens, repos, template, runners — safe to re-run |
 | `sync-template.sh` | pushes `agents-actions/` updates into template-based repos |
 | `agents-actions/` | exact content of the template repo (README + `.gitea/workflows/`) |
-| `runner-agent/config.yaml` | agent-runner: labels (`agent-pi`, `agent-opencode`) + job envs (`GITEA_TOKEN`, `AGENT_TOKEN`) |
+| `runner-agent/config.yaml` | agent-runner: job envs (`GITEA_TOKEN`, `AGENT_TOKEN`); labels come from `GITEA_RUNNER_LABELS` in compose |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label |
-| `agent-sandbox/**/Dockerfile` | job container images (`agent-sandbox:base` → `:pi` / `:opencode`) |
+| `agent-sandbox/**/Dockerfile` | job container images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops`) |
+| `.gitea/workflows/ops-assist.yaml` | `@ops` agent (infra repo ONLY, not in the template) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model provider (llama.cpp, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
@@ -61,6 +62,7 @@ docker compose down
 docker build -t agent-sandbox:base agent-sandbox
 docker build -t agent-sandbox:pi agent-sandbox/pi
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
+docker build -t agent-sandbox:ops agent-sandbox/ops
 docker run --rm --entrypoint sh agent-sandbox:pi -c '<smoke test>'
 
 # Database (Gitea internals)
@@ -105,6 +107,32 @@ curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repo
 - **Update a repo via API with PATCH** (PUT on `/repos/{owner}/{name}` is 405).
 - **Newer git defaults to `master`** — push with `git push origin master:main`
   if the target repo uses `main`.
+- **Job containers get host mounts via per-job `container.options`** in the
+  workflow YAML (runner v3.3.2 merges them after the runner-level
+  `--runtime=runsc` options; the docker socket is in `validVolumes` by
+  default). `ops-assist.yaml` mounts `/var/run/docker.sock` + the live infra
+  dir at `/infra` (readonly). If the infra checkout moves, edit that path.
+- **`ops-assist.yaml` must never go into the `agents-actions` template** —
+  templated repos must not get host docker access.
+
+## Ops agent and self-improvement
+
+`@ops <request>` on an issue in **this repo** runs the ops agent
+(`agent-sandbox:ops` = pi + docker CLI, label `agent-ops`). It can:
+
+1. **Diagnose** (read-only) — compose ps/logs, API, DB, run logs.
+2. **Operate** — restart/recreate services, rebuild images, re-register
+   runners. Verify per the table below.
+3. **Improve** — proposed changes to this repo land as PRs on
+   `ops/<slug>` branches. **Never direct pushes to main.** After merge,
+   apply with `@ops apply <PR>` or manually (`./seed.sh`,
+   `docker compose up -d`, image rebuilds, `./sync-template.sh` if
+   `agents-actions/` changed).
+
+Safety model: the runner-level gVisor (`runsc`) sandbox still applies to ops
+jobs; the docker socket is the deliberate exception (host control is the
+point). `bot` has write collaborator on this repo, so ops PRs are
+attributable. Keep it that way.
 
 ## Verification after changes
 
@@ -114,3 +142,4 @@ curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repo
 | runner `config.yaml` | recreate service, `docker exec gitea-agent-runner printenv AGENT_TOKEN` |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | workflow | YAML-parse it; actual trigger test = post a `@pi`/`@opencode` comment on a throwaway issue |
+| ops workflow | post `@ops <diagnosis request>` on a throwaway issue; check the run log + bot's report comment |

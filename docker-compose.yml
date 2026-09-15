@@ -71,7 +71,7 @@ services:
       - GITEA_TOKEN=${GITEA_TOKEN}
       - AGENT_TOKEN=${AGENT_TOKEN}
       - GITEA_RUNNER_NAME=agent-runner
-      - GITEA_RUNNER_LABELS=agent-pi:docker://agent-sandbox:pi,agent-opencode:docker://agent-sandbox:opencode
+      - GITEA_RUNNER_LABELS=agent-pi:docker://agent-sandbox:pi,agent-opencode:docker://agent-sandbox:opencode,agent-ops:docker://agent-sandbox:ops
     networks:
       - gitea
     volumes:

@@ -12,8 +12,8 @@ with a summary, all under a reviewable `bot` user.
 | `server` (gitea) | Gitea 1.27.2, web UI on `:3000`, SSH on `:222`, postgres backend |
 | `db` | Postgres 14 |
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — for ordinary CI |
-| `agent-runner` | Gitea Actions runner (gVisor) with labels `agent-pi` / `agent-opencode` — one job per agent, each running in its own sandbox image |
-| `agent-sandbox:*` images | Docker images the agent jobs run in: a base image + one variant per agent (pi, opencode), each preconfigured with a local llama.cpp model provider |
+| `agent-runner` | Gitea Actions runner (gVisor) with labels `agent-pi` / `agent-opencode` / `agent-ops` — one job per agent, each running in its own sandbox image |
+| `agent-sandbox:*` images | Docker images the agent jobs run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with a local llama.cpp model provider |
 
 The workflow files that make the agents work live in a separate **template
 repo, `owner/agents-actions`** — any repo created from that template gets
@@ -91,10 +91,12 @@ cd agent-sandbox
 docker build -t agent-sandbox:base .
 cd pi
 cp pi-settings/models.json.example pi-settings/models.json   # fill in llama.cpp host + key
-docker build -t agent-sandbox:pi ..
+docker build -t agent-sandbox:pi .
 cd ../opencode
 cp opencode-config/opencode.json.example opencode-config/opencode.json  # same
-docker build -t agent-sandbox:opencode ..
+docker build -t agent-sandbox:opencode .
+cd ..
+docker build -t agent-sandbox:ops ops     # pi + docker CLI, for the @ops agent
 ```
 
 The real config files (`models.json`, `opencode.json`) contain the llama.cpp
@@ -150,3 +152,15 @@ Loop prevention: replies are posted by `post-comment.sh` with a
 it (the bot posts as itself, so actor-based checks would also work, but the
 marker is robust to quoting/forwarding). All per-repo requirements are
 documented in the template's README.
+
+### Ops agent (infra repo only)
+
+`gitea-with-agents` itself runs **`ops-assist.yaml`**: a `@ops <request>`
+comment lets an agent operate the stack — diagnose (read-only), restart /
+rebuild/re-register (operate), or propose changes to this repo as a PR
+(improve). The job container gets the host's docker socket and a read-only
+mount of this directory at `/infra` via per-job `container.options` in the
+workflow. Improvements never push to `main` directly — merge the PR, then
+`@ops apply #<n>` or run `./seed.sh` / `docker compose up -d` yourself.
+This workflow is deliberately **not** in the template: repos created from it
+must not get host docker access.

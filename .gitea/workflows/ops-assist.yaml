@@ -1,0 +1,69 @@
+name: Ops Assist
+
+# Ops agent for this infra repo. An "@ops" comment on an issue/PR lets the
+# agent diagnose, operate (restart/rebuild/re-register), or improve (PR into
+# this repo) the stack. Improvements NEVER push to main directly — they land
+# as PRs for the maintainer to merge, then "@ops apply" or ./seed.sh applies.
+#
+# This workflow lives ONLY in gitea-with-agents. It is deliberately NOT part
+# of the agents-actions template: a templated repo must not get host docker
+# access.
+on:
+  issue_comment:
+    types: [created]
+
+env:
+  GITEA_API: ${{ gitea.api_url }}
+  GITEA_REPO: ${{ gitea.repository }}
+  GITEA_SERVER: ${{ gitea.server_url }}
+
+jobs:
+  ops:
+    name: Ops
+    if: "contains(gitea.event.comment.body, '@ops') && !contains(gitea.event.comment.body, '<!-- via:agent -->')"
+    runs-on: agent-ops
+    container:
+      # Host docker daemon (runner options keep the runsc sandbox) and the
+      # live infra dir as a read-only runbook. Host paths: change if the
+      # infra checkout moves.
+      options: >-
+        --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock
+        --mount type=bind,source=/home/USER/gitea,target=/infra,readonly
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure bot identity
+        run: |
+          git config --global user.name bot
+          git config --global user.email bot@localhost
+          host="${GITEA_SERVER#http://}"; host="${host%/}"
+          git remote set-url origin "http://bot:${AGENT_TOKEN}@${host}/${GITEA_REPO}.git"
+
+      - name: Run ops agent
+        env:
+          ISSUE_NO: ${{ gitea.event.issue.number }}
+          COMMENT_BODY: ${{ gitea.event.comment.body }}
+        run: |
+          set -euo pipefail
+          REQUEST="$(printf '%s' "$COMMENT_BODY" | sed 's/@ops[[:space:]]*//g')"
+
+          pi -p --mode json "You are the ops agent for this Gitea stack.
+
+          Environment:
+          - /infra (read-only) = the live infra dir: docker-compose.yml, seed.sh, runner configs, .env. NEVER modify it.
+          - This project's repo (the source of truth) is checked out at the workspace root; the git remote is preconfigured so pushes go out as 'bot'.
+          - The docker CLI is available; /var/run/docker.sock is the host daemon (docker compose / docker build / docker exec all work).
+          - Gitea API: $GITEA_API, repo: $GITEA_REPO. Tokens: ADMIN_TOKEN (full scope), AGENT_TOKEN (bot).
+          - The runbook is /infra/AGENTS.md — read it FIRST. It has the commands, gotchas and the verification table.
+
+          Maintainer request: $REQUEST
+
+          Rules:
+          1. Diagnose (read-only: compose ps/logs, API, DB via 'docker exec gitea-db-1 psql'): report findings, change nothing.
+          2. Operate: when the request asks to fix/apply (restart, recreate, rebuild an image, re-register), do it, then verify per the AGENTS.md verification table.
+          3. Improve: when the request asks to CHANGE a file in this repo, work on a NEW branch 'ops/<short-slug>', commit, push, and open a PR (POST $GITEA_API/repos/$GITEA_REPO/pulls with {\"title\":..., \"head\":\"<branch>\", \"base\":\"main\"}, Authorization: token $AGENT_TOKEN). NEVER push to main directly. Do not apply unmerged changes.
+          4. If the change belongs in agents-actions/ (the template), edit it there and note that './sync-template.sh owner/repo' must run after merge.
+          5. Report under 400 words: what you did, how you verified, what you changed (branch/PR), follow-ups.
+
+          When done, write the report to /tmp/reply.md and post it:
+          bash .gitea/workflows/post-comment.sh $ISSUE_NO /tmp/reply.md" | jq -j -f .gitea/workflows/output_filter.jq
