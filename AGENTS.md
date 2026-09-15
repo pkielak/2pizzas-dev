@@ -23,7 +23,9 @@ container means the change has no effect.
    template repo on Gitea — `seed.sh` pushes it (force). `.gitea/workflows/`
    is a separate staging copy for `platform-fall`. Workflow changes belong in
    `agents-actions/` first, then sync to `.gitea/workflows/` and any repo
-   using them (e.g. `platform-fall`) — ask before pushing.
+   using them (e.g. `platform-fall`) — ask before pushing. The sync is
+   automated: `./sync-template.sh owner/repo [...]` (overwrites template files,
+   prunes superseded ones, no commit if unchanged).
 4. **Runtime state dirs are off-limits**: `gitea/`, `postgres/`, `data/`,
    `data-agent/` — container-populated, gitignored.
 
@@ -33,6 +35,7 @@ container means the change has no effect.
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, both runners (env injection: `${VAR}` from `.env`) |
 | `seed.sh` | idempotent bootstrap: users, tokens, repos, template, runners — safe to re-run |
+| `sync-template.sh` | pushes `agents-actions/` updates into template-based repos |
 | `agents-actions/` | exact content of the template repo (README + `.gitea/workflows/`) |
 | `runner-agent/config.yaml` | agent-runner: labels (`agent-pi`, `agent-opencode`) + job envs (`GITEA_TOKEN`, `AGENT_TOKEN`) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label |

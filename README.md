@@ -26,6 +26,7 @@ workflows there, not on Gitea.
 ```
 docker-compose.yml          # gitea + db + both runners
 seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
+sync-template.sh            # push agents-actions updates into template-based repos
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
 gitea-policy.yaml           # sandbox egress policy for agent binaries (network allowlist)
 agents-actions/             # exact content of the agents-actions template repo (source of truth)
@@ -107,6 +108,20 @@ API key and are gitignored; the builds fail fast with a hint if they're missing.
 
 Now `@pi` / `@opencode` comments on that repo work.
 
+### 5. Updating template-based repos
+
+Gitea templates are a one-time copy — they don't propagate changes. After
+editing workflows in `agents-actions/`, push the update into each consuming
+repo:
+
+```bash
+./sync-template.sh owner/platform-fall [owner/repo ...]
+```
+
+It overwrites the template-managed files, removes superseded ones, leaves
+repo-specific workflows (`ci.yml`, ...) alone, and only commits when something
+actually changed.
+
 ## Day-2 operations
 
 | Task | Command |
@@ -117,6 +132,7 @@ Now `@pi` / `@opencode` comments on that repo work.
 | DB access | `docker exec -it gitea-db-1 psql -U <user> -d gitea` |
 | Gitea CLI | `docker exec -u git gitea gitea admin ...` (no `su` inside the container — run directly as `git`) |
 | Gitea API | `curl -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/...` |
+| Push template updates into repos | edit `agents-actions/` → `./sync-template.sh owner/repo [...]` |
 
 ## How the agents work
 
