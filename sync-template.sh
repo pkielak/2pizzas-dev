@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 #
-# sync-template.sh — push the current agents-actions template content into
-# one or more existing repos that were created from it (Gitea templates do
-# not propagate updates, so this is the "upgrade" path).
+# sync-template.sh — propagate agents-actions template changes into one or
+# more existing repos (Gitea templates do not propagate updates, so this is
+# the "upgrade" path).
 #
 # Usage:
 #   ./sync-template.sh owner/platform-fall [owner/repo ...]
 #
 # Behavior (per repo, idempotent — no commit if nothing changed):
-#   - overwrites the template-managed workflow files with agents-actions/
-#   - removes STALE files (old template versions that were superseded)
+#   - overwrites the template-managed files with agents-actions/
+#   - removes STALE files (superseded agent workflows — agent tasks moved
+#     to agentd webhooks and no longer live in repo workflows)
 #   - leaves repo-specific workflows (ci.yml, ...) untouched
 #
+# NOTE: the agents-actions template is currently workflows-free (README only),
+# so this script effectively only prunes stale agent workflow files.
+
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -22,9 +26,8 @@ set -a; source .env; set +a
 GITEA_URL="${GITEA_URL:-http://localhost:3000}"
 HOST="${GITEA_URL#http://}"; HOST="${HOST%/}"
 
-SRC="$(pwd)/agents-actions/.gitea/workflows"
-TEMPLATE_FILES=(comment-assist.yaml pr-review.yml post-comment.sh output_filter.jq)
-STALE_FILES=(issue-assist.yaml)   # superseded by comment-assist.yaml
+TEMPLATE_FILES=()   # agents-actions currently ships no workflows
+STALE_FILES=(comment-assist.yaml pr-review.yml post-comment.sh output_filter.jq issue-assist.yaml)
 
 for repo in "$@"; do
   echo "== $repo"
@@ -36,20 +39,22 @@ for repo in "$@"; do
   cd "$tmp/repo"
   branch=$(git rev-parse --abbrev-ref HEAD)
 
-  mkdir -p .gitea/workflows
-  for f in "${TEMPLATE_FILES[@]}"; do cp "$SRC/$f" ".gitea/workflows/$f"; done
-  for f in "${STALE_FILES[@]}"; do
-    [[ -f ".gitea/workflows/$f" ]] && git rm -q ".gitea/workflows/$f"
-  done
+  if [[ -d .gitea/workflows ]]; then
+    for f in "${TEMPLATE_FILES[@]}"; do cp "agents-actions/.gitea/workflows/$f" ".gitea/workflows/$f" 2>/dev/null || true; done
+    for f in "${STALE_FILES[@]}"; do
+      [[ -f ".gitea/workflows/$f" ]] && git rm -q ".gitea/workflows/$f"
+    done
+    rmdir .gitea/workflows 2>/dev/null || true
+  fi
 
-  git add -A .gitea/workflows
+  git add -A
   if git diff --cached --quiet; then
     echo "   up to date"
     cd /; rm -rf "$tmp"; continue
   fi
 
   git -c user.name="$ADMIN_USER" -c user.email="${ADMIN_USER}@localhost" \
-      commit -qm "sync: update agent workflows from agents-actions template"
+      commit -qm "sync: prune agent workflows (moved to agentd webhooks)"
   git push -q origin "HEAD:$branch"
   echo "   synced → $branch ($(git rev-parse --short HEAD))"
   cd /; rm -rf "$tmp"

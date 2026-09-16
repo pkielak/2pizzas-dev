@@ -39,6 +39,8 @@ runner_registered() {
     "$GITEA_URL/api/v1/admin/actions/runners?limit=50" 2>/dev/null \
     | jq -e --arg n "$1" '.runners[] | select(.name == $n)' >/dev/null 2>&1
 }
+AGENTD_REPOS=("$ADMIN_USER/$ADMIN_REPO" "$ADMIN_USER/platform-fall")
+WEBHOOK_URL="http://agentd:3001/webhook"
 
 gen_password() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 
@@ -113,27 +115,43 @@ api -X PATCH -d '{"template":true}' "$GITEA_URL/api/v1/repos/$ADMIN_USER/$TEMPLA
 echo "template: true"
 
 # ── 5. runner registration tokens ──────────────────────────────────
+# Only my-runner (plain CI jobs, ubuntu-latest). Agent tasks no longer use
+# runners — they go through agentd webhooks (step 7).
 log "Runner registration tokens"
-if runner_registered my-runner && runner_registered agent-runner; then
-  echo "both runners registered, skipping"; skip
+if runner_registered my-runner; then
+  echo "my-runner registered, skipping"; skip
 else
-  declare -A reg=(
-    [GITEA_RUNNER_REGISTRATION_TOKEN]=my-runner
-    [GITEA_AGENT_RUNNER_REGISTRATION_TOKEN]=agent-runner
-  )
-  for k in "${!reg[@]}"; do
-    val=$(api -X POST -d "{\"name\":\"${reg[$k]}\"}" \
-      "$GITEA_URL/api/v1/admin/actions/runners/registration-token" | jq -r .token)
-    set_env "$k" "$val"; echo "$k: minted → written to .env"
-  done
+  val=$(api -X POST -d '{"name":"my-runner"}' \
+    "$GITEA_URL/api/v1/admin/actions/runners/registration-token" | jq -r .token)
+  set_env GITEA_RUNNER_REGISTRATION_TOKEN "$val"
+  echo "GITEA_RUNNER_REGISTRATION_TOKEN: minted → written to .env"
 fi
 
-# ── 6. runners ─────────────────────────────────────────────────────
-log "Starting runners"
-docker compose up -d runner agent-runner
-docker compose ps runner agent-runner || true
+# ── 6. services ────────────────────────────────────────────────────
+log "Starting runner + agentd"
+docker compose up -d runner agentd
+docker compose ps runner agentd || true
+
+# ── 7. agentd webhooks ─────────────────────────────────────────────
+log "agentd webhooks"
+if [[ -z ${WEBHOOK_SECRET:-} ]]; then
+  set_env WEBHOOK_SECRET "$(gen_password)"
+  echo "WEBHOOK_SECRET: generated → written to .env"
+fi
+for repo in "${AGENTD_REPOS[@]}"; do
+  if curl -sf -H "Authorization: token $ADMIN_TOKEN" \
+      "$GITEA_URL/api/v1/repos/$repo/hooks" 2>/dev/null \
+      | jq -e --arg u "$WEBHOOK_URL" '.[] | select(.url == $u)' >/dev/null; then
+    echo "webhook $repo: ok"; skip
+  else
+    api -X POST -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"issue_comment\",\"pull_request_review_comment\"],\"url\":\"$WEBHOOK_URL\",\"password\":\"$WEBHOOK_SECRET\"}" \
+      "$GITEA_URL/api/v1/repos/$repo/hooks" >/dev/null
+    echo "webhook $repo: created"
+  fi
+done
 
 log "Done"
 echo "  web:      $GITEA_URL"
 echo "  admin:    $ADMIN_USER (password in .env)"
+echo "  agentd:   http://127.0.0.1:3001 (task dashboard)"
 echo "  template: $GITEA_URL/$ADMIN_USER/$TEMPLATE_REPO"

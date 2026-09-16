@@ -59,22 +59,26 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./runner/config.yaml:/config.yaml
 
-  # ── Agent runner (gVisor) ───────────────────────────────────
-  agent-runner:
-    image: docker.io/gitea/runner:3
-    container_name: gitea-agent-runner
+  # ── Agent dispatcher (replaces agent-runner + agent workflows) ──
+  # Gitea webhooks → sqlite queue → `docker run --runtime=runsc
+  # agent-sandbox:<agent>` per task. UI: http://127.0.0.1:3001
+  agentd:
+    build: ./agentd
+    container_name: gitea-agentd
     restart: always
     environment:
-      - CONFIG_FILE=/config.yaml
-      - GITEA_INSTANCE_URL=http://gitea:3000/
-      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_AGENT_RUNNER_REGISTRATION_TOKEN}
-      - GITEA_TOKEN=${GITEA_TOKEN}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       - AGENT_TOKEN=${AGENT_TOKEN}
-      - GITEA_RUNNER_NAME=agent-runner
-      - GITEA_RUNNER_LABELS=agent-pi:docker://agent-sandbox:pi,agent-opencode:docker://agent-sandbox:opencode,agent-ops:docker://agent-sandbox:ops
+      - GITEA_API=http://gitea:3000/api/v1
+      - GITEA_HOST=host.openshell.internal:3000
+      - BOT_LOGIN=bot
+      - AGENTD_REPOS=owner/gitea-with-agents,owner/platform-fall
     networks:
       - gitea
     volumes:
-      - ./data-agent:/data
+      - ./data-agentd:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./runner-agent/config.yaml:/config.yaml
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      - server
