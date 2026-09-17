@@ -144,7 +144,10 @@ for repo in "${AGENTD_REPOS[@]}"; do
       | jq -e --arg u "$WEBHOOK_URL" '.[] | select(.url == $u)' >/dev/null; then
     echo "webhook $repo: ok"; skip
   else
-    api -X POST -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"issue_comment\",\"pull_request_review_comment\"],\"url\":\"$WEBHOOK_URL\",\"password\":\"$WEBHOOK_SECRET\"}" \
+    # Gitea native hooks keep url+secret+content_type inside config.
+    # NOTE: 1.27 has NO pull_request_review_comment hook event — inline review
+    # comments are picked up by agentd's poll fallback (<=60s delay).
+    api -X POST -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"issue_comment\",\"pull_request_review\"],\"url\":\"$WEBHOOK_URL\",\"config\":{\"url\":\"$WEBHOOK_URL\",\"secret\":\"$WEBHOOK_SECRET\",\"content_type\":\"json\"}}" \
       "$GITEA_URL/api/v1/repos/$repo/hooks" >/dev/null
     echo "webhook $repo: created"
   fi

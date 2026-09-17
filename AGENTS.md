@@ -4,61 +4,94 @@ Instructions for AI agents (pi, opencode, ...) working in this repository.
 
 ## What this repo is
 
-Infrastructure-as-code for a local Gitea instance with AI agent runners.
-Everything here is live: the running Docker containers were started from this
-directory. Changing a file and not restarting/rebuilding the matching
-container means the change has no effect.
+Infrastructure-as-code for a local Gitea instance with a webhook-driven AI
+agent dispatcher (`agentd`). Everything here is live: the running Docker
+containers were started from this directory. Changing a file and not
+restarting/rebuilding the matching container means the change has no effect.
+
+## How the agent automation works
+
+A `@pi` / `@opencode` mention on an issue or PR in a managed repo becomes an
+agent task. The pipeline (replaces the old Gitea-Actions agent workflows):
+
+```
+Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=runsc agent-sandbox:<agent>
+                                              (one-shot, gVisor-sandboxed)
+                                              └─► agent works, posts reply via post-comment.sh
+```
+
+- **agentd** (`agentd/server.mjs`, image built from `agentd/Dockerfile`) is a
+  single Node service. It receives Gitea native webhooks, dedupes + queues
+  tasks in sqlite, and runs each task as an ephemeral
+  `docker run --rm --runtime=runsc agent-sandbox:<agent>` container.
+- **Webhooks are at-least-once** → deliveries and tasks are deduped on
+  `(repo, kind, comment_id)`. A 60s poll fallback rescues any webhook Gitea
+  never delivered.
+- **Loop prevention**: replies are stamped `<!-- via:agent -->` by
+  `agentd/assets/post-comment.sh`; comments carrying that marker (or authored
+  by the bot) are never enqueued.
+- **UI / observability**: task dashboard at `http://127.0.0.1:3001`,
+  per-task logs in `data-agentd/logs/<id>.log`, `GET /api/tasks`.
+- **The standard CI runner (`my-runner`, label `ubuntu-latest`, runc) is
+  separate** and only runs ordinary CI (e.g. `mirror-to-github.yaml`). It is
+  NOT used for agents.
 
 ## Golden rules
 
 1. **Never commit secrets.** All secrets live in `.env` (gitignored). Config
-   files use `${VAR}` placeholders that the runner/compose expands. New secret
-   → add to `.env` + `.env.example` (placeholder) + `.gitignore` if it's a
-   per-machine file.
+   files use `${VAR}` placeholders that compose expands. New secret → add to
+   `.env` + `.env.example` (placeholder) + `.gitignore` if it's a per-machine
+   file.
 2. **Example-file pattern for baked-in secrets.** Anything COPY'd into an image
    that contains a secret: commit `<name>.example` with placeholders, gitignore
    the real file, and add a build guard (`test -f ... || (echo hint && false)`)
    in the Dockerfile. See `pi/pi-settings/` and `opencode/opencode-config/`.
-3. **`agents-actions/` is the source of truth** for the `agents-actions`
-   template repo on Gitea — `seed.sh` pushes it (force). `.gitea/workflows/`
-   is a separate staging copy for `platform-fall`. Workflow changes belong in
-   `agents-actions/` first, then sync to `.gitea/workflows/` and any repo
-   using them (e.g. `platform-fall`) — ask before pushing. The sync is
-   automated: `./sync-template.sh owner/repo [...]` (overwrites template files,
-   prunes superseded ones, no commit if unchanged).
+3. **`agents-actions/` is the template repo** on Gitea — `seed.sh` pushes it
+   (force). It is now a thin README (the agent workflows it used to carry are
+   gone). `sync-template.sh` is prune-only: it removes superseded agent
+   workflow files from template-based repos. Ask before pushing.
 4. **Runtime state dirs are off-limits**: `gitea/`, `postgres/`, `data/`,
-   `data-agent/` — container-populated, gitignored.
+   `data-agent/`, `data-agentd/` — container-populated, gitignored.
 
 ## Key files
 
 | File | Controls |
 |---|---|
-| `docker-compose.yml` | gitea server, postgres, both runners (env injection: `${VAR}` from `.env`) |
-| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, runners — safe to re-run |
-| `sync-template.sh` | pushes `agents-actions/` updates into template-based repos |
-| `agents-actions/` | exact content of the template repo (README + `.gitea/workflows/`) |
-| `runner-agent/config.yaml` | agent-runner: job envs (`GITEA_TOKEN`, `AGENT_TOKEN`); labels come from `GITEA_RUNNER_LABELS` in compose |
-| `runner/config.yaml` | my-runner: `ubuntu-latest` label |
-| `agent-sandbox/**/Dockerfile` | job container images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops`) |
-| `.gitea/workflows/ops-assist.yaml` | `@ops` agent (infra repo ONLY, not in the template) |
+| `docker-compose.yml` | gitea server, postgres, my-runner, **agentd** (env injection: `${VAR}` from `.env`) |
+| `agentd/server.mjs` | the dispatcher: webhook receiver, sqlite queue, task runner, UI |
+| `agentd/Dockerfile` | agentd image (node + docker-cli) |
+| `agentd/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
+| `agentd/assets/output_filter.jq` | filters pi's `--mode json` stream into a readable log |
+| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, webhooks — safe to re-run |
+| `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
+| `agents-actions/` | template repo content (README-only now) |
+| `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) |
+| `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops`) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model provider (llama.cpp, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
-| `.gitea/workflows/` | working copy of the agent workflows |
+| `.gitea/workflows/` | ordinary CI workflows (e.g. `mirror-to-github.yaml`) — run on my-runner |
 
 ## Useful commands
 
 ```bash
-# Bootstrap (idempotent — users/tokens/repos/runners; re-runnable)
+# Bootstrap (idempotent — users/tokens/repos/runner/webhooks; re-runnable)
 ./seed.sh
 
 # Stack
 docker compose ps
-docker compose logs -f <server|db|runner|agent-runner>
+docker compose logs -f <server|db|runner|agentd>
 docker compose up -d <service>        # recreates — REQUIRED after env/config changes
 docker compose down
 
-# Images
+# agentd (the dispatcher)
+curl -s http://127.0.0.1:3001/healthz
+curl -s http://127.0.0.1:3001/api/tasks | jq
+#   task log: data-agentd/logs/<id>.log
+#   dashboard: http://127.0.0.1:3001
+#   after editing agentd/server.mjs: docker compose build agentd && docker compose up -d agentd
+
+# Agent job images
 docker build -t agent-sandbox:base agent-sandbox
 docker build -t agent-sandbox:pi agent-sandbox/pi
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
@@ -67,8 +100,8 @@ docker run --rm --entrypoint sh agent-sandbox:pi -c '<smoke test>'
 
 # Database (Gitea internals)
 docker exec -it gitea-db-1 psql -U USER -d gitea
-#   interesting tables: action_runner, action_run (status: 1=success 2=failure
-#   3=cancelled 4=skipped 5=waiting 6=running), action_task, user, repository
+#   interesting tables: action_runner, action_run, user, repository
+#   agentd's task queue is a separate sqlite file under data-agentd/
 
 # Gitea CLI — run directly as git; `su` does NOT work inside the container
 docker exec -u git gitea gitea admin user create --username X --email X@localhost --password P
@@ -76,70 +109,63 @@ docker exec -u git gitea gitea admin user generate-access-token --username X --t
 
 # Gitea API (tokens in .env)
 curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repos/owner/<repo>
+#   webhooks: .../repos/owner/<repo>/hooks  (native type, events: issue_comment, pull_request_review)
 ```
 
 ## Gotchas (learned the hard way)
 
-- **Runner env changes need `docker compose up -d <service>`** (recreate), not
-  `docker restart`. `config.yaml` `${VAR}` expansion uses the runner *process*
-  env, which only compose can provide.
-- **Gitea 1.27 has NO workflow-level `if:`** — a matching event always creates
-  a run. Gate at job/step level; split trigger events to avoid ghost runs
-  (e.g. review comments on regular issues).
-- **Job envs come from the runner's `envs:`** — everything in
-  `runner-agent/config.yaml` lands in every job container.
-- **Agent attribution**: jobs set `git config user.email bot@localhost` and an
-  authenticated remote (`bot:AGENT_TOKEN@…`), so commits/PRs/comments show up
-  as the `bot` user. Don't break the "Configure bot identity" step.
+- **agentd env changes need `docker compose up -d agentd`** (recreate), not
+  `docker restart`. Edit `agentd/server.mjs` → also `docker compose build
+  agentd` first (the file is COPY'd into the image).
+- **Gitea webhooks are host-restricted.** By default Gitea refuses to call
+  webhook URLs on private/LAN hosts. `docker-compose.yml` sets
+  `GITEA__security__ALLOWED_HOST_LIST=agentd`; a new dispatcher hostname must
+  be added there or deliveries silently fail (check `docker logs gitea` for
+  "webhook can only call allowed HTTP servers").
+- **Gitea 1.27 native hook format**: the hook needs `config.url`,
+  `config.secret`, `config.content_type` (not a top-level `url`/`password`).
+  `pull_request_review_comment` is NOT a valid webhook event in 1.27 — only
+  `pull_request_review` (full reviews). Inline review comments are picked up
+  by the poll fallback.
+- **Docker `-e` values have their newlines flattened to spaces.** Multi-line
+  content (the bootstrap script, the agent prompt, helper scripts) must not be
+  passed via `-e`. `runTask()` instead builds a self-contained script (prompt +
+  helpers via quoted heredocs) and passes it base64-encoded, decoded inside the
+  container. Don't "simplify" this back to `-e`.
+- **agentd talks to the host docker daemon**, so a container path like
+  `/data/work/N` is NOT a host path — you cannot bind-mount it into the job
+  container. The job container clones the repo itself (as `bot`, authenticated
+  remote → commits/PRs attribute to the bot user).
 - **Loop prevention** is the `<!-- via:agent -->` marker (posted by
-  `post-comment.sh`, checked in every `if:`). Don't remove it from either side.
+  `agentd/assets/post-comment.sh`, checked by `enqueue()`). Don't remove it
+  from either side.
 - **Bot posts as `bot`**, but older comments may be from `owner` — don't
   write actor-based logic; use the marker.
 - **pi 0.74.2 does not interpolate env vars in `apiKey`** despite the docs —
   the key must be baked into `models.json` at image build time.
-- **`gitea.head_ref` is empty for `issue_comment` events** — agents fetch the
-  PR head ref via the API (`/pulls/{n}` → `.head.ref`) instead.
-- **User-controlled content in shell**: always pass it via env vars +
-  `printf '%s\n'` / quoted heredocs, never unquoted interpolation of comment
-  bodies.
+- **User-controlled content in shell**: always pass it via env vars / quoted
+  heredocs, never unquoted interpolation of comment bodies.
 - **Repo creation via API needs `write:user` scope** — use `ADMIN_TOKEN`, not
   `GITEA_TOKEN`.
 - **Update a repo via API with PATCH** (PUT on `/repos/{owner}/{name}` is 405).
 - **Newer git defaults to `master`** — push with `git push origin master:main`
   if the target repo uses `main`.
-- **Job containers get host mounts via per-job `container.options`** in the
-  workflow YAML (runner v3.3.2 merges them after the runner-level
-  `--runtime=runsc` options; the docker socket is in `validVolumes` by
-  default). `ops-assist.yaml` mounts `/var/run/docker.sock` + the live infra
-  dir at `/infra` (readonly). If the infra checkout moves, edit that path.
-- **`ops-assist.yaml` must never go into the `agents-actions` template** —
-  templated repos must not get host docker access.
+- **GVisor (`runsc`) still sandboxes every agent job**; the dispatcher holds the
+  docker socket (host control is the point of agentd). Keep job containers
+  ephemeral (`--rm`) — one-shot isolation per task is a feature, not a cost.
 
-## Ops agent and self-improvement
+## Ops agent (parked)
 
-`@ops <request>` on an issue in **this repo** runs the ops agent
-(`agent-sandbox:ops` = pi + docker CLI, label `agent-ops`). It can:
-
-1. **Diagnose** (read-only) — compose ps/logs, API, DB, run logs.
-2. **Operate** — restart/recreate services, rebuild images, re-register
-   runners. Verify per the table below.
-3. **Improve** — proposed changes to this repo land as PRs on
-   `ops/<slug>` branches. **Never direct pushes to main.** After merge,
-   apply with `@ops apply <PR>` or manually (`./seed.sh`,
-   `docker compose up -d`, image rebuilds, `./sync-template.sh` if
-   `agents-actions/` changed).
-
-Safety model: the runner-level gVisor (`runsc`) sandbox still applies to ops
-jobs; the docker socket is the deliberate exception (host control is the
-point). `bot` has write collaborator on this repo, so ops PRs are
-attributable. Keep it that way.
+The `@ops` agent and `ops-assist.yaml` were removed (see git history,
+"ops agent parked"). The `agent-ops` runner label no longer exists. If it is
+revived it should run through agentd, not a dedicated runner.
 
 ## Verification after changes
 
 | Changed | Verify with |
 |---|---|
 | compose / `.env` | `docker compose config -q` + recreate the service + `docker exec <container> printenv VAR` |
-| runner `config.yaml` | recreate service, `docker exec gitea-agent-runner printenv AGENT_TOKEN` |
+| `agentd/server.mjs` | `node --check`, then `docker compose build agentd && up -d`, `curl :3001/healthz` |
+| webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-agentd` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
-| workflow | YAML-parse it; actual trigger test = post a `@pi`/`@opencode` comment on a throwaway issue |
-| ops workflow | post `@ops <diagnosis request>` on a throwaway issue; check the run log + bot's report comment |
+| end-to-end | full loop: `@pi` comment → task `success` → `bot` reply with `<!-- via:agent -->` on the issue |

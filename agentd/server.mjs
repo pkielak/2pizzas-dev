@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,7 +48,6 @@ const CFG = {
   botLogin: process.env.BOT_LOGIN || 'bot',
   botEmail: process.env.BOT_EMAIL || 'bot@localhost',
   pollIntervalMs: 60_000,
-  workTtlMs: 7 * 24 * 3600 * 1000,
   concurrency: 1,
 };
 
@@ -60,7 +59,6 @@ const MENTIONS = [
 
 // ── state ────────────────────────────────────────────────────────────────────
 
-fs.mkdirSync(path.join(CFG.dataDir, 'work'), { recursive: true });
 fs.mkdirSync(path.join(CFG.dataDir, 'logs'), { recursive: true });
 
 const db = new DatabaseSync(path.join(CFG.dataDir, 'agentd.db'));
@@ -75,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   kind        TEXT NOT NULL,          -- 'comment' | 'review'
   cpath       TEXT,
   line        INTEGER,
+  body        TEXT,
   status      TEXT NOT NULL DEFAULT 'queued',  -- queued|running|success|failure
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   started_at  TEXT,
@@ -88,6 +87,7 @@ CREATE TABLE IF NOT EXISTS poll_state (
   since TEXT
 );
 `);
+try { db.exec('ALTER TABLE tasks ADD COLUMN body TEXT'); } catch { /* already present */ }
 
 const running = new Map(); // task id -> { log }
 let active = 0;
@@ -106,18 +106,19 @@ function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) {
   if (exists) return;
 
   db.prepare(
-    `INSERT INTO tasks (event_id, comment_id, repo, issue, agent, kind, cpath, line)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(eventId ?? null, comment.id, repo, issue, agent, kind, comment.path ?? null, comment.line ?? null);
+    `INSERT INTO tasks (event_id, comment_id, repo, issue, agent, kind, cpath, line, body)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(eventId ?? null, comment.id, repo, issue, agent, kind, comment.path ?? null, comment.line ?? null, body);
   console.log(`[enqueue] task for ${repo}#${issue} @${agent} (${kind}, comment ${comment.id})`);
 }
 
 // ── Gitea API ────────────────────────────────────────────────────────────────
 
-async function apiGet(p) {
+async function apiGet(p, opts = {}) {
   const res = await fetch(`${CFG.giteaApi}${p}`, {
     headers: { Authorization: `token ${CFG.agentToken}` },
   });
+  if (res.status === 404 && opts.ok404) return null;
   if (!res.ok) throw new Error(`GET ${p} → ${res.status}`);
   return res.json();
 }
@@ -160,34 +161,14 @@ When done, write a short reply (what you changed) to /tmp/reply.md and post it:
 bash .agentd/post-comment.sh ${issue} /tmp/reply.md`;
 }
 
-function execFileP(cmd, args, opts) {
-  return new Promise((resolve, reject) =>
-    execFile(cmd, args, opts, (err, stdout, stderr) =>
-      err ? reject(new Error(`${cmd} ${args[0] ?? ''} failed: ${err.message} ${stderr || ''}`.trim())) : resolve(stdout)
-    )
-  );
-}
-
 async function runTask(t) {
-  const workdir = path.join(CFG.dataDir, 'work', String(t.id));
   const logfile = path.join(CFG.dataDir, 'logs', `${t.id}.log`);
-  fs.mkdirSync(workdir, { recursive: true });
   const log = { text: '', file: logfile };
   running.set(t.id, log);
   const say = (s) => { log.text += s; fs.appendFileSync(logfile, s); };
 
   try {
-    // 1. clone as bot (authenticated remote → agent commits attribute to bot)
-    const cloneUrl = `http://bot:${CFG.agentToken}@${CFG.giteaHost}/${t.repo}.git`;
-    say(`$ git clone ${t.repo}\n`);
-    await execFileP('git', ['clone', '-q', cloneUrl, workdir]);
-    await execFileP('git', ['-C', workdir, 'config', 'user.name', CFG.botLogin]);
-    await execFileP('git', ['-C', workdir, 'config', 'user.email', CFG.botEmail]);
-
-    // 2. agent helpers
-    fs.cpSync(path.join(__dirname, 'assets'), path.join(workdir, '.agentd'), { recursive: true });
-
-    // 3. resolve prompt inputs
+    // 1. resolve prompt inputs
     const issueInfo = await apiGet(`/repos/${t.repo}/issues/${t.issue}`);
     const isPull = issueInfo.pull_request != null;
     const request = stripMention(t.body ?? '', t.agent);
@@ -196,26 +177,61 @@ async function runTask(t) {
         ? reviewPrompt({ issue: t.issue, request, cpath: t.cpath, line: t.line })
         : commentPrompt({ issue: t.issue, title: issueInfo.title, body: issueInfo.body, isPull, request });
 
-    // 4. run the agent in a fresh gVisor-sandboxed container
-    const image = CFG.images[t.agent];
-    const cmd =
-      t.agent === 'pi'
-        ? 'pi -p --mode json "$PROMPT" | jq -j -f .agentd/output_filter.jq'
-        : 'opencode run "$PROMPT"';
-    say(`$ docker run --rm --runtime=runsc ${image} sh -c ${JSON.stringify(cmd)}\n\n`);
+    // 2. self-contained bootstrap script, executed INSIDE the job container.
+    //    No host-path bind mounts (agentd talks to the host docker daemon, so
+    //    container paths are not host paths). Clone as bot → authenticated
+    //    remote, so agent commits/PRs attribute to the bot user.
+    //
+    //    NOTE: docker -e values have their newlines flattened to spaces, so
+    //    everything multi-line (prompt, helper scripts) goes into the script
+    //    text via quoted heredocs, and the script itself is passed base64.
+    const assetsDir = path.join(__dirname, 'assets');
+    const delim = () => `EOF_${crypto.randomBytes(6).toString('hex')}`;
+    const dPrompt = delim(), dPost = delim(), dJq = delim();
+    const bootstrap = `
+set -e
+mkdir -p /work && cd /work
+echo '$ git clone ${t.repo}'
+git clone -q "$CLONE_URL" repo
+cd repo
+git config user.name "$BOT_NAME"
+git config user.email "$BOT_EMAIL"
+mkdir -p .agentd
+cat > .agentd/post-comment.sh <<'${dPost}'
+${fs.readFileSync(path.join(assetsDir, 'post-comment.sh'), 'utf8').replace(/\n+$/, '')}
+${dPost}
+cat > .agentd/output_filter.jq <<'${dJq}'
+${fs.readFileSync(path.join(assetsDir, 'output_filter.jq'), 'utf8').replace(/\n+$/, '')}
+${dJq}
+chmod +x .agentd/post-comment.sh
+cat > /tmp/prompt.txt <<'${dPrompt}'
+${prompt}
+${dPrompt}
+PROMPT="$(cat /tmp/prompt.txt)"
+echo ''
+echo '$ ${t.agent} agent (runsc sandbox)'
+` + (t.agent === 'pi'
+      ? 'pi -p --mode json "$PROMPT" | jq -j -f .agentd/output_filter.jq\necho "[agentd] agent finished OK"'
+      : 'opencode run "$PROMPT"\necho "[agentd] agent finished OK"');
+    const b64 = Buffer.from(bootstrap).toString('base64');
 
+    say(`$ docker run --rm --runtime=runsc ${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
+
+    // 3. run the agent in a fresh gVisor-sandboxed container
     await new Promise((resolve, reject) => {
       const child = spawn('docker', [
         'run', '--rm',
         '--runtime=runsc',
         '--add-host=gitea:host-gateway',
         '--add-host=host.openshell.internal:host-gateway',
-        `-v ${workdir}:/work`, '-w', '/work',
-        '-e', `PROMPT=${prompt}`,
+        '-e', `BOOTSTRAP_B64=${b64}`,
+        '-e', `CLONE_URL=http://bot:${CFG.agentToken}@${CFG.giteaHost}/${t.repo}.git`,
+        '-e', `BOT_NAME=${CFG.botLogin}`,
+        '-e', `BOT_EMAIL=${CFG.botEmail}`,
         '-e', `AGENT_TOKEN=${CFG.agentToken}`,
         '-e', `GITEA_API=http://${CFG.giteaHost}/api/v1`,
         '-e', `GITEA_REPO=${t.repo}`,
-        image, 'sh', '-c', cmd,
+        CFG.images[t.agent], 'sh', '-c', 'sh -c "$(printf %s "$BOOTSTRAP_B64" | base64 -d)"',
       ]);
       const onOut = (d) => say(d.toString());
       child.stdout.on('data', onOut);
@@ -223,7 +239,6 @@ async function runTask(t) {
       child.on('error', reject);
       child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`agent exited with code ${code}`))));
     });
-    say('\n[agentd] agent finished OK\n');
   } catch (e) {
     say(`\n[agentd] ERROR: ${e.message}\n`);
     throw e;
@@ -234,26 +249,11 @@ async function runTask(t) {
 
 async function pump() {
   if (active >= CFG.concurrency) return;
-  const t = db.prepare(
-    `SELECT tasks.*, NULL AS body FROM tasks WHERE status = 'queued' ORDER BY id LIMIT 1`
-  ).get();
+  const t = db.prepare(`SELECT * FROM tasks WHERE status = 'queued' ORDER BY id LIMIT 1`).get();
   if (!t) return;
   db.prepare(`UPDATE tasks SET status='running', started_at=datetime('now') WHERE id=?`).run(t.id);
   active++;
   try {
-    // fetch comment body for prompt construction (webhook path doesn't store it)
-    t.body = await (async () => {
-      try {
-        if (t.kind === 'review') {
-          const cs = await apiGet(`/repos/${t.repo}/pulls/${t.issue}/comments`);
-          const c = cs.find((c) => c.id === t.comment_id);
-          return c?.body ?? '';
-        }
-        const cs = await apiGet(`/repos/${t.repo}/issues/${t.issue}/comments`);
-        const c = cs.find((c) => c.id === t.comment_id);
-        return c?.body ?? '';
-      } catch { return ''; }
-    })();
     await runTask(t);
     db.prepare(`UPDATE tasks SET status='success', finished_at=datetime('now') WHERE id=?`).run(t.id);
   } catch (e) {
@@ -283,7 +283,7 @@ async function pollRepo(repo) {
 
   const prs = await apiGet(`/repos/${repo}/pulls?state=open&limit=25`);
   for (const pr of prs) {
-    const cs = await apiGet(`/repos/${repo}/pulls/${pr.number}/comments?limit=50`);
+    const cs = (await apiGet(`/repos/${repo}/pulls/${pr.number}/comments?limit=50`, { ok404: true })) ?? []; // 404 = no review comments
     for (const c of cs) {
       if (new Date(c.created_at) < since) continue;
       for (const m of MENTIONS)
@@ -305,18 +305,6 @@ async function poll() {
 }
 setInterval(poll, CFG.pollIntervalMs).unref?.();
 
-// ── workdir pruning ──────────────────────────────────────────────────────────
-
-function prune() {
-  const dir = path.join(CFG.dataDir, 'work');
-  for (const entry of fs.readdirSync(dir)) {
-    const p = path.join(dir, entry);
-    if (Date.now() - fs.statSync(p).mtimeMs > CFG.workTtlMs) fs.rmSync(p, { recursive: true, force: true });
-  }
-}
-prune();
-setInterval(prune, 6 * 3600 * 1000).unref?.();
-
 // ── webhook ──────────────────────────────────────────────────────────────────
 
 function verifySignature(req, body) {
@@ -337,11 +325,14 @@ function handleWebhook(event, deliveryId, payload) {
       enqueue({ repo, issue: payload.issue.number, agent: m.agent, kind: 'comment', comment: payload.comment, sender: payload.sender?.login, eventId: deliveryId });
     return 1; // enqueue() logs what it accepted
   }
-  if (event === 'pull_request_review_comment' && payload.action === 'created' && payload.comment) {
+  // full PR reviews (inline review comments have no hook event in 1.27 —
+  // they arrive via the poll fallback)
+  if (event === 'pull_request_review' && payload.action === 'created' && payload.review) {
     const prNo = payload.pull_request?.number ?? payload.issue?.number;
     if (!prNo) return 0;
+    const comment = { id: payload.review.id, body: payload.review.body ?? '', path: null, line: null };
     for (const m of MENTIONS)
-      enqueue({ repo, issue: prNo, agent: m.agent, kind: 'review', comment: payload.comment, sender: payload.sender?.login, eventId: deliveryId });
+      enqueue({ repo, issue: prNo, agent: m.agent, kind: 'review', comment, sender: payload.sender?.login, eventId: deliveryId });
     return 1;
   }
   return 0;
