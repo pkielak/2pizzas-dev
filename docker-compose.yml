@@ -83,6 +83,6 @@ services:
       - ./data-agentd:/data
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "127.0.0.1:3001:3001"
+      - "3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001
     depends_on:
       - server
