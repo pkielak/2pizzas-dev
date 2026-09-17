@@ -49,6 +49,9 @@ const CFG = {
   botEmail: process.env.BOT_EMAIL || 'bot@localhost',
   pollIntervalMs: 60_000,
   concurrency: 1,
+  // host port for ttyd (live terminal) in the RUNNING job container.
+  // Safe to fix because concurrency is 1; per-task ports if that ever changes.
+  ttyPort: +(process.env.AGENTD_TTY_PORT || 3002),
 };
 
 const MARKER = '<!-- via:agent -->';
@@ -208,6 +211,8 @@ cat > /tmp/prompt.txt <<'${dPrompt}'
 ${prompt}
 ${dPrompt}
 PROMPT="$(cat /tmp/prompt.txt)"
+ttyd -p 7681 -W sh >/dev/null 2>&1 &
+echo "[agentd] ttyd live terminal: http://<host>:${CFG.ttyPort} (while this task runs)"
 echo ''
 echo '$ ${t.agent} agent (runsc sandbox)'
 ` + (t.agent === 'pi'
@@ -224,6 +229,7 @@ echo '$ ${t.agent} agent (runsc sandbox)'
         '--runtime=runsc',
         '--add-host=gitea:host-gateway',
         '--add-host=host.openshell.internal:host-gateway',
+        '-p', `${CFG.ttyPort}:7681`,
         '-e', `BOOTSTRAP_B64=${b64}`,
         '-e', `CLONE_URL=http://bot:${CFG.agentToken}@${CFG.giteaHost}/${t.repo}.git`,
         '-e', `BOT_NAME=${CFG.botLogin}`,
@@ -352,8 +358,14 @@ th{color:#888}
 .queued{color:#888}.running{color:#7cf}.success{color:#6d6}.failure{color:#f66}
 pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
 .meta{color:#888}
+.attach{color:#fc6;margin-left:8px}
 </style></head><body>${bodyHtml}
-<script>setTimeout(()=>location.reload(),3000)</script></body></html>`;
+<script>
+// attach links point at the ttyd port on whatever host the UI was loaded from
+// (localhost, tailnet IP, or *.ts.net — all reach the same machine)
+document.querySelectorAll('a[data-tty]').forEach(a=>a.href='http://'+location.hostname+':'+a.dataset.tty);
+setTimeout(()=>location.reload(),3000);
+</script></body></html>`;
 }
 
 function taskTable() {
@@ -365,7 +377,7 @@ function taskTable() {
     <td>${esc(t.repo)}#${t.issue}</td>
     <td>@${esc(t.agent)}</td>
     <td>${esc(t.kind)}</td>
-    <td class="${t.status}">${t.status}</td>
+    <td class="${t.status}">${t.status}${t.status === 'running' ? `<a class="attach" data-tty="${CFG.ttyPort}" href="#">⚡ attach</a>` : ''}</td>
     <td>${esc(t.error ?? '')}</td>
   </tr>`).join('\n');
   return `<h1>agentd tasks</h1><table>
@@ -380,7 +392,8 @@ function taskPage(t) {
   return `<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
 <p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)} · ${esc(t.kind)} · created ${esc(t.created_at)}
  · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}<br>
-${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}</p>
+${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}
+${t.status === 'running' ? `<br><a class="attach" data-tty="${CFG.ttyPort}" href="#" style="font-size:16px">⚡ attach to live container (ttyd terminal, same host: ${CFG.ttyPort})</a>` : ''}</p>
 <pre>${esc(log)}</pre><p><a href="/">← back</a></p>`;
 }
 
