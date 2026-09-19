@@ -30,13 +30,8 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
 - **Loop prevention**: replies are stamped `<!-- via:agent -->` by
   `agentd/assets/post-comment.sh`; comments carrying that marker (or authored
   by the bot) are never enqueued.
-- **UI / observability**: task dashboard at `http://127.0.0.1:3001`
-  (reachable from the tailnet, bound on all interfaces), per-task logs in
-  `data-agentd/logs/<id>.log`, `GET /api/tasks`.
-- **Live attach**: while a task runs, its container serves a ttyd terminal on
-  host port `3002` (fixed — concurrency is 1); the UI shows a `⚡ attach` link
-  on running tasks. The container dies when the task ends, so the link is
-  ephemeral by design. `ttyd` is installed in `agent-sandbox:base`.
+- **UI / observability**: task dashboard at `http://127.0.0.1:3001`,
+  per-task logs in `data-agentd/logs/<id>.log`, `GET /api/tasks`.
 - **The standard CI runner (`my-runner`, label `ubuntu-latest`, runc) is
   separate** and only runs ordinary CI (e.g. `mirror-to-github.yaml`). It is
   NOT used for agents.
