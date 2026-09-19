@@ -31,7 +31,13 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
   `agentd/assets/post-comment.sh`; comments carrying that marker (or authored
   by the bot) are never enqueued.
 - **UI / observability**: task dashboard at `http://127.0.0.1:3001`,
-  per-task logs in `data-agentd/logs/<id>.log`, `GET /api/tasks`.
+  per-task logs in `data-agentd/logs/<id>.log`, `GET /api/tasks`. Running
+  tasks show a **live log view**: `GET /task/:id/stream` is an SSE tail that
+  emits each log line as it hits the file. The whole path is unbuffered:
+  pi prints JSON lines live → `output_filter.mjs` (node) writes each match
+  immediately → docker pipe → `appendFileSync`. Do NOT "simplify" the filter
+  back to jq — jq buffers piped stdout until the process exits.
+  Finished tasks show the last 400 lines statically.
 - **The standard CI runner (`my-runner`, label `ubuntu-latest`, runc) is
   separate** and only runs ordinary CI (e.g. `mirror-to-github.yaml`). It is
   NOT used for agents.
@@ -61,7 +67,7 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
 | `agentd/server.mjs` | the dispatcher: webhook receiver, sqlite queue, task runner, UI |
 | `agentd/Dockerfile` | agentd image (node + docker-cli) |
 | `agentd/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
-| `agentd/assets/output_filter.jq` | filters pi's `--mode json` stream into a readable log |
+| `agentd/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
 | `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, webhooks — safe to re-run |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |

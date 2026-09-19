@@ -188,6 +188,7 @@ async function runTask(t) {
     const assetsDir = path.join(__dirname, 'assets');
     const delim = () => `EOF_${crypto.randomBytes(6).toString('hex')}`;
     const dPrompt = delim(), dPost = delim(), dJq = delim();
+    // (dJq: the name is historical — it now carries the node filter)
     const bootstrap = `
 set -e
 mkdir -p /work && cd /work
@@ -200,8 +201,8 @@ mkdir -p .agentd
 cat > .agentd/post-comment.sh <<'${dPost}'
 ${fs.readFileSync(path.join(assetsDir, 'post-comment.sh'), 'utf8').replace(/\n+$/, '')}
 ${dPost}
-cat > .agentd/output_filter.jq <<'${dJq}'
-${fs.readFileSync(path.join(assetsDir, 'output_filter.jq'), 'utf8').replace(/\n+$/, '')}
+cat > .agentd/output_filter.mjs <<'${dJq}'
+${fs.readFileSync(path.join(assetsDir, 'output_filter.mjs'), 'utf8').replace(/\n+$/, '')}
 ${dJq}
 chmod +x .agentd/post-comment.sh
 cat > /tmp/prompt.txt <<'${dPrompt}'
@@ -211,7 +212,7 @@ PROMPT="$(cat /tmp/prompt.txt)"
 echo ''
 echo '$ ${t.agent} agent (runsc sandbox)'
 ` + (t.agent === 'pi'
-      ? 'pi -p --mode json "$PROMPT" | jq -j -f .agentd/output_filter.jq\necho "[agentd] agent finished OK"'
+      ? 'pi -p --mode json "$PROMPT" | node .agentd/output_filter.mjs\necho "[agentd] agent finished OK"'
       : 'opencode run "$PROMPT"\necho "[agentd] agent finished OK"');
     const b64 = Buffer.from(bootstrap).toString('base64');
 
@@ -342,7 +343,8 @@ function handleWebhook(event, deliveryId, payload) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function page(title, bodyHtml) {
+function page(title, bodyHtml, { auto = true } = {}) {
+  const reload = auto ? '<script>setTimeout(()=>location.reload(),3000)</script>' : '';
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
 <style>
 body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:24px}
@@ -353,7 +355,7 @@ th{color:#888}
 pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
 .meta{color:#888}
 </style></head><body>${bodyHtml}
-<script>setTimeout(()=>location.reload(),3000)</script></body></html>`;
+${reload}</body></html>`;
 }
 
 function taskTable() {
@@ -374,14 +376,37 @@ ${rows}</table>`;
 }
 
 function taskPage(t) {
+  const head = `<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
+<p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)} · ${esc(t.kind)} · created ${esc(t.created_at)}
+ · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}<br>
+${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}</p>`;
+  if (t.status === 'running') {
+    // live view: SSE streams the log line-by-line as the container prints it
+    return `${head}<pre id="log">(waiting for output…)</pre><p><a href="/">← back</a></p>
+<script>
+const pre = document.getElementById('log');
+let stick = true; // follow the bottom unless the user scrolls up
+const nearBottom = () => pre.scrollHeight - pre.scrollTop - pre.clientHeight < 60;
+pre.addEventListener('scroll', () => { stick = nearBottom(); });
+const es = new EventSource('/task/${t.id}/stream');
+let any = false;
+es.onmessage = (e) => {
+  if (!any) { pre.textContent = ''; any = true; }
+  pre.textContent += e.data + '\n';
+  if (stick) pre.scrollTop = pre.scrollHeight;
+};
+es.addEventListener('done', () => location.reload());
+// poll status so the page settles when the task finishes
+const iv = setInterval(async () => {
+  const j = await (await fetch('/api/task/${t.id}')).json();
+  if (!['queued', 'running'].includes(j.status)) { clearInterval(iv); location.reload(); }
+}, 2000);
+</script>`;
+  }
   const log = fs.existsSync(path.join(CFG.dataDir, 'logs', `${t.id}.log`))
     ? fs.readFileSync(path.join(CFG.dataDir, 'logs', `${t.id}.log`), 'utf8').split('\n').slice(-400).join('\n')
     : '(no log yet)';
-  return `<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
-<p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)} · ${esc(t.kind)} · created ${esc(t.created_at)}
- · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}<br>
-${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}</p>
-<pre>${esc(log)}</pre><p><a href="/">← back</a></p>`;
+  return `${head}<pre>${esc(log)}</pre><p><a href="/">← back</a></p>`;
 }
 
 const server = http.createServer((req, res) => {
@@ -408,11 +433,56 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/tasks') {
     return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 100').all()));
   }
+  const apiTaskMatch = url.pathname.match(/^\/api\/task\/(\d+)$/);
+  if (apiTaskMatch) {
+    const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+apiTaskMatch[1]);
+    if (!t) return send(404, 'application/json', '{}');
+    return send(200, 'application/json', JSON.stringify(t));
+  }
+  const streamMatch = url.pathname.match(/^\/task\/(\d+)\/stream$/);
+  if (streamMatch) {
+    const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+streamMatch[1]);
+    if (!t) return send(404, 'text/plain', 'no such task');
+    // SSE tail of the task log: emits each complete line as it hits the file
+    const logfile = path.join(CFG.dataDir, 'logs', `${t.id}.log`);
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+    let off = 0, tail = '';
+    const tick = () => {
+      try {
+        const size = fs.statSync(logfile).size;
+        if (size > off) {
+          const len = Math.min(size - off, 1 << 20);
+          const buf = Buffer.alloc(len);
+          const fd = fs.openSync(logfile, 'r');
+          fs.readSync(fd, buf, 0, len, off);
+          fs.closeSync(fd);
+          const txt = tail + buf.toString();
+          const end = txt.lastIndexOf('\n');
+          if (end >= 0) {
+            const complete = txt.slice(0, end + 1);
+            for (const line of complete.split('\n').slice(0, -1)) res.write(`data: ${line.replace(/\r?$/, '')}\n\n`);
+            off += Buffer.byteLength(complete);
+            tail = txt.slice(end + 1);
+          } else tail = txt;
+        }
+      } catch { /* log file not created yet */ }
+      const cur = db.prepare('SELECT status FROM tasks WHERE id=?').get(t.id);
+      if (cur && !['queued', 'running'].includes(cur.status)) {
+        clearInterval(iv);
+        res.write('event: done\ndata: \n\n');
+        res.end();
+      }
+    };
+    const iv = setInterval(tick, 250);
+    tick();
+    req.on('close', () => clearInterval(iv));
+    return;
+  }
   const taskMatch = url.pathname.match(/^\/task\/(\d+)$/);
   if (taskMatch) {
     const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+taskMatch[1]);
     if (!t) return send(404, 'text/plain', 'no such task');
-    return send(200, 'text/html', page(`task ${t.id}`, taskPage(t)));
+    return send(200, 'text/html', page(`task ${t.id}`, taskPage(t), { auto: false }));
   }
   if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskTable()));
   send(404, 'text/plain', 'not found');
