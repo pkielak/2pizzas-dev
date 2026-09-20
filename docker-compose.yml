@@ -76,6 +76,9 @@ services:
       - GITEA_HOST=host.openshell.internal:3000
       - BOT_LOGIN=bot
       - AGENTD_REPOS=owner/gitea-with-agents,owner/platform-fall
+      # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
+      - GITEA_DB_USER=${POSTGRES_USER}
+      - GITEA_DB_NAME=${POSTGRES_DB}
     extra_hosts:
       - "host.openshell.internal:host-gateway"
     networks:

@@ -37,6 +37,15 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
   pi prints JSON lines live → `output_filter.mjs` (node) writes each match
   immediately → docker pipe → `appendFileSync`. Do NOT "simplify" the filter
   back to jq — jq buffers piped stdout until the process exits.
+- **The UI mirrors the configured Gitea theme.** agentd reads the operator's
+  theme from the db (`docker exec gitea-db-1 psql …` — Gitea 1.27's user API
+  omits the theme field) and the theme→css-file map by grepping the gitea
+  binary (content-hashed filenames, ~15s → runs in the background), then
+  serves Gitea's theme CSS same-origin at `/assets/gitea-theme.css`. All UI
+  colors are Gitea `--color-*` variables with hardcoded dark fallbacks, so it
+  degrades gracefully if Gitea is down. Result persists in
+  `data-agentd/theme.json` (10-min TTL); the first page after a cold start
+  renders with the fallback palette for ~15s until discovery finishes.
   Finished tasks show the last 400 lines statically.
 - **The standard CI runner (`my-runner`, label `ubuntu-latest`, runc) is
   separate** and only runs ordinary CI (e.g. `mirror-to-github.yaml`). It is

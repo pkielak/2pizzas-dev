@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +48,11 @@ const CFG = {
   },
   botLogin: process.env.BOT_LOGIN || 'bot',
   botEmail: process.env.BOT_EMAIL || 'bot@localhost',
+  themeUser: process.env.AGENTD_THEME_USER || 'owner',   // whose Gitea theme the UI mirrors
+  giteaContainer: process.env.GITEA_CONTAINER || 'gitea',  // theme asset discovery (docker exec grep on the binary)
+  giteaDbContainer: process.env.GITEA_DB_CONTAINER || 'gitea-db-1',
+  giteaDbUser: process.env.GITEA_DB_USER || 'USER',
+  giteaDbName: process.env.GITEA_DB_NAME || 'gitea',
   pollIntervalMs: 60_000,
   concurrency: 1,
 };
@@ -123,6 +128,90 @@ async function apiGet(p, opts = {}) {
   if (!res.ok) throw new Error(`GET ${p} → ${res.status}`);
   return res.json();
 }
+
+// ── Gitea theme mirroring ────────────────────────────────────────────────────
+// The UI is styled with Gitea's own CSS variables so it always matches the
+// operator's configured Gitea theme. Gitea's theme CSS files are content-hashed
+// and the name→file map is embedded in the gitea binary, so we discover it at
+// runtime (docker exec grep), fetch the file for the configured theme, and
+// serve it same-origin at /assets/gitea-theme.css. Cached 10 min. If anything
+// fails the page falls back to the hardcoded dark palette (var() fallbacks).
+let themeState = { at: 0, theme: 'gitea-auto', css: '' };
+let themeRefresh = null;
+const THEME_TTL = 10 * 60_000;
+const themeFile = path.join(CFG.dataDir, 'theme.json');
+const giteaOrigin = () => new URL(CFG.giteaApi).origin;
+
+function execFileP(cmd, args, { timeout = 5000 } = {}) {
+  return new Promise((resolve, reject) =>
+    execFile(cmd, args, { timeout, maxBuffer: 1 << 20 }, (err, stdout) => (err ? reject(err) : resolve(stdout))));
+}
+
+// Full discovery pass. SLOW (~15s — grepping the ~100MB gitea binary), so it
+// always runs in the background; requests serve whatever themeState already has.
+// Results persist to theme.json so restarts render the right theme instantly.
+async function refreshTheme() {
+  let theme = 'gitea-auto';
+  try {
+    // Gitea 1.27's user API does NOT expose the theme field → read it from the DB
+    // via the docker socket (psql on the db container, local socket = no password).
+    const safeUser = CFG.themeUser.replace(/[^a-z0-9-]/gi, '');
+    const out = await execFileP('docker', ['exec', CFG.giteaDbContainer, 'psql', '-U', CFG.giteaDbUser, '-d', CFG.giteaDbName, '-tAc',
+      `SELECT theme FROM "user" WHERE lower_name='${safeUser}'`]);
+    const v = out.trim();
+    if (v) theme = v.startsWith('gitea-') ? v : `gitea-${v}`;
+  } catch { /* db unreachable: keep auto */ }
+  let file = null;
+  try {
+    // theme name → content-hashed css filename is embedded in the gitea binary
+    const out = await execFileP('docker', ['exec', CFG.giteaContainer, 'grep', '-ao', 'theme-[a-z-]*\\.[A-Za-z0-9_-]*\\.css', '/app/gitea/gitea'], { timeout: 30_000 });
+    // exact match: filename `theme-<name>.<hash>.css` (the dot excludes -protanopia/-tritanopia variants)
+    for (const m of out.matchAll(/theme-[a-z-]*\.[A-Za-z0-9_-]*\.css/g)) {
+      if (m[0].startsWith(`theme-${theme}.`)) { file = m[0]; break; }
+    }
+  } catch { /* binary not greppable */ }
+  if (!file) {
+    try { // fallback: whatever the anonymous homepage renders (default theme)
+      const home = await (await fetch(giteaOrigin(), { signal: AbortSignal.timeout(4000) })).text();
+      const m = home.match(/href="(\/assets\/css\/theme-[^"]+\.css)"/);
+      if (m) file = m[1].slice(1);
+    } catch { /* no file */ }
+  }
+  file = file?.replace(/^assets\/css\//, ''); // normalize (homepage fallback returns a full path)
+  let css = '';
+  if (file) {
+    try {
+      const res = await fetch(`${giteaOrigin()}/assets/css/${file}`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) css = await res.text();
+    } catch { /* keep empty */ }
+  }
+  themeState = { at: Date.now(), theme, css };
+  try { fs.writeFileSync(themeFile, JSON.stringify({ theme, file, css, at: themeState.at })); } catch { /* non-fatal */ }
+  console.log(`[theme] ${theme} via ${file || '(fallback palette)'}${css ? ` (${(css.length / 1024).toFixed(1)}KB)` : ''}`);
+}
+
+// Sync: return the current theme immediately; kick a background refresh if stale.
+function giteaTheme() {
+  if (!themeRefresh && Date.now() - themeState.at >= THEME_TTL) kickThemeRefresh();
+  return themeState;
+}
+
+function kickThemeRefresh() {
+  if (themeRefresh) return;
+  themeRefresh = refreshTheme()
+    .catch((e) => console.log(`[theme] refresh failed: ${e.message}`))
+    .finally(() => { themeRefresh = null; });
+}
+
+// First paint: load the persisted theme, then verify in the background.
+try {
+  const saved = JSON.parse(fs.readFileSync(themeFile, 'utf8'));
+  if (saved?.css && Date.now() - saved.at < 24 * 3600_000) {
+    themeState = { at: saved.at, theme: saved.theme || 'gitea-auto', css: saved.css };
+    console.log(`[theme] loaded from cache: ${themeState.theme}`);
+  }
+} catch { /* no cache yet */ }
+kickThemeRefresh();
 
 // ── task execution ───────────────────────────────────────────────────────────
 
@@ -361,32 +450,37 @@ var g=document.getElementById('giteaLink');if(g)g.href=location.protocol+'//'+lo
 }
 
 function page(title, bodyHtml, { auto = true, nav = null } = {}) {
+  const th = giteaTheme();
   const reload = auto ? '<script>setTimeout(()=>location.reload(),3000)</script>' : '';
   const side = nav ? sidebar(nav) : '';
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
+  // Colors come from Gitea's theme CSS (served same-origin, see giteaTheme());
+  // every var() has a hardcoded dark fallback so the UI works if Gitea is down.
+  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
+<link rel="stylesheet" href="/assets/gitea-theme.css">
 <style>
 *{box-sizing:border-box}
-body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
-a{color:#7ab} h1{font-size:18px}
+body{font:14px/20px -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,"Noto Sans","Liberation Sans",sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);margin:0}
+a{color:var(--color-primary-light-2,#7ab)} h1{font-size:18px}
 /* mobile-first: off-canvas drawer; desktop (>=768px) pins it open */
 .layout{min-height:100vh}
 main{min-width:0;padding:16px;padding-top:56px}
-.sidebar{position:fixed;top:0;left:0;height:100vh;width:170px;z-index:30;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .15s ease-out}
+.sidebar{position:fixed;top:0;left:0;height:100vh;width:170px;z-index:30;background:var(--color-nav-bg,#0c0c0c);border-right:1px solid var(--color-light-border,#333);padding:20px 0;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .15s ease-out}
 .sidebar.open{transform:none}
-.sidebar .brand{font-weight:bold;color:#ddd;padding:0 20px 20px}
-#navToggle{position:fixed;top:10px;left:10px;z-index:20;background:#0c0c0c;border:1px solid #333;border-radius:6px;color:#7ab;font:14px ui-monospace,monospace;padding:4px 10px;cursor:pointer}
-#backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:25}
+.sidebar .brand{font-weight:bold;color:var(--color-text,#ddd);padding:0 20px 20px}
+#navToggle{position:fixed;top:10px;left:10px;z-index:20;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:6px;color:var(--color-input-text,#7ab);font:14px -apple-system,system-ui,sans-serif;padding:4px 10px;cursor:pointer}
+#backdrop{display:none;position:fixed;inset:0;background:var(--color-overlay-backdrop,rgba(0,0,0,.55));z-index:25}
 #backdrop.show{display:block}
-.navl{display:block;color:#7ab;text-decoration:none;padding:8px 20px}
-.navl:hover{color:#9cd;text-decoration:none}
-.navl.on{color:#fff;font-weight:bold;background:#1a1a1a;box-shadow:inset 2px 0 0 #7ab}
+.navl{display:block;color:var(--color-nav-text,#7ab);text-decoration:none;padding:8px 20px}
+.navl:hover{color:var(--color-text,#9cd);text-decoration:none;background:var(--color-nav-hover-bg,transparent)}
+.navl.on{color:var(--color-text,#fff);font-weight:bold;background:var(--color-secondary-alpha-20,#1a1a1a);box-shadow:inset 2px 0 0 var(--color-primary,#7ab)}
 .sbfoot{margin-top:auto}
-pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
+pre{background:var(--color-console-bg,#0a0a0a);color:var(--color-console-fg,#ddd);border:1px solid var(--color-console-border,#333);padding:12px;overflow-x:auto;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .scrollx{overflow-x:auto}
-table{border-collapse:collapse;width:100%} td,th{border:1px solid #333;padding:4px 8px;text-align:left}
-th{color:#888}
-.queued{color:#888}.running{color:#7cf}.success{color:#6d6}.failure{color:#f66}
-.meta{color:#888}
+table{border-collapse:collapse;width:100%} td,th{border:1px solid var(--color-light-border,#333);padding:4px 8px;text-align:left}
+th{color:var(--color-text-light-2,#888)}
+table tr:hover{background:var(--color-hover,transparent)}
+.queued{color:var(--color-text-light-2,#888)}.running{color:var(--color-primary-light-1,#7cf)}.success{color:var(--color-success-text,#6d6)}.failure{color:var(--color-error-text,#f66)}
+.meta{color:var(--color-text-light-2,#888)}
 @media (min-width:768px){
   .sidebar{transform:none;width:160px}
   #navToggle,#backdrop{display:none}
@@ -478,7 +572,7 @@ async function reposPage() {
 const server = http.createServer(async (req, res) => {
   const send = (code, type, body) => {
     const headers = { 'content-type': type };
-    if (type === 'text/html') headers['cache-control'] = 'no-store'; // never serve stale UI
+    if (type === 'text/html' || type === 'text/css') headers['cache-control'] = 'no-store'; // never serve stale UI/theme
     res.writeHead(code, headers);
     res.end(body);
   };
@@ -554,6 +648,10 @@ const server = http.createServer(async (req, res) => {
     const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+taskMatch[1]);
     if (!t) return send(404, 'text/plain', 'no such task');
     return send(200, 'text/html', page(`task ${t.id}`, taskPage(t), { auto: false, nav: 'tasks' }));
+  }
+  if (url.pathname === '/assets/gitea-theme.css') {
+    const th = giteaTheme();
+    return send(200, 'text/css', th.css || '/* gitea theme css unavailable — UI uses fallback palette */');
   }
   if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskTable(), { nav: 'tasks' }));
   if (url.pathname === '/repos') return send(200, 'text/html', page('repos', await reposPage(), { nav: 'repos' }));
