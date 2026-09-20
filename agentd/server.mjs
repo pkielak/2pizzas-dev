@@ -362,7 +362,7 @@ body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
 a{color:#7ab} h1{font-size:18px}
 .layout{display:flex;min-height:100vh}
 main{flex:1;min-width:0;padding:24px}
-.sidebar{width:160px;flex-shrink:0;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
+.sidebar{position:sticky;top:0;height:100vh;width:160px;flex-shrink:0;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
 .sidebar .brand{font-weight:bold;color:#ddd;padding:0 20px 20px}
 .navl{display:block;color:#7ab;text-decoration:none;padding:6px 20px}
 .navl:hover{color:#9cd;text-decoration:none}
