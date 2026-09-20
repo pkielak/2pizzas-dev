@@ -358,6 +358,7 @@ function page(title, bodyHtml, { auto = true, nav = null } = {}) {
   const side = nav ? sidebar(nav) : '';
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
 <style>
+*{box-sizing:border-box}
 body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
 a{color:#7ab} h1{font-size:18px}
 .layout{min-height:100vh}
