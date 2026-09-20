@@ -360,9 +360,9 @@ function page(title, bodyHtml, { auto = true, nav = null } = {}) {
 <style>
 body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
 a{color:#7ab} h1{font-size:18px}
-.layout{display:flex;min-height:100vh}
-main{flex:1;min-width:0;padding:24px}
-.sidebar{position:sticky;top:0;height:100vh;width:160px;flex-shrink:0;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
+.layout{min-height:100vh}
+main{margin-left:160px;min-width:0;padding:24px}
+.sidebar{position:fixed;top:0;left:0;height:100vh;width:160px;z-index:10;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
 .sidebar .brand{font-weight:bold;color:#ddd;padding:0 20px 20px}
 .navl{display:block;color:#7ab;text-decoration:none;padding:6px 20px}
 .navl:hover{color:#9cd;text-decoration:none}
@@ -457,7 +457,12 @@ async function reposPage() {
 }
 
 const server = http.createServer(async (req, res) => {
-  const send = (code, type, body) => { res.writeHead(code, { 'content-type': type }); res.end(body); };
+  const send = (code, type, body) => {
+    const headers = { 'content-type': type };
+    if (type === 'text/html') headers['cache-control'] = 'no-store'; // never serve stale UI
+    res.writeHead(code, headers);
+    res.end(body);
+  };
   const url = new URL(req.url, 'http://x');
 
   if (req.method === 'POST' && url.pathname === '/webhook') {
