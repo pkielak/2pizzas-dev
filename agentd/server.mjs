@@ -38,6 +38,7 @@ const CFG = {
   dataDir: process.env.DATA_DIR || '/data',
   secret: process.env.WEBHOOK_SECRET || '',
   agentToken: process.env.AGENT_TOKEN || '',
+  adminToken: process.env.ADMIN_TOKEN || '', // read-only: repos page webhook status
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.openshell.internal:3000', // reachable from JOB containers
   repos: (process.env.AGENTD_REPOS || '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -116,7 +117,7 @@ function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) {
 
 async function apiGet(p, opts = {}) {
   const res = await fetch(`${CFG.giteaApi}${p}`, {
-    headers: { Authorization: `token ${CFG.agentToken}` },
+    headers: { Authorization: `token ${opts.token || CFG.agentToken}` },
   });
   if (res.status === 404 && opts.ok404) return null;
   if (!res.ok) throw new Error(`GET ${p} → ${res.status}`);
@@ -343,18 +344,37 @@ function handleWebhook(event, deliveryId, payload) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function page(title, bodyHtml, { auto = true } = {}) {
+function sidebar(active) {
+  // gitea link resolved client-side: same host as the UI, port 3000
+  return `<aside class="sidebar"><span class="brand">agentd</span>
+<a class="navl${active === 'tasks' ? ' on' : ''}" href="/">tasks</a>
+<a class="navl${active === 'repos' ? ' on' : ''}" href="/repos">repos</a>
+<a class="navl sbfoot" id="giteaLink" href="#">gitea ↗</a></aside>
+<script>var g=document.getElementById('giteaLink');if(g)g.href=location.protocol+'//'+location.hostname+':3000';</script>`;
+}
+
+function page(title, bodyHtml, { auto = true, nav = null } = {}) {
   const reload = auto ? '<script>setTimeout(()=>location.reload(),3000)</script>' : '';
+  const side = nav ? sidebar(nav) : '';
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
 <style>
-body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:24px}
+body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
 a{color:#7ab} h1{font-size:18px}
+.layout{display:flex;min-height:100vh}
+main{flex:1;min-width:0;padding:24px}
+.sidebar{width:160px;flex-shrink:0;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
+.sidebar .brand{font-weight:bold;color:#ddd;padding:0 20px 20px}
+.navl{display:block;color:#7ab;text-decoration:none;padding:6px 20px}
+.navl:hover{color:#9cd;text-decoration:none}
+.navl.on{color:#fff;font-weight:bold;background:#1a1a1a;box-shadow:inset 2px 0 0 #7ab}
+.sbfoot{margin-top:auto}
+pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
 table{border-collapse:collapse;width:100%} td,th{border:1px solid #333;padding:4px 8px;text-align:left}
 th{color:#888}
 .queued{color:#888}.running{color:#7cf}.success{color:#6d6}.failure{color:#f66}
-pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
 .meta{color:#888}
-</style></head><body>${bodyHtml}
+</style></head><body>
+<div class="layout">${side}<main>${bodyHtml}</main></div>
 ${reload}</body></html>`;
 }
 
@@ -382,7 +402,7 @@ function taskPage(t) {
 ${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}</p>`;
   if (t.status === 'running') {
     // live view: SSE streams the log line-by-line as the container prints it
-    return `${head}<pre id="log">(waiting for output…)</pre><p><a href="/">← back</a></p>
+    return `${head}<pre id="log">(waiting for output…)</pre>
 <script>
 const pre = document.getElementById('log');
 let stick = true; // follow the bottom unless the user scrolls up
@@ -406,10 +426,37 @@ const iv = setInterval(async () => {
   const log = fs.existsSync(path.join(CFG.dataDir, 'logs', `${t.id}.log`))
     ? fs.readFileSync(path.join(CFG.dataDir, 'logs', `${t.id}.log`), 'utf8').split('\n').slice(-400).join('\n')
     : '(no log yet)';
-  return `${head}<pre>${esc(log)}</pre><p><a href="/">← back</a></p>`;
+  return `${head}<pre>${esc(log)}</pre>`;
 }
 
-const server = http.createServer((req, res) => {
+async function reposPage() {
+  const rows = (await Promise.all(CFG.repos.map(async (r) => {
+    const tot = db.prepare('SELECT COUNT(*) n FROM tasks WHERE repo=?').get(r).n;
+    const ok = db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='success'").get(r).n;
+    const bad = db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='failure'").get(r).n;
+    const last = db.prepare('SELECT MAX(created_at) t FROM tasks WHERE repo=?').get(r).t;
+    let hook;
+    try {
+      // hooks list needs repo admin — bot token is member-only
+      const hooks = await apiGet(`/repos/${r}/hooks`, { token: CFG.adminToken || CFG.agentToken });
+      // Gitea 1.27 reports native hooks as type "gitea"
+      const h = hooks.find((x) => (x.type === 'gitea' || x.type === 'native') && String(x.config?.url || '').includes('/webhook'));
+      hook = h ? `✓ id ${h.id} (${(h.events || []).join(', ')})` : '✗ missing — run ./seed.sh';
+    } catch { hook = '✗ API error'; }
+    return `<tr>
+    <td><a class="gl" data-repo="${esc(r)}" href="#">${esc(r)}</a></td>
+    <td>${hook}</td>
+    <td>${tot} (${ok} ok / ${bad} failed)</td>
+    <td>${esc(last ?? '—')}</td>
+  </tr>`;
+  }))).join('');
+  return `<h1>managed repos</h1>
+<table><tr><th>repo</th><th>webhook</th><th>tasks</th><th>last activity</th></tr>${rows}</table>
+<p class="meta">add a repo: append to AGENTD_REPOS in .env, recreate agentd, run ./seed.sh (creates the webhook)</p>
+<script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);</script>`;
+}
+
+const server = http.createServer(async (req, res) => {
   const send = (code, type, body) => { res.writeHead(code, { 'content-type': type }); res.end(body); };
   const url = new URL(req.url, 'http://x');
 
@@ -482,9 +529,10 @@ const server = http.createServer((req, res) => {
   if (taskMatch) {
     const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+taskMatch[1]);
     if (!t) return send(404, 'text/plain', 'no such task');
-    return send(200, 'text/html', page(`task ${t.id}`, taskPage(t), { auto: false }));
+    return send(200, 'text/html', page(`task ${t.id}`, taskPage(t), { auto: false, nav: 'tasks' }));
   }
-  if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskTable()));
+  if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskTable(), { nav: 'tasks' }));
+  if (url.pathname === '/repos') return send(200, 'text/html', page('repos', await reposPage(), { nav: 'repos' }));
   send(404, 'text/plain', 'not found');
 });
 
