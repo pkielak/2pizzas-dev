@@ -392,7 +392,7 @@ const es = new EventSource('/task/${t.id}/stream');
 let any = false;
 es.onmessage = (e) => {
   if (!any) { pre.textContent = ''; any = true; }
-  pre.textContent += e.data + '\n';
+  pre.textContent += e.data + '\\n';
   if (stick) pre.scrollTop = pre.scrollHeight;
 };
 es.addEventListener('done', () => location.reload());
