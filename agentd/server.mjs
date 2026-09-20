@@ -475,11 +475,21 @@ main{min-width:0;padding:16px;padding-top:56px}
 .navl.on{color:var(--color-text,#fff);font-weight:bold;background:var(--color-secondary-alpha-20,#1a1a1a);box-shadow:inset 2px 0 0 var(--color-primary,#7ab)}
 .sbfoot{margin-top:auto}
 pre{background:var(--color-console-bg,#0a0a0a);color:var(--color-console-fg,#ddd);border:1px solid var(--color-console-border,#333);padding:12px;overflow-x:auto;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.scrollx{overflow-x:auto}
-table{border-collapse:collapse;width:100%} td,th{border:1px solid var(--color-light-border,#333);padding:4px 8px;text-align:left}
-th{color:var(--color-text-light-2,#888)}
-table tr:hover{background:var(--color-hover,transparent)}
-.queued{color:var(--color-text-light-2,#888)}.running{color:var(--color-primary-light-1,#7cf)}.success{color:var(--color-success-text,#6d6)}.failure{color:var(--color-error-text,#f66)}
+/* list-item style (no tables): each .item is a whole-block clickable row */
+.list{border:1px solid var(--color-light-border,#333);border-radius:6px;overflow:hidden}
+.item{display:block;text-decoration:none;color:inherit;padding:10px 14px;border-bottom:1px solid var(--color-light-border,#333)}
+.item:last-child{border-bottom:none}
+.item:hover{background:var(--color-hover,transparent)}
+.l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600}
+.l2{color:var(--color-text-light-2,#888);font-size:12.5px;margin-top:2px}
+.err{color:var(--color-error-text,#f66);font-size:12.5px;margin-top:2px;word-break:break-word}
+.hook{font-weight:400;font-size:12.5px}.hook.ok{color:var(--color-success-text,#6d6)}.hook.bad{color:var(--color-error-text,#f66)}
+/* status pill badges */
+.queued,.running,.success,.failure{display:inline-block;font-size:11px;font-weight:600;padding:1px 9px;border-radius:10px;border:1px solid transparent;white-space:nowrap}
+.queued{color:var(--color-text-light-2,#999);border-color:var(--color-text-light-2,#555)}
+.running{color:var(--color-primary-light-1,#7cf);border-color:var(--color-primary,#36c);background:rgba(90,140,255,.12)}
+.success{color:var(--color-success-text,#6d6);border-color:var(--color-success-text,#3a3);background:rgba(90,200,90,.12)}
+.failure{color:var(--color-error-text,#f66);border-color:var(--color-error-text,#a33);background:rgba(255,90,90,.12)}
 .meta{color:var(--color-text-light-2,#888)}
 @media (min-width:768px){
   .sidebar{transform:none;width:160px}
@@ -491,28 +501,22 @@ table tr:hover{background:var(--color-hover,transparent)}
 ${reload}</body></html>`;
 }
 
-function taskTable() {
+function taskList() {
   const rows = db.prepare(
     `SELECT * FROM tasks ORDER BY id DESC LIMIT 100`
-  ).all().map((t) => `<tr>
-    <td><a href="/task/${t.id}">${t.id}</a></td>
-    <td>${esc(t.created_at)}</td>
-    <td>${esc(t.repo)}#${t.issue}</td>
-    <td>@${esc(t.agent)}</td>
-    <td>${esc(t.kind)}</td>
-    <td class="${t.status}">${t.status}</td>
-    <td>${esc(t.error ?? '')}</td>
-  </tr>`).join('\n');
-  return `<h1>agentd tasks</h1><div class="scrollx"><table>
-<tr><th>id</th><th>created</th><th>repo</th><th>agent</th><th>kind</th><th>status</th><th>error</th></tr>
-${rows}</table></div>`;
+  ).all().map((t) => `<a class="item" href="/task/${t.id}">
+    <div class="l1"><span class="${t.status}">${t.status}</span> <span>#${t.id}</span> ${esc(t.repo)}#${t.issue}</div>
+    <div class="l2">@${esc(t.agent)} · ${esc(t.kind)} · ${esc(t.created_at)}</div>
+    ${t.error ? `<div class="err">${esc(t.error)}</div>` : ''}
+  </a>`).join('\n');
+  return `<h1>agentd tasks</h1><div class="list">${rows}</div>`;
 }
 
 function taskPage(t) {
   const head = `<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
 <p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)} · ${esc(t.kind)} · created ${esc(t.created_at)}
  · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}<br>
-${t.error ? `<span class="failure">${esc(t.error)}</span>` : ''}</p>`;
+${t.error ? `<span class="err">${esc(t.error)}</span>` : ''}</p>`;
   if (t.status === 'running') {
     // live view: SSE streams the log line-by-line as the container prints it
     return `${head}<pre id="log">(waiting for output…)</pre>
@@ -554,17 +558,15 @@ async function reposPage() {
       const hooks = await apiGet(`/repos/${r}/hooks`, { token: CFG.adminToken || CFG.agentToken });
       // Gitea 1.27 reports native hooks as type "gitea"
       const h = hooks.find((x) => (x.type === 'gitea' || x.type === 'native') && String(x.config?.url || '').includes('/webhook'));
-      hook = h ? `✓ id ${h.id} (${(h.events || []).join(', ')})` : '✗ missing — run ./seed.sh';
-    } catch { hook = '✗ API error'; }
-    return `<tr>
-    <td><a class="gl" data-repo="${esc(r)}" href="#">${esc(r)}</a></td>
-    <td>${hook}</td>
-    <td>${tot} (${ok} ok / ${bad} failed)</td>
-    <td>${esc(last ?? '—')}</td>
-  </tr>`;
+      hook = h ? { txt: `webhook id ${h.id} (${(h.events || []).join(', ')})`, ok: true } : { txt: 'webhook missing — run ./seed.sh', ok: false };
+    } catch { hook = { txt: 'webhook check failed', ok: false }; }
+    return `<a class="item gl" data-repo="${esc(r)}" href="#">
+    <div class="l1">${esc(r)} <span class="hook ${hook.ok ? 'ok' : 'bad'}">${hook.txt}</span></div>
+    <div class="l2">${tot} tasks (${ok} ok / ${bad} failed) · last activity: ${esc(last ?? '—')}</div>
+  </a>`;
   }))).join('');
   return `<h1>managed repos</h1>
-<div class="scrollx"><table><tr><th>repo</th><th>webhook</th><th>tasks</th><th>last activity</th></tr>${rows}</table></div>
+<div class="list">${rows}</div>
 <p class="meta">add a repo: append to AGENTD_REPOS in .env, recreate agentd, run ./seed.sh (creates the webhook)</p>
 <script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);</script>`;
 }
@@ -653,7 +655,7 @@ const server = http.createServer(async (req, res) => {
     const th = giteaTheme();
     return send(200, 'text/css', th.css || '/* gitea theme css unavailable — UI uses fallback palette */');
   }
-  if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskTable(), { nav: 'tasks' }));
+  if (url.pathname === '/') return send(200, 'text/html', page('tasks', taskList(), { nav: 'tasks' }));
   if (url.pathname === '/repos') return send(200, 'text/html', page('repos', await reposPage(), { nav: 'repos' }));
   send(404, 'text/plain', 'not found');
 });
