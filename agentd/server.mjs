@@ -491,6 +491,8 @@ pre{background:var(--color-console-bg,#0a0a0a);color:var(--color-console-fg,#ddd
 .success{color:var(--color-success-text,#6d6);border-color:var(--color-success-text,#3a3);background:rgba(90,200,90,.12)}
 .failure{color:var(--color-error-text,#f66);border-color:var(--color-error-text,#a33);background:rgba(255,90,90,.12)}
 .meta{color:var(--color-text-light-2,#888)}
+.back{display:inline-block;text-decoration:none;font-size:12.5px;color:var(--color-text-light-2,#999);margin-bottom:6px}
+.back:hover{color:var(--color-text,#ddd);text-decoration:underline}
 @media (min-width:768px){
   .sidebar{transform:none;width:160px}
   #navToggle,#backdrop{display:none}
@@ -513,7 +515,8 @@ function taskList() {
 }
 
 function taskPage(t) {
-  const head = `<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
+  const head = `<a class="back" href="/">← back to tasks</a>
+<h1>task ${t.id} <span class="${t.status}">${t.status}</span></h1>
 <p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)} · ${esc(t.kind)} · created ${esc(t.created_at)}
  · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}<br>
 ${t.error ? `<span class="err">${esc(t.error)}</span>` : ''}</p>`;
