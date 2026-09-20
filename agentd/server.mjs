@@ -346,11 +346,18 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 function sidebar(active) {
   // gitea link resolved client-side: same host as the UI, port 3000
-  return `<aside class="sidebar"><span class="brand">agentd</span>
+  // mobile: off-canvas drawer toggled by #navToggle, closed by backdrop or nav click
+  return `<button id="navToggle" aria-label="menu">☰</button>
+<div id="backdrop"></div>
+<aside class="sidebar" id="sidebar"><span class="brand">agentd</span>
 <a class="navl${active === 'tasks' ? ' on' : ''}" href="/">tasks</a>
 <a class="navl${active === 'repos' ? ' on' : ''}" href="/repos">repos</a>
 <a class="navl sbfoot" id="giteaLink" href="#">gitea ↗</a></aside>
-<script>var g=document.getElementById('giteaLink');if(g)g.href=location.protocol+'//'+location.hostname+':3000';</script>`;
+<script>var sb=document.getElementById('sidebar'),bd=document.getElementById('backdrop'),tg=document.getElementById('navToggle');
+tg.onclick=function(){bd.classList.toggle('show',sb.classList.toggle('open'));};
+bd.onclick=function(){sb.classList.remove('open');bd.classList.remove('show');};
+document.querySelectorAll('.sidebar a').forEach(function(a){a.addEventListener('click',function(){sb.classList.remove('open');bd.classList.remove('show');});});
+var g=document.getElementById('giteaLink');if(g)g.href=location.protocol+'//'+location.hostname+':3000';</script>`;
 }
 
 function page(title, bodyHtml, { auto = true, nav = null } = {}) {
@@ -361,19 +368,30 @@ function page(title, bodyHtml, { auto = true, nav = null } = {}) {
 *{box-sizing:border-box}
 body{font:14px/1.5 ui-monospace,monospace;background:#111;color:#ddd;margin:0}
 a{color:#7ab} h1{font-size:18px}
+/* mobile-first: off-canvas drawer; desktop (>=768px) pins it open */
 .layout{min-height:100vh}
-main{margin-left:160px;min-width:0;padding:24px}
-.sidebar{position:fixed;top:0;left:0;height:100vh;width:160px;z-index:10;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column}
+main{min-width:0;padding:16px;padding-top:56px}
+.sidebar{position:fixed;top:0;left:0;height:100vh;width:170px;z-index:30;background:#0c0c0c;border-right:1px solid #333;padding:20px 0;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .15s ease-out}
+.sidebar.open{transform:none}
 .sidebar .brand{font-weight:bold;color:#ddd;padding:0 20px 20px}
-.navl{display:block;color:#7ab;text-decoration:none;padding:6px 20px}
+#navToggle{position:fixed;top:10px;left:10px;z-index:20;background:#0c0c0c;border:1px solid #333;border-radius:6px;color:#7ab;font:14px ui-monospace,monospace;padding:4px 10px;cursor:pointer}
+#backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:25}
+#backdrop.show{display:block}
+.navl{display:block;color:#7ab;text-decoration:none;padding:8px 20px}
 .navl:hover{color:#9cd;text-decoration:none}
 .navl.on{color:#fff;font-weight:bold;background:#1a1a1a;box-shadow:inset 2px 0 0 #7ab}
 .sbfoot{margin-top:auto}
 pre{background:#0a0a0a;border:1px solid #333;padding:12px;overflow-x:auto;white-space:pre-wrap}
+.scrollx{overflow-x:auto}
 table{border-collapse:collapse;width:100%} td,th{border:1px solid #333;padding:4px 8px;text-align:left}
 th{color:#888}
 .queued{color:#888}.running{color:#7cf}.success{color:#6d6}.failure{color:#f66}
 .meta{color:#888}
+@media (min-width:768px){
+  .sidebar{transform:none;width:160px}
+  #navToggle,#backdrop{display:none}
+  main{margin-left:160px;padding:24px}
+}
 </style></head><body>
 <div class="layout">${side}<main>${bodyHtml}</main></div>
 ${reload}</body></html>`;
@@ -391,9 +409,9 @@ function taskTable() {
     <td class="${t.status}">${t.status}</td>
     <td>${esc(t.error ?? '')}</td>
   </tr>`).join('\n');
-  return `<h1>agentd tasks</h1><table>
+  return `<h1>agentd tasks</h1><div class="scrollx"><table>
 <tr><th>id</th><th>created</th><th>repo</th><th>agent</th><th>kind</th><th>status</th><th>error</th></tr>
-${rows}</table>`;
+${rows}</table></div>`;
 }
 
 function taskPage(t) {
@@ -452,7 +470,7 @@ async function reposPage() {
   </tr>`;
   }))).join('');
   return `<h1>managed repos</h1>
-<table><tr><th>repo</th><th>webhook</th><th>tasks</th><th>last activity</th></tr>${rows}</table>
+<div class="scrollx"><table><tr><th>repo</th><th>webhook</th><th>tasks</th><th>last activity</th></tr>${rows}</table></div>
 <p class="meta">add a repo: append to AGENTD_REPOS in .env, recreate agentd, run ./seed.sh (creates the webhook)</p>
 <script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);</script>`;
 }
