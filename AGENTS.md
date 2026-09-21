@@ -21,12 +21,16 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
 ```
 
 - **agentd** (`agentd/server.mjs`, image built from `agentd/Dockerfile`) is a
-  single Node service. It receives Gitea native webhooks, dedupes + queues
-  tasks in sqlite, and runs each task as an ephemeral
-  `docker run --rm --runtime=runsc agent-sandbox:<agent>` container.
+  single Node service. It receives ONE **global (system) Gitea webhook** that
+  fires for every repo on the instance (agentd gates on `AGENTD_REPOS` +
+  `@agent` mentions), dedupes + queues tasks in sqlite, and runs each task as
+  an ephemeral `docker run --rm --runtime=runsc agent-sandbox:<agent>` container.
 - **Webhooks are at-least-once** → deliveries and tasks are deduped on
-  `(repo, kind, comment_id)`. A 60s poll fallback rescues any webhook Gitea
-  never delivered.
+  `(repo, kind, comment_id)`. A 60s poll fallback (managed repos only) rescues
+  any webhook Gitea never delivered.
+- **New managed repo** = append to `AGENTD_REPOS` in `.env` → `./seed.sh`
+  (adds the bot as write collaborator; the global webhook needs no change) →
+  `docker compose up -d agentd`.
 - **Loop prevention**: replies are stamped `<!-- via:agent -->` by
   `agentd/assets/post-comment.sh`; comments carrying that marker (or authored
   by the bot) are never enqueued.
@@ -77,7 +81,7 @@ Gitea webhook ──► agentd (sqlite queue) ──► docker run --runtime=run
 | `agentd/Dockerfile` | agentd image (node + docker-cli) |
 | `agentd/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `agentd/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
-| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, webhooks — safe to re-run |
+| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, **global webhook**, bot collaborators — safe to re-run |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) |
@@ -124,7 +128,9 @@ docker exec -u git gitea gitea admin user generate-access-token --username X --t
 
 # Gitea API (tokens in .env)
 curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repos/owner/<repo>
-#   webhooks: .../repos/owner/<repo>/hooks  (native type, events: issue_comment, pull_request_review)
+
+# The agentd webhook is GLOBAL (is_system_webhook) — lives in the db, no API:
+docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM webhook WHERE is_system_webhook;"
 ```
 
 ## Gotchas (learned the hard way)
@@ -137,11 +143,13 @@ curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repo
   `GITEA__security__ALLOWED_HOST_LIST=agentd`; a new dispatcher hostname must
   be added there or deliveries silently fail (check `docker logs gitea` for
   "webhook can only call allowed HTTP servers").
-- **Gitea 1.27 native hook format**: the hook needs `config.url`,
-  `config.secret`, `config.content_type` (not a top-level `url`/`password`).
-  `pull_request_review_comment` is NOT a valid webhook event in 1.27 — only
-  `pull_request_review` (full reviews). Inline review comments are picked up
-  by the poll fallback.
+- **Gitea 1.27 has NO API for system (global) webhooks** — the admin UI
+  writes them straight to the `webhook` table, so seed.sh does the same via
+  psql (`is_system_webhook=true`, `repo_id=0`, `type='gitea'`,
+  `content_type=1`, events JSON with `issue_comment` + `pull_request_review`).
+  Gitea picks new rows up **without a restart**. `pull_request_review_comment`
+  is NOT a valid webhook event in 1.27 — only `pull_request_review` (full
+  reviews). Inline review comments are picked up by the poll fallback.
 - **Docker `-e` values have their newlines flattened to spaces.** Multi-line
   content (the bootstrap script, the agent prompt, helper scripts) must not be
   passed via `-e`. `runTask()` instead builds a self-contained script (prompt +

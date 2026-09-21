@@ -39,7 +39,8 @@ runner_registered() {
     "$GITEA_URL/api/v1/admin/actions/runners?limit=50" 2>/dev/null \
     | jq -e --arg n "$1" '.runners[] | select(.name == $n)' >/dev/null 2>&1
 }
-AGENTD_REPOS=("$ADMIN_USER/$ADMIN_REPO" "$ADMIN_USER/platform-fall")
+# managed repos — comma-separated in .env (the same value the agentd service reads)
+IFS=',' read -r -a AGENTD_REPOS <<< "${AGENTD_REPOS:-$ADMIN_USER/$ADMIN_REPO,$ADMIN_USER/platform-fall}"
 WEBHOOK_URL="http://agentd:3001/webhook"
 
 gen_password() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
@@ -132,24 +133,43 @@ log "Starting runner + agentd"
 docker compose up -d runner agentd
 docker compose ps runner agentd || true
 
-# ── 7. agentd webhooks ─────────────────────────────────────────────
-log "agentd webhooks"
+# ── 7. agentd webhook (global) + bot access ───────────────────────
+log "agentd global webhook"
 if [[ -z ${WEBHOOK_SECRET:-} ]]; then
   set_env WEBHOOK_SECRET "$(gen_password)"
   echo "WEBHOOK_SECRET: generated → written to .env"
 fi
+# ONE system-wide webhook covers every repo — new repos need no webhook
+# setup; agentd gates on AGENTD_REPOS + @agent mentions. Gitea 1.27 has no
+# API for system webhooks (admin-UI only), so seed.sh writes the row
+# directly: is_system_webhook=true, same shape as the per-repo rows.
+psql() { docker exec gitea-db-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"; }
+# NOTE: 1.27 has NO pull_request_review_comment hook event — inline review
+# comments are picked up by agentd's poll fallback (<=60s delay).
+HOOK_EVENTS='{"push_only":false,"send_everything":false,"choose_events":true,"branch_filter":"","events":{"issue_comment":true,"pull_request_review":true,"create":false,"repository":false,"status":false,"issues":false,"issue_label":false,"pull_request_label":false,"pull_request_sync":false,"push":false,"fork":false,"wiki":false,"workflow_job":false,"issue_milestone":false,"pull_request_assign":false,"pull_request_milestone":false,"pull_request":false,"pull_request_review_request":false,"delete":false,"release":false,"package":false,"workflow_run":false,"issue_assign":false,"pull_request_comment":false}}'
+hook_id=$(psql "SELECT id FROM webhook WHERE is_system_webhook AND url='$WEBHOOK_URL' LIMIT 1")
+if [[ -z $hook_id ]]; then
+  psql "INSERT INTO webhook (repo_id, owner_id, is_system_webhook, url, name, http_method, content_type, secret, events, is_active, type, meta, last_status, created_unix, updated_unix)
+         VALUES (0, 0, true, '$WEBHOOK_URL', '', '', 1, '$WEBHOOK_SECRET', '$HOOK_EVENTS', true, 'gitea', '', 0, $(date +%s), $(date +%s))" >/dev/null
+  hook_id=$(psql "SELECT id FROM webhook WHERE is_system_webhook AND url='$WEBHOOK_URL' LIMIT 1")
+  echo "global webhook: created (id $hook_id)"
+else
+  psql "UPDATE webhook SET secret='$WEBHOOK_SECRET', updated_unix=$(date +%s) WHERE id=$hook_id" >/dev/null
+  echo "global webhook: ok (id $hook_id, secret refreshed)"
+fi
+# migrate away from the old per-repo hooks (same URL, non-system rows)
+removed=$(psql "DELETE FROM webhook WHERE is_system_webhook=false AND url='$WEBHOOK_URL' RETURNING id" | wc -l | tr -d ' ')
+[[ ${removed:-0} -gt 0 ]] && echo "legacy per-repo hooks: removed $removed"
+
 for repo in "${AGENTD_REPOS[@]}"; do
-  if curl -sf -H "Authorization: token $ADMIN_TOKEN" \
-      "$GITEA_URL/api/v1/repos/$repo/hooks" 2>/dev/null \
-      | jq -e --arg u "$WEBHOOK_URL" '.[] | select(.url == $u)' >/dev/null; then
-    echo "webhook $repo: ok"; skip
+  # bot must be a write collaborator: it clones, commits and comments as bot
+  if api "$GITEA_URL/api/v1/repos/$repo/collaborators?limit=50" 2>/dev/null \
+      | jq -e '.[] | select(.login == "'$BOT_USER'")' >/dev/null; then
+    echo "collaborator $repo: ok"
   else
-    # Gitea native hooks keep url+secret+content_type inside config.
-    # NOTE: 1.27 has NO pull_request_review_comment hook event — inline review
-    # comments are picked up by agentd's poll fallback (<=60s delay).
-    api -X POST -d "{\"type\":\"gitea\",\"active\":true,\"events\":[\"issue_comment\",\"pull_request_review\"],\"url\":\"$WEBHOOK_URL\",\"config\":{\"url\":\"$WEBHOOK_URL\",\"secret\":\"$WEBHOOK_SECRET\",\"content_type\":\"json\"}}" \
-      "$GITEA_URL/api/v1/repos/$repo/hooks" >/dev/null
-    echo "webhook $repo: created"
+    api -X PUT -d '{"role":"write"}' \
+      "$GITEA_URL/api/v1/repos/$repo/collaborators/$BOT_USER" >/dev/null
+    echo "collaborator $repo: $BOT_USER (write) added"
   fi
 done
 

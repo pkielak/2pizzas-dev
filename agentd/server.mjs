@@ -38,7 +38,6 @@ const CFG = {
   dataDir: process.env.DATA_DIR || '/data',
   secret: process.env.WEBHOOK_SECRET || '',
   agentToken: process.env.AGENT_TOKEN || '',
-  adminToken: process.env.ADMIN_TOKEN || '', // read-only: repos page webhook status
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.openshell.internal:3000', // reachable from JOB containers
   repos: (process.env.AGENTD_REPOS || '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -102,6 +101,7 @@ let active = 0;
 
 function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) {
   const body = comment?.body ?? '';
+  if (!CFG.repos.includes(repo)) return;             // global webhook: only act on managed repos
   if (sender === CFG.botLogin) return;               // never react to ourselves
   if (body.includes(MARKER)) return;                 // loop prevention
   if (!MENTIONS.some((m) => m.agent === agent && m.re.test(body))) return;
@@ -550,27 +550,29 @@ const iv = setInterval(async () => {
 }
 
 async function reposPage() {
+  // webhook is GLOBAL (is_system_webhook row, covers every repo) — no API for
+  // it in Gitea 1.27, so check the same way seed.sh writes it: via psql
+  let hookLine;
+  try {
+    const out = await execFileP('docker', ['exec', CFG.giteaDbContainer, 'psql', '-U', CFG.giteaDbUser, '-d', CFG.giteaDbName, '-tAc', "SELECT id FROM webhook WHERE is_system_webhook AND url LIKE '%:3001/webhook' LIMIT 1"], { timeout: 5000 });
+    const id = out.trim(); // execFileP resolves the stdout string
+    hookLine = id
+      ? `<p>global webhook: <span class="hook ok">✓ id ${id} — fires for every repo, new ones included</span></p>`
+      : `<p>global webhook: <span class="hook bad">✗ missing — run ./seed.sh</span></p>`;
+  } catch { hookLine = `<p>global webhook: <span class="hook bad">✗ check failed (gitea-db unreachable?)</span></p>`; }
   const rows = (await Promise.all(CFG.repos.map(async (r) => {
     const tot = db.prepare('SELECT COUNT(*) n FROM tasks WHERE repo=?').get(r).n;
     const ok = db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='success'").get(r).n;
     const bad = db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='failure'").get(r).n;
     const last = db.prepare('SELECT MAX(created_at) t FROM tasks WHERE repo=?').get(r).t;
-    let hook;
-    try {
-      // hooks list needs repo admin — bot token is member-only
-      const hooks = await apiGet(`/repos/${r}/hooks`, { token: CFG.adminToken || CFG.agentToken });
-      // Gitea 1.27 reports native hooks as type "gitea"
-      const h = hooks.find((x) => (x.type === 'gitea' || x.type === 'native') && String(x.config?.url || '').includes('/webhook'));
-      hook = h ? { txt: `webhook id ${h.id} (${(h.events || []).join(', ')})`, ok: true } : { txt: 'webhook missing — run ./seed.sh', ok: false };
-    } catch { hook = { txt: 'webhook check failed', ok: false }; }
     return `<a class="item gl" data-repo="${esc(r)}" href="#">
-    <div class="l1">${esc(r)} <span class="hook ${hook.ok ? 'ok' : 'bad'}">${hook.txt}</span></div>
+    <div class="l1">${esc(r)}</div>
     <div class="l2">${tot} tasks (${ok} ok / ${bad} failed) · last activity: ${esc(last ?? '—')}</div>
   </a>`;
   }))).join('');
-  return `<h1>managed repos</h1>
+  return `<h1>managed repos</h1>${hookLine}
 <div class="list">${rows}</div>
-<p class="meta">add a repo: append to AGENTD_REPOS in .env, recreate agentd, run ./seed.sh (creates the webhook)</p>
+<p class="meta">add a repo: append to AGENTD_REPOS in .env → <code>./seed.sh</code> (adds bot access) → <code>docker compose up -d agentd</code>. no webhook needed — it's global</p>
 <script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);</script>`;
 }
 
