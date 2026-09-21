@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * agentd — webhook-driven agent dispatcher.
+ * 00-tea — webhook-driven agent dispatcher.
  *
  * Replaces the Gitea Actions agent workflows (comment-assist / pr-review):
  *
@@ -66,7 +66,7 @@ const MENTIONS = [
 
 fs.mkdirSync(path.join(CFG.dataDir, 'logs'), { recursive: true });
 
-const db = new DatabaseSync(path.join(CFG.dataDir, 'agentd.db'));
+const db = new DatabaseSync(path.join(CFG.dataDir, '00-tea.db'));
 db.exec(`
 CREATE TABLE IF NOT EXISTS tasks (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,7 +236,7 @@ User request: ${request}
 ${guide}
 
 When done, write a short reply (what you did, plus any PR/branch name) to /tmp/reply.md and post it:
-bash .agentd/post-comment.sh ${issue} /tmp/reply.md`;
+bash .00-tea/post-comment.sh ${issue} /tmp/reply.md`;
 }
 
 function reviewPrompt({ issue, request, cpath, line }) {
@@ -248,7 +248,7 @@ Then: git fetch origin pull/${issue}/head && git checkout FETCH_HEAD
 Address the review comment: make the changes, commit, and push to the head branch.
 
 When done, write a short reply (what you changed) to /tmp/reply.md and post it:
-bash .agentd/post-comment.sh ${issue} /tmp/reply.md`;
+bash .00-tea/post-comment.sh ${issue} /tmp/reply.md`;
 }
 
 async function runTask(t) {
@@ -268,7 +268,7 @@ async function runTask(t) {
         : commentPrompt({ issue: t.issue, title: issueInfo.title, body: issueInfo.body, isPull, request });
 
     // 2. self-contained bootstrap script, executed INSIDE the job container.
-    //    No host-path bind mounts (agentd talks to the host docker daemon, so
+    //    No host-path bind mounts (00-tea talks to the host docker daemon, so
     //    container paths are not host paths). Clone as bot → authenticated
     //    remote, so agent commits/PRs attribute to the bot user.
     //
@@ -287,14 +287,14 @@ git clone -q "$CLONE_URL" repo
 cd repo
 git config user.name "$BOT_NAME"
 git config user.email "$BOT_EMAIL"
-mkdir -p .agentd
-cat > .agentd/post-comment.sh <<'${dPost}'
+mkdir -p .00-tea
+cat > .00-tea/post-comment.sh <<'${dPost}'
 ${fs.readFileSync(path.join(assetsDir, 'post-comment.sh'), 'utf8').replace(/\n+$/, '')}
 ${dPost}
-cat > .agentd/output_filter.mjs <<'${dJq}'
+cat > .00-tea/output_filter.mjs <<'${dJq}'
 ${fs.readFileSync(path.join(assetsDir, 'output_filter.mjs'), 'utf8').replace(/\n+$/, '')}
 ${dJq}
-chmod +x .agentd/post-comment.sh
+chmod +x .00-tea/post-comment.sh
 cat > /tmp/prompt.txt <<'${dPrompt}'
 ${prompt}
 ${dPrompt}
@@ -302,8 +302,8 @@ PROMPT="$(cat /tmp/prompt.txt)"
 echo ''
 echo '$ ${t.agent} agent (runsc sandbox)'
 ` + (t.agent === 'pi'
-      ? 'pi -p --mode json "$PROMPT" | node .agentd/output_filter.mjs\necho "[agentd] agent finished OK"'
-      : 'opencode run "$PROMPT"\necho "[agentd] agent finished OK"');
+      ? 'pi -p --mode json "$PROMPT" | node .00-tea/output_filter.mjs\necho "[00-tea] agent finished OK"'
+      : 'opencode run "$PROMPT"\necho "[00-tea] agent finished OK"');
     const b64 = Buffer.from(bootstrap).toString('base64');
 
     say(`$ docker run --rm --runtime=runsc ${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
@@ -331,7 +331,7 @@ echo '$ ${t.agent} agent (runsc sandbox)'
       child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`agent exited with code ${code}`))));
     });
   } catch (e) {
-    say(`\n[agentd] ERROR: ${e.message}\n`);
+    say(`\n[00-tea] ERROR: ${e.message}\n`);
     throw e;
   } finally {
     running.delete(t.id);
@@ -438,7 +438,7 @@ function sidebar(active) {
   // mobile: off-canvas drawer toggled by #navToggle, closed by backdrop or nav click
   return `<button id="navToggle" aria-label="menu">☰</button>
 <div id="backdrop"></div>
-<aside class="sidebar" id="sidebar"><span class="brand">agentd</span>
+<aside class="sidebar" id="sidebar"><span class="brand">00-tea</span>
 <a class="navl${active === 'tasks' ? ' on' : ''}" href="/">tasks</a>
 <a class="navl${active === 'repos' ? ' on' : ''}" href="/repos">repos</a>
 <a class="navl sbfoot" id="giteaLink" href="#">gitea ↗</a></aside>
@@ -455,7 +455,7 @@ function page(title, bodyHtml, { auto = true, nav = null } = {}) {
   const side = nav ? sidebar(nav) : '';
   // Colors come from Gitea's theme CSS (served same-origin, see giteaTheme());
   // every var() has a hardcoded dark fallback so the UI works if Gitea is down.
-  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><title>${esc(title)} — agentd</title>
+  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><title>${esc(title)} — 00-tea</title>
 <link rel="stylesheet" href="/assets/gitea-theme.css">
 <style>
 *{box-sizing:border-box}
@@ -511,7 +511,7 @@ function taskList() {
     <div class="l2">@${esc(t.agent)} · ${esc(t.kind)} · ${esc(t.created_at)}</div>
     ${t.error ? `<div class="err">${esc(t.error)}</div>` : ''}
   </a>`).join('\n');
-  return `<h1>agentd tasks</h1><div class="list">${rows}</div>`;
+  return `<h1>00-tea tasks</h1><div class="list">${rows}</div>`;
 }
 
 function taskPage(t) {
@@ -572,7 +572,7 @@ async function reposPage() {
   }))).join('');
   return `<h1>managed repos</h1>${hookLine}
 <div class="list">${rows}</div>
-<p class="meta">add a repo: append to AGENTD_REPOS in .env → <code>./seed.sh</code> (adds bot access) → <code>docker compose up -d agentd</code>. no webhook needed — it's global</p>
+<p class="meta">add a repo: append to AGENTD_REPOS in .env → <code>./seed.sh</code> (adds bot access) → <code>docker compose up -d 00-tea</code>. no webhook needed — it's global</p>
 <script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);</script>`;
 }
 
@@ -666,8 +666,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(CFG.port, () => {
-  console.log(`[agentd] listening on :${CFG.port}`);
-  console.log(`[agentd] repos (poll fallback): ${CFG.repos.join(', ') || '(none)'}`);
-  console.log(`[agentd] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode}`);
-  console.log(`[agentd] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
+  console.log(`[00-tea] listening on :${CFG.port}`);
+  console.log(`[00-tea] repos (poll fallback): ${CFG.repos.join(', ') || '(none)'}`);
+  console.log(`[00-tea] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode}`);
+  console.log(`[00-tea] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
 });

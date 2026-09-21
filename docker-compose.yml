@@ -15,7 +15,7 @@ services:
       - GITEA__database__USER=${POSTGRES_USER}
       - GITEA__database__PASSWD=${POSTGRES_PASSWORD}
       # webhooks may only call these hosts (Gitea security default blocks LAN IPs)
-      - GITEA__security__ALLOWED_HOST_LIST=agentd
+      - GITEA__security__ALLOWED_HOST_LIST=00-tea
     restart: always
     extra_hosts:
       - "host.openshell.internal:host-gateway"
@@ -64,9 +64,9 @@ services:
   # ── Agent dispatcher (replaces agent-runner + agent workflows) ──
   # Gitea webhooks → sqlite queue → `docker run --runtime=runsc
   # agent-sandbox:<agent>` per task. UI: http://127.0.0.1:3001
-  agentd:
-    build: ./agentd
-    container_name: gitea-agentd
+  00-tea:
+    build: ./00-tea
+    container_name: gitea-00-tea
     restart: always
     environment:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
@@ -83,7 +83,7 @@ services:
     networks:
       - gitea
     volumes:
-      - ./data-agentd:/data
+      - ./data-00-tea:/data
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001

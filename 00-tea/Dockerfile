@@ -1,4 +1,4 @@
-# agentd — webhook-driven agent dispatcher (replaces the Gitea Actions
+# 00-tea — webhook-driven agent dispatcher (replaces the Gitea Actions
 # agent workflows). See server.mjs. Needs the docker CLI to spawn the
 # sandboxed agent job containers via the host socket.
 FROM node:22-alpine

@@ -2,7 +2,7 @@
 // Streaming log filter for `pi -p --mode json` output (replaces the old
 // output_filter.jq). jq buffers its output when stdout is a pipe — logs
 // arrived in one lump when the agent finished. This reads stdin line by
-// line and writes each match immediately, so agentd's log (and the SSE
+// line and writes each match immediately, so 00-tea's log (and the SSE
 // live view) stream line by line.
 let buf = '';
 process.stdin.on('data', (d) => {

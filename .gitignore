@@ -6,7 +6,7 @@ agent-sandbox/opencode/opencode-config/opencode.json
 # Container runtime data (auto-populated)
 data/
 data-agent/
-data-agentd/
+data-00-tea/
 gitea/
 postgres/
 
