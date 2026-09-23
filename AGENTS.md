@@ -90,6 +90,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
 | `.gitea/workflows/` | ordinary CI workflows (e.g. `mirror-to-github.yaml`) — run on my-runner |
+| `pages/` | static pages server (`Dockerfile`, `nginx.conf`, `entrypoint.sh`): syncs a repo's `gh-pages` branch and serves it on `:3002` (stand-in for Gitea Pages, which 1.27 lacks) |
 
 ## Useful commands
 
@@ -176,6 +177,13 @@ docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM 
 - **GVisor (`runsc`) still sandboxes every agent job**; the dispatcher holds the
   docker socket (host control is the point of 00-tea). Keep job containers
   ephemeral (`--rm`) — one-shot isolation per task is a feature, not a cost.
+- **Gitea 1.27 has NO native Pages** (no route, no db state, no API — `ENABLE_PAGES`
+  is a no-op). Static previews are served by the `pages` compose service, which
+  polls the repo's `gh-pages` branch (Pancratius' `.gitea/workflows/pages.yaml`
+  builds the app and pushes it there) and nginx-serves it on `:3002`.
+- **Gitea Actions does not export `GITEA_REF`/`GITEA_REF_NAME`** as shell env
+  vars (unbound under `set -u`) — in workflow scripts use `git rev-parse` instead.
+  The `${{ github.* }}` context expressions DO work in `with:` blocks.
 
 ## Ops agent (parked)
 
@@ -191,4 +199,5 @@ revived it should run through 00-tea, not a dedicated runner.
 | `00-tea/server.mjs` | `node --check`, then `docker compose build 00-tea && up -d`, `curl :3001/healthz` |
 | webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-00-tea` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
+| `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
 | end-to-end | full loop: `@pi` comment → task `success` → `bot` reply with `<!-- via:agent -->` on the issue |

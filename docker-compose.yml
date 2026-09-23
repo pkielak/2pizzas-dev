@@ -43,6 +43,24 @@ services:
     volumes:
       - ./postgres:/var/lib/postgresql/data
 
+  # ── Static pages server ──────────────────────────────────────
+  # Gitea 1.27 has NO native Pages — this serves the repo's `gh-pages`
+  # branch (pushed by .gitea/workflows/pages.yaml in Pancratius) on :3002
+  pages:
+    build: ./pages
+    container_name: gitea-pages
+    restart: always
+    environment:
+      - PAGES_REPO=http://gitea:3000/owner/Pancratius.git
+      - PAGES_BRANCH=gh-pages
+      - PAGES_TOKEN=${AGENT_TOKEN}
+    networks:
+      - gitea
+    ports:
+      - "3002:8080"
+    depends_on:
+      - server
+
   # ── Existing runner (runc) ──────────────────────────────────
   runner:
     image: docker.io/gitea/runner:3
