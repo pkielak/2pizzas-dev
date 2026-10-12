@@ -164,3 +164,12 @@ workflow. Improvements never push to `main` directly — merge the PR, then
 `@ops apply #<n>` or run `./seed.sh` / `docker compose up -d` yourself.
 This workflow is deliberately **not** in the template: repos created from it
 must not get host docker access.
+
+## Review feedback
+
+Review comments left on a worker's PR are picked up and fed back to the
+worker agent. 00-tea enqueues a `review` task when a human leaves an inline
+diff comment on a PR (webhook / poll) — the worker's prompt then asks it to
+address that comment: make the changes, commit, and push to the PR head
+branch. This is human-driven feedback, not an automatic reviewer agent: there
+is no separate reviewer and no cap on how many rounds of review can happen.
