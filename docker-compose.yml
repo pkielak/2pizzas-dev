@@ -18,7 +18,7 @@ services:
       - GITEA__security__ALLOWED_HOST_LIST=00-tea
     restart: always
     extra_hosts:
-      - "host.openshell.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     networks:
       - gitea
     volumes:
@@ -45,19 +45,22 @@ services:
 
   # ── Static pages server ──────────────────────────────────────
   # Gitea 1.27 has NO native Pages — this serves the repo's `gh-pages`
-  # branch (pushed by .gitea/workflows/pages.yaml in Pancratius) on :3002
+  # branch (pushed by a CI workflow in the target repo) on :3002
   pages:
     build: ./pages
     container_name: gitea-pages
     restart: always
     environment:
-      - PAGES_REPO=http://gitea:3000/owner/Pancratius.git
+      - PAGES_REPO=${PAGES_REPO:-http://gitea:3000/admin/my-repo.git}
       - PAGES_BRANCH=gh-pages
       - PAGES_TOKEN=${AGENT_TOKEN}
     networks:
       - gitea
     ports:
       - "3002:8080"
+      - "3443:8443"
+    volumes:
+      - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
       - server
 
@@ -79,6 +82,27 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./runner/config.yaml:/config.yaml
 
+  # ── Android build runner (label `android`, custom job image) ──
+  # Separate from my-runner: jobs opt in with `runs-on: android` and get the
+  # gitea-android image (JDK 21 + Android SDK + pre-warmed ~/.gradle).
+  # Image: docker build -t gitea-android:latest runner/android
+  android-runner:
+    image: docker.io/gitea/runner:3
+    container_name: gitea-android-runner
+    restart: always
+    environment:
+      - CONFIG_FILE=/config.yaml
+      - GITEA_INSTANCE_URL=http://gitea:3000/
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_ANDROID_REGISTRATION_TOKEN}
+      - GITEA_RUNNER_NAME=android-runner
+      - GITEA_RUNNER_LABELS=android:docker://gitea-android:latest
+    networks:
+      - gitea
+    volumes:
+      - ./data-android:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner/config.yaml:/config.yaml
+
   # ── Agent dispatcher (replaces agent-runner + agent workflows) ──
   # Gitea webhooks → sqlite queue → `docker run --runtime=runsc
   # agent-sandbox:<agent>` per task. UI: http://127.0.0.1:3001
@@ -89,15 +113,19 @@ services:
     environment:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       - AGENT_TOKEN=${AGENT_TOKEN}
+      - REVIEW_TOKEN=${REVIEW_TOKEN}   # read-only bot token — reviewer clone (review chain)
+      - AGENT_IMAGE_REVIEW=${AGENT_IMAGE_REVIEW:-agent-sandbox:review}
+      - REVIEW_MAX_ROUNDS=${REVIEW_MAX_ROUNDS:-3}
       - GITEA_API=http://gitea:3000/api/v1
-      - GITEA_HOST=host.openshell.internal:3000
+      - GITEA_HOST=host.docker.internal:3000
       - BOT_LOGIN=bot
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 00-tea runs pi on a loadable model
       # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
       - GITEA_DB_USER=${POSTGRES_USER}
       - GITEA_DB_NAME=${POSTGRES_DB}
     extra_hosts:
-      - "host.openshell.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     networks:
       - gitea
     volumes:
