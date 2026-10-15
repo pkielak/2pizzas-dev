@@ -64,6 +64,25 @@ services:
     depends_on:
       - server
 
+  # ── llm-bench pages (same server, second repo) ─────────
+  # Serves owner/llm-bench's `gh-pages` branch (pushed by the repo's
+  # pages CI workflow) on :3004. The stock `pages` service above is
+  # single-repo, so this is a second instance of the same image.
+  llm-bench-pages:
+    build: ./pages
+    container_name: llm-bench-pages
+    restart: always
+    environment:
+      - PAGES_REPO=http://gitea:3000/owner/llm-bench.git
+      - PAGES_BRANCH=gh-pages
+      - PAGES_TOKEN=${AGENT_TOKEN}
+    networks:
+      - gitea
+    ports:
+      - "3004:8080"
+    depends_on:
+      - server
+
   # ── Existing runner (runc) ──────────────────────────────────
   runner:
     image: docker.io/gitea/runner:3
