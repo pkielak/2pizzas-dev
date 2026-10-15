@@ -80,6 +80,8 @@ services:
       - gitea
     ports:
       - "3004:8080"
+    volumes:
+      - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
       - server
 
