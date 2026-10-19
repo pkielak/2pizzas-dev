@@ -1,14 +1,16 @@
 {
   "providers": {
     "llama.cpp": {
-      "baseUrl": "http://100.110.41.89:8080/v1",
+      "baseUrl": "http://localhost:8080/v1",
       "api": "openai-completions",
       "apiKey": "<your-llama-cpp-api-key>",
       "models": [
         { "id": "Ornith-1.5-35B", "contextWindow": 65536 },
         { "id": "Qwen3.8-27B", "contextWindow": 65536 },
-        { "id": "Ornith-1.5-9B", "contextWindow": 65536 },
-        { "id": "Muse-Glimmer-30B", "contextWindow": 81920 }
+        { "id": "Ornith-1.5-9B", "contextWindow": 262144 },
+        { "id": "Muse-Glimmer-30B", "contextWindow": 81920 },
+        { "id": "Qwen3.8-27B-GSQ-RCO", "contextWindow": 131072 },
+        { "id": "Swift-1.5-27B-GSQ-RCO", "contextWindow": 131072 }
       ]
     }
   }

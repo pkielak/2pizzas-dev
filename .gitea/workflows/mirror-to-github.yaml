@@ -23,7 +23,7 @@ jobs:
       - name: Push main to GitHub
         env:
           MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
-          MIRROR_REPO: ${{ vars.MIRROR_REPO || 'pkiel/platform-fall' }}
+          MIRROR_REPO: ${{ vars.MIRROR_REPO || 'your-github/repo' }}
         run: |
           set -euo pipefail
 

@@ -22,19 +22,71 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 
 - **00-tea** (`00-tea/server.mjs`, image built from `00-tea/Dockerfile`) is a
   single Node service. It receives ONE **global (system) Gitea webhook** that
-  fires for every repo on the instance (00-tea gates on `AGENTD_REPOS` +
-  `@agent` mentions), dedupes + queues tasks in sqlite, and runs each task as
+  fires for every repo on the instance (00-tea gates on managed repos +
+  `@agent` mentions; the hook's events must include BOTH `issue_comment` AND
+  `pull_request_comment` — comments on a PR fire the latter, not the
+  former, so a PR-only mention would never be delivered), dedupes + queues
+  tasks in sqlite, and runs each task as
   an ephemeral `docker run --rm --runtime=runsc agent-sandbox:<agent>` container.
+- **Review chain** (after any work task that pushed commits): 00-tea
+  enqueues an `agent-review` task (internal — never via the webhook) that runs
+  `agent-sandbox:review` (opencode + a baked `code-review` skill) on a
+  **read-only clone** (`REVIEW_TOKEN`, read scope — the container gets no
+  write token, so the reviewer cannot push OR post; 00-tea posts the review
+  comment itself from the `[00-tea] review-body-*` markers in the task log).
+  The review must end with `<!-- review:pass -->` / `<!-- review:fail -->`;
+  `fail` enqueues a `rework` task (original agent, concerns as prompt,
+  `round+1`) whose push starts the next review round. Capped at
+  `REVIEW_MAX_ROUNDS` (default 3) — at the cap a "review cycle exhausted"
+  comment is posted and a human takes over. Chain links live in
+  `tasks.parent_id` / `tasks.round` / `tasks.pr`; the bootstrap's
+  `[00-tea] ref:` / `[00-tea] pr:` log lines carry the pushed refs + PR
+  number into the chain. Don't drop those marker lines, the review-body
+  markers, or the verdict parse in `afterTask()`.
+  For **both** agents it queries the llama.cpp router (`LLAMA_CPP_URL` in
+  `.env`, `/v1/models`) and passes `--model llama.cpp/<id>`: the baked default
+  model if it is **loaded**, otherwise whatever model is **loaded**
+  (lazy-loading a second 27B+ model fails while one is resident), else the
+  default. Model + ctx window are stored per task; the per-agent JSON stream
+  filter (`output_filter.mjs` / `opencode_filter.mjs`) emits a final
+  `[00-tea] usage: model=… tokens=…` line that 00-tea saves — the UI shows
+  `model · used/window tok (pct)` on every task.
 - **Webhooks are at-least-once** → deliveries and tasks are deduped on
   `(repo, kind, comment_id)`. A 60s poll fallback (managed repos only) rescues
   any webhook Gitea never delivered.
-- **New managed repo** = append to `AGENTD_REPOS` in `.env` → `./seed.sh`
-  (adds the bot as write collaborator; the global webhook needs no change) →
-  `docker compose up -d 00-tea`.
+- **New managed repo = self-enrolling.** An `@agent` mention on an
+  unmanaged repo opts it in: 00-tea persists it in the `managed_repos`
+  sqlite table and grants the bot write collaborator itself (same API call
+  as seed.sh). No `.env`, no reseed, no restart. `AGENTD_REPOS` is an
+  optional seed/pin list (env repos can't be removed from the UI; the ✕ on
+  `/repos` only removes self-enrolled ones — `DELETE /api/repos/:owner/:name`).
+  The global webhook covers new repos automatically.
 - **Loop prevention**: replies are stamped `<!-- via:agent -->` by
   `00-tea/assets/post-comment.sh`; comments carrying that marker (or authored
   by the bot) are never enqueued.
-- **UI / observability**: task dashboard at `http://127.0.0.1:3001`,
+- **No-action rule**: agents sometimes finish cleanly without pushing
+  anything or replying. The bootstrap therefore verifies after the agent run
+  that a visible action happened — remote refs changed (pushed commits, and
+  the BEFORE snapshot is taken INSIDE the repo, right after `cd repo` — an
+  empty/failed snapshot would diff against the full "after" list and make
+  every task a false positive "pushed commits"; the timestamp `>` comparisons
+  must keep the operator QUOTED — an unquoted `>` inside `[ ... ]` is an
+  output redirection, so `[ A > B ]` is always true for non-empty A), a
+  PR by the bot created since task start, or a bot comment since task start —
+  and posts `/tmp/reply.md` if it exists (post-comment.sh deletes the file
+  after posting, so a surviving file means "not yet posted"). If nothing was
+  done, the bootstrap posts a fallback error comment itself and the task is
+  marked `failure` (`[00-tea] no-action` marker). Don't drop the enforcement
+  block from the bootstrap or the marker check in `runTask()`.
+- **UI / observability**: dashboard at `http://127.0.0.1:3001` — `/` is a home
+  page (latest tasks + android builds + pages status), `/tasks` the full task
+  list, `/android` the latest builds on `android-runner` (admin actions-runs
+  API via `ADMIN_TOKEN`; a run counts as android iff one of its jobs carries
+  the `android` label — the runs API itself doesn't expose labels), `/pages`
+  the gh-pages sites (driven by `PAGES_SITES` in `.env`: `repo:port:container`
+  per `pages/` service; last deployed commit read via `docker exec git log`),
+  plus `/stats` for token/model usage aggregates and `/backends` for the
+  current agents + llama.cpp inference setup),
   per-task logs in `data-00-tea/logs/<id>.log`, `GET /api/tasks`. Running
   tasks show a **live log view**: `GET /task/:id/stream` is an SSE tail that
   emits each log line as it hits the file. The whole path is unbuffered:
@@ -51,9 +103,43 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   `data-00-tea/theme.json` (10-min TTL); the first page after a cold start
   renders with the fallback palette for ~15s until discovery finishes.
   Finished tasks show the last 400 lines statically.
+- **Agent chat** (`/chat`): live conversations with pi/opencode in
+  LONG-LIVED runsc containers (the counterpart of the one-shot task
+  containers). pi runs `pi --mode rpc` (JSONL over stdin/stdout);
+  opencode runs `opencode serve` (REST + SSE; the model is passed per
+  message — `serve` has no `-m` flag). Both join the `gitea_gitea`
+  compose network (`CHAT_NETWORK`) and are reached by container name —
+  never publish host ports for this (a 127.0.0.1 publish is invisible to
+  the 00-tea container, which is itself a container). Chat containers
+  act as the separate **`chat` Gitea user** (`CHAT_GITEA_TOKEN`,
+  write:repository, seeded like the bot): they can read any repo and
+  push/post ONLY where granted — per-repo write grants are
+  collaborator permissions managed from the `/chat` UI
+  (`POST /api/chat/grant`, tracked in `chat_grants`). This keeps
+  chat-driven work auditable apart from task work (and `enqueue()`
+  ignores the `chat` sender, so chat posts never spawn tasks). With no
+  `CHAT_GITEA_TOKEN` they fall back to NO Gitea token (read the 00-tea
+  task API via `host.docker.internal` only). Chat containers reach
+  Gitea via `host.docker.internal:3000` — the runsc sandbox CANNOT use
+  Docker's built-in DNS, so the compose service name `gitea` does not
+  resolve inside them. They die on 00-tea restart
+  (orphans are reaped at startup via the `tea-chat-*` name filter) or
+  after `CHAT_IDLE_MINUTES` (default 30). Optional `CHAT_TOKEN` gates
+  `/chat` + `/api/chat*` (the UI is tailnet-reachable). Killing the
+  `docker run` client does NOT remove the container — `chatKill()` does
+  `docker rm -f` by name (docker 29 no longer prints the container id).
+  The compose `name: gitea` pin keeps the network `gitea_gitea`.
 - **The standard CI runner (`my-runner`, label `ubuntu-latest`, runc) is
   separate** and only runs ordinary CI (e.g. `mirror-to-github.yaml`). It is
   NOT used for agents.
+- **`android-runner` (label `android`)** is a second, dedicated runner for
+  native Android builds (Capacitor APKs). Its
+  job image `gitea-android:latest` (`runner/android/Dockerfile`) bakes JDK 21
+  + Android SDK + a **pre-warmed `~/.gradle`** on the stock ubuntu-latest job
+  image — job containers are ephemeral, so the image layer is the only place
+  a Gradle cache survives between runs. Rebuild it when the baked
+  Capacitor/AGP/SDK set changes. Release signing (if/when needed): keystore
+  is a secret → `.env` + runner `env:`, never baked into the image.
 
 ## Golden rules
 
@@ -70,22 +156,26 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
    gone). `sync-template.sh` is prune-only: it removes superseded agent
    workflow files from template-based repos. Ask before pushing.
 4. **Runtime state dirs are off-limits**: `gitea/`, `postgres/`, `data/`,
-   `data-agent/`, `data-00-tea/` — container-populated, gitignored.
+   `data-agent/`, `data-00-tea/`, `data-android/` — container-populated,
+   gitignored.
 
 ## Key files
 
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
-| `00-tea/server.mjs` | the dispatcher: webhook receiver, sqlite queue, task runner, UI |
+| `00-tea/server.mjs` | the dispatcher: webhook receiver, sqlite queue, task runner, UI, agent chat (pi RPC / opencode serve bridge) |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
+| `00-tea/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, **global webhook**, bot collaborators — safe to re-run |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
-| `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) |
-| `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops`) |
+| `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) — shared by android-runner |
+| `runner/android/Dockerfile` | `gitea-android:latest` job image: JDK 21 + Android SDK + warm `~/.gradle` (label `android`) |
+| `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops` / `:review`) |
+| `agent-sandbox/review/skills/code-review/SKILL.md` | the reviewer's baked review skill (opencode skill dir) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model provider (llama.cpp, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
@@ -118,8 +208,11 @@ docker build -t agent-sandbox:opencode agent-sandbox/opencode
 docker build -t agent-sandbox:ops agent-sandbox/ops
 docker run --rm --entrypoint sh agent-sandbox:pi -c '<smoke test>'
 
+# Android job image (android-runner, label `android`)
+docker build -t gitea-android:latest runner/android
+
 # Database (Gitea internals)
-docker exec -it gitea-db-1 psql -U USER -d gitea
+docker exec -it gitea-db-1 psql -U postgres -d gitea
 #   interesting tables: action_runner, action_run, user, repository
 #   00-tea's task queue is a separate sqlite file under data-00-tea/
 
@@ -128,10 +221,10 @@ docker exec -u git gitea gitea admin user create --username X --email X@localhos
 docker exec -u git gitea gitea admin user generate-access-token --username X --token-name N --scopes all --raw
 
 # Gitea API (tokens in .env)
-curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repos/owner/<repo>
+curl -s -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/repos/admin/<repo>
 
 # The 00-tea webhook is GLOBAL (is_system_webhook) — lives in the db, no API:
-docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM webhook WHERE is_system_webhook;"
+docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active FROM webhook WHERE is_system_webhook;"
 ```
 
 ## Gotchas (learned the hard way)
@@ -144,6 +237,13 @@ docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM 
   `GITEA__security__ALLOWED_HOST_LIST=00-tea`; a new dispatcher hostname must
   be added there or deliveries silently fail (check `docker logs gitea` for
   "webhook can only call allowed HTTP servers").
+- **PR comments fire `pull_request_comment`, not `issue_comment`.** A
+  comment on an issue that is a PR is delivered under the
+  `pull_request_comment` event; if that event isn't in the system webhook's
+  events JSON the delivery is never created (silent). 00-tea's
+  `handleWebhook()` treats both event names identically (same payload
+  shape: `comment` + `issue`); seed.sh's `HOOK_EVENTS` enables both and
+  refreshes `events` on re-run.
 - **Gitea 1.27 has NO API for system (global) webhooks** — the admin UI
   writes them straight to the `webhook` table, so seed.sh does the same via
   psql (`is_system_webhook=true`, `repo_id=0`, `type='gitea'`,
@@ -163,10 +263,55 @@ docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM 
 - **Loop prevention** is the `<!-- via:agent -->` marker (posted by
   `00-tea/assets/post-comment.sh`, checked by `enqueue()`). Don't remove it
   from either side.
-- **Bot posts as `bot`**, but older comments may be from `owner` — don't
+- **Bot posts as `bot`**, but older comments may be from the admin user — don't
   write actor-based logic; use the marker.
-- **pi 0.74.2 does not interpolate env vars in `apiKey`** despite the docs —
+- **opencode non-interactive runs auto-REJECT permission prompts** (writing
+  outside the workspace, e.g. `/tmp/reply.md`, silently fails and the agent
+  stops). The bootstrap therefore runs `opencode run --auto` — safe because
+  the gVisor sandbox is the real boundary, not opencode's permissions.
+- **The reviewer is read-only by token, not by prompt.** Review tasks clone
+  with `REVIEW_TOKEN` (read scope) and never receive `AGENT_TOKEN`, so
+  push/post both 403. The review body travels back through the task log
+  (`[00-tea] review-body-*` markers) and 00-tea posts it. Don't give the
+  review container the write token "to make posting easier" — that silently
+  re-arms the reviewer.
+- **pi exits 0 even when the model/provider fails** (it retries 3×, then ends
+  the `--mode json` stream with an error event and exits cleanly). The
+  bootstrap therefore runs the pipeline under `bash -o pipefail` (the image's
+  `sh` is dash — no pipefail) and checks the stream: a healthy pi run's LAST
+  line is `"type":"agent_settled"` — the SESSION-end event, emitted in
+  `prompt()`'s `finally` after `agent_end` and all post-run processing
+  (retries, compaction). `agent_end` only closes the agent LOOP and is NOT the
+  last line (pi 0.82+); checking for it as the terminator marks every task a
+  failure. The check also requires the last `agent_end` to carry no
+  `errorMessage` and no `finalError` (exhausted auto-retry) anywhere in the
+  stream. opencode: last line must be `"type":"step_finish"`.
+  Don't inline the pipeline back into the dash script — the `bash -c` subshell
+  only sees `PROMPT` because it is `export`ed.
+- **The agent images bake the model list AND the default model** at build
+  time (pi: `models.json` + `settings.json`; opencode: `opencode.json`). If
+  the host's llama.cpp model set changes (new preset, default swapped),
+  update the files, rebuild the image, and verify against `/v1/models` on the
+  host. opencode's per-task `--model` override must name a model that exists
+  in its baked `opencode.json` list, or it fails with an opaque
+  "Unexpected server error".
+- **pi 0.82+ has auto-compaction ON by default** and runs it in
+  `_handlePostAgentRun()` — i.e. it emits `compaction_start`/`compaction_end`
+  to the `--mode json` stream AFTER the `agent_end` line (a full extra
+  summarization LLM call at the end of a one-shot run — pure downside, it can
+  never fire mid-task). It's baked OFF in
+  `agent-sandbox/pi/pi-settings/settings.json` (`"compaction":
+  {"enabled": false}`). Don't re-enable it.
+  Related trap: `pi --model llama.cpp/<id>` for an id MISSING from the baked
+  `models.json` silently inherits `contextWindow` from the FIRST model in the
+  provider list (`buildFallbackModel`) — a 131K task on a model that resolves
+  to a 65K window trips the compaction threshold (`ctx > window − 16384`).
+  Keep `models.json` in sync with the host model set.
+- **pi (0.82.x) does not interpolate env vars in `apiKey`** despite the docs —
   the key must be baked into `models.json` at image build time.
+  0.82+ also needs Node >= 22.19 (base image is on 22) and bakes
+  `LLAMA_BASE_URL` into `agent-sandbox:pi` — without it the bundled
+  llama.cpp extension provider fails auth with "Provider is not configured".
 - **User-controlled content in shell**: always pass it via env vars / quoted
   heredocs, never unquoted interpolation of comment bodies.
 - **Repo creation via API needs `write:user` scope** — use `ADMIN_TOKEN`, not
@@ -179,7 +324,7 @@ docker exec gitea-db-1 psql -U USER -d gitea -c "SELECT id, url, is_active FROM 
   ephemeral (`--rm`) — one-shot isolation per task is a feature, not a cost.
 - **Gitea 1.27 has NO native Pages** (no route, no db state, no API — `ENABLE_PAGES`
   is a no-op). Static previews are served by the `pages` compose service, which
-  polls the repo's `gh-pages` branch (Pancratius' `.gitea/workflows/pages.yaml`
+  polls the repo's `gh-pages` branch (a CI workflow in the target repo
   builds the app and pushes it there) and nginx-serves it on `:3002`.
 - **Gitea Actions does not export `GITEA_REF`/`GITEA_REF_NAME`** as shell env
   vars (unbound under `set -u`) — in workflow scripts use `git rev-parse` instead.
@@ -198,6 +343,8 @@ revived it should run through 00-tea, not a dedicated runner.
 | compose / `.env` | `docker compose config -q` + recreate the service + `docker exec <container> printenv VAR` |
 | `00-tea/server.mjs` | `node --check`, then `docker compose build 00-tea && up -d`, `curl :3001/healthz` |
 | webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-00-tea` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
+| chat | `curl -X POST :3001/api/chat -d '{"agent":"pi"}'` → `POST /api/chat/<id>/message` → SSE `/chat/<id>/stream` shows `text_delta`…`agent_settled` (pi) / `message.part.updated`…`session.idle` (opencode); `DELETE /api/chat/<id>` removes the container |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
+| review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
 | `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
 | end-to-end | full loop: `@pi` comment → task `success` → `bot` reply with `<!-- via:agent -->` on the issue |

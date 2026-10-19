@@ -4,7 +4,7 @@
 # The gh-pages branch is pushed by the repo's CI workflow.
 set -u
 
-REPO="${PAGES_REPO:?PAGES_REPO required, e.g. http://gitea:3000/owner/Pancratius.git}"
+REPO="${PAGES_REPO:?PAGES_REPO required, e.g. http://gitea:3000/admin/my-repo.git}"
 BRANCH="${PAGES_BRANCH:-gh-pages}"
 TOKEN="${PAGES_TOKEN:-}"
 DEST=/srv/pages

@@ -1,9 +1,23 @@
 # agents-actions
 
-Gitea Actions workflows for AI agent assist: post a comment on an issue or PR
-mentioning **`@pi`** or **`@opencode`** and the corresponding agent picks up the
-work — implements the request, pushes commits / opens PRs, and replies with a
-summary. Inline review comments on PRs work the same way.
+Template repo for AI-agent-managed Gitea repositories.
+
+## How it works
+
+Agent tasks are dispatched by **00-tea** (a webhook-driven service in the
+`gitea-with-agents` infra repo), NOT by per-repo workflow files. This template
+repo is README-only — it exists so that new repos can be created from it and
+immediately recognized by the 00-tea dispatcher.
+
+To make a repo agent-managed:
+
+1. Append `owner/repo` to `AGENTD_REPOS` in the infra repo's `.env`
+2. Run `./seed.sh` (adds `bot` as write collaborator; the global webhook
+   covers all repos — no per-repo webhook needed)
+3. `docker compose up -d 00-tea`
+
+After that, `@pi` / `@opencode` comments on issues and PRs in this repo
+trigger agent tasks.
 
 ## Usage
 
@@ -16,36 +30,9 @@ show up under `bot` and can be reviewed like a regular contribution.
 
 ## Requirements
 
-1. **Runner labels** — a Gitea Actions runner must be registered with the
-   labels `agent-pi` and `agent-opencode`, mapped to the `agent-sandbox:pi` /
-   `agent-sandbox:opencode` images (see the `gitea-with-agents` repo for the
-   full runner + image setup).
-2. **`AGENT_TOKEN` in the runner envs** — an API token of the `bot` user,
-   injected into jobs via the runner config `envs:`:
-   ```yaml
-   runner:
-     envs:
-       AGENT_TOKEN: "${AGENT_TOKEN}"
-   ```
-3. **`bot` as write collaborator on the repo** — per-repo, one time:
+1. **`bot` as write collaborator on the repo** — per-repo, one time:
    - UI: *Settings → Collaborators → add `bot` (write)*, or
    - API: `PUT /repos/{owner}/{repo}/collaborators/bot` with body `{"permission":"write"}`
-4. **Default branch is `main`** — the prompts tell the agent to open PRs
-   against `main`. If your repo uses a different default branch, edit the
-   `"base": "main"` string in `comment-assist.yaml`.
-
-## How it works
-
-| File | Purpose |
-|---|---|
-| `comment-assist.yaml` | `issue_comment` (issues *and* PR conversations) → jobs `assist-pi` / `assist-opencode` |
-| `pr-review.yml` | `pull_request_review_comment` (inline diff comments) → jobs `review-pi` / `review-opencode` |
-| `post-comment.sh` | posts the agent's reply via the API and stamps it `<!-- via:agent -->` |
-| `output_filter.jq` | filters pi's JSON stream output into readable log text |
-
-- Jobs are gated by mention (`contains(body, '@pi')` / `'@opencode'`), so a
-  comment without a mention runs nothing.
-- Reply loop prevention: the agent's replies carry the `<!-- via:agent -->`
-  marker, and both workflows' `if:` exclude comments containing it.
-- Each agent runs in its own container image (`runs-on: agent-pi` /
-  `agent-opencode`); `@pi and @opencode` in one comment runs both in parallel.
+2. **Default branch is `main`** — the prompts tell the agent to open PRs
+   against `main`. If your repo uses a different default branch, update the
+   00-tea prompt template.

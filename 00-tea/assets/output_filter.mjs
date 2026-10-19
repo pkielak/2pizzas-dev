@@ -5,6 +5,7 @@
 // line and writes each match immediately, so 00-tea's log (and the SSE
 // live view) stream line by line.
 let buf = '';
+let lastMsg = null; // last assistant message (carries final usage + model)
 process.stdin.on('data', (d) => {
   buf += d.toString();
   let i;
@@ -27,9 +28,18 @@ process.stdin.on('data', (d) => {
         out = `\n  \u25b8 ${j.toolName} ${cmd ? (cmd.length > 60 ? cmd.slice(0, 60) + '\u2026' : cmd) : ''}\n`;
       } else if (j.type === 'tool_execution_end' && j.isError === true) {
         out = `\n  \u2717 ${j.toolName ?? 'tool'} failed\n`;
+      } else if (j.type === 'message_end' && j.message?.role === 'assistant') {
+        lastMsg = j.message;
       }
     } catch { /* not JSON — ignore */ }
     if (out) process.stdout.write(out);
   }
 });
-process.stdin.on('end', () => process.exit(0));
+process.stdin.on('end', () => {
+  // final usage marker — parsed by 00-tea into the task row (UI shows ctx usage)
+  const u = lastMsg?.usage;
+  if (u && u.totalTokens != null) {
+    process.stdout.write(`\n[00-tea] usage: model=${lastMsg.model ?? 'unknown'} tokens=${u.totalTokens}\n`);
+  }
+  process.exit(0);
+});

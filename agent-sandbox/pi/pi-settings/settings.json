@@ -2,6 +2,7 @@
   "defaultProjectTrust": "always",
   "theme": "dark",
   "defaultProvider": "llama.cpp",
-  "defaultModel": "Qwen3.8-27B",
+  "defaultModel": "Swift-1.5-27B-GSQ-RCO",
+  "compaction": { "enabled": false },
   "packages": []
 }

@@ -30,7 +30,7 @@ network_policies:
   gitea:
     name: gitea
     endpoints:
-      - host: host.openshell.internal
+      - host: host.docker.internal
         port: 3000
         protocol: rest
         enforcement: enforce

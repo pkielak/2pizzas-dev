@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential jq unzip tar xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# Node 22: pi 0.82.x requires >= 22.19.0 (its bundled undici uses Node 22 APIs)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,12 +19,16 @@ RUN curl -fsSL -o /usr/local/bin/tea \
     && chmod +x /usr/local/bin/tea
 
 # Pre-configure tea (Gitea CLI)
-# Token is injected via env at runtime (see runner-pi/config.yaml)
+# Token is injected via env at runtime (see 00-tea bootstrap)
 # This just sets the endpoint so tea doesn't prompt
+ARG GITEA_HOST=host.docker.internal:3000
+ARG GITEA_USER=admin
 RUN mkdir -p /root/.config/tea \
     && cat > /root/.config/tea/config.yml << 'EOF'
-endpoint: http://host.openshell.internal:3000
-user: USER
+endpoint: http://GITEA_HOST_PLACEHOLDER
+user: GITEA_USER_PLACEHOLDER
 EOF
+# substitute the ARGs (heredoc above can't expand them directly)
+RUN sed -i "s|GITEA_HOST_PLACEHOLDER|${GITEA_HOST}|; s|GITEA_USER_PLACEHOLDER|${GITEA_USER}|" /root/.config/tea/config.yml
 
 CMD ["sleep", "infinity"]

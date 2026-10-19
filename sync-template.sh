@@ -5,7 +5,7 @@
 # the "upgrade" path).
 #
 # Usage:
-#   ./sync-template.sh owner/platform-fall [owner/repo ...]
+#   ./sync-template.sh owner/repo [owner/repo ...]
 #
 # Behavior (per repo, idempotent — no commit if nothing changed):
 #   - overwrites the template-managed files with agents-actions/

@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "llama.cpp/Qwen3.8-27B",
+  "model": "llama.cpp/Swift-1.5-27B-GSQ-RCO",
   "provider": {
     "llama.cpp": {
       "npm": "@ai-sdk/openai-compatible",
@@ -13,7 +13,9 @@
         "Ornith-1.5-35B": { "name": "Ornith-1.5-35B" },
         "Qwen3.8-27B": { "name": "Qwen3.8-27B" },
         "Ornith-1.5-9B": { "name": "Ornith-1.5-9B" },
-        "Muse-Glimmer-30B": { "name": "Muse-Glimmer-30B" }
+        "Muse-Glimmer-30B": { "name": "Muse-Glimmer-30B" },
+        "Qwen3.8-27B-GSQ-RCO": { "name": "Qwen3.8-27B-GSQ-RCO" },
+        "Swift-1.5-27B-GSQ-RCO": { "name": "Swift-1.5-27B-GSQ-RCO" }
       }
     }
   }

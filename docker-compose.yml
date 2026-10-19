@@ -1,3 +1,7 @@
+# pins the compose project name → the network is always `gitea_gitea`
+# (00-tea's chat containers join it via CHAT_NETWORK)
+name: gitea
+
 networks:
   gitea:
     external: false
@@ -64,22 +68,23 @@ services:
     depends_on:
       - server
 
-  # ── llm-bench pages (same server, second repo) ─────────
-  # Serves owner/llm-bench's `gh-pages` branch (pushed by the repo's
-  # pages CI workflow) on :3004. The stock `pages` service above is
+  # ── browser-llm-bench pages (same server, second repo) ──
+  # Serves owner/browser-llm-bench's `gh-pages` branch (pushed by the
+  # repo's pages CI workflow) on :3004. The stock `pages` service above is
   # single-repo, so this is a second instance of the same image.
-  llm-bench-pages:
+  browser-llm-bench-pages:
     build: ./pages
-    container_name: llm-bench-pages
+    container_name: browser-llm-bench-pages
     restart: always
     environment:
-      - PAGES_REPO=http://gitea:3000/owner/llm-bench.git
+      - PAGES_REPO=http://gitea:3000/owner/browser-llm-bench.git
       - PAGES_BRANCH=gh-pages
       - PAGES_TOKEN=${AGENT_TOKEN}
     networks:
       - gitea
     ports:
       - "3004:8080"
+      - "3444:8443"   # same TAILNET_HOST cert as :3443 (port is not in TLS names)
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
@@ -142,6 +147,17 @@ services:
       - BOT_LOGIN=bot
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
       - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 00-tea runs pi on a loadable model
+      - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)
+      # /pages sidebar: repo:port:container per pages/ service instance
+      - PAGES_SITES=${PAGES_SITES:-}
+      # optional gate for the /chat pages+API (the UI is tailnet-reachable)
+      - CHAT_TOKEN=${CHAT_TOKEN:-}
+      # /chat agents act as the separate "chat" Gitea user (audit separation
+      # from task work); per-repo write access is granted from the /chat UI
+      - CHAT_GITEA_TOKEN=${CHAT_GITEA_TOKEN:-}
+      - CHAT_LOGIN=chat
+      # network the chat containers join (reached by container name, no port publish)
+      - CHAT_NETWORK=${CHAT_NETWORK:-gitea_gitea}
       # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
       - GITEA_DB_USER=${POSTGRES_USER}
       - GITEA_DB_NAME=${POSTGRES_DB}

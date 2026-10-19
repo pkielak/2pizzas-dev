@@ -12,19 +12,17 @@ with a summary, all under a reviewable `bot` user.
 | `server` (gitea) | Gitea 1.27.2, web UI on `:3000`, SSH on `:222`, postgres backend |
 | `db` | Postgres 14 |
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — for ordinary CI |
-| `agent-runner` | Gitea Actions runner (gVisor) with labels `agent-pi` / `agent-opencode` / `agent-ops` — one job per agent, each running in its own sandbox image |
-| `agent-sandbox:*` images | Docker images the agent jobs run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with a local llama.cpp model provider |
+| `00-tea` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
+| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with a local llama.cpp model provider |
 
-The workflow files that make the agents work live in a separate **template
-repo, `owner/agents-actions`** — any repo created from that template gets
-the agent behavior out of the box. The authoritative copy of its content is
-the `agents-actions/` directory in this repo (`seed.sh` pushes it); edit
-workflows there, not on Gitea.
+The **template repo `owner/agents-actions`** is a thin README (the old agent
+workflows are gone). The authoritative copy lives in the `agents-actions/`
+directory in this repo (`seed.sh` pushes it).
 
 ## Repository layout
 
 ```
-docker-compose.yml          # gitea + db + both runners
+docker-compose.yml          # gitea + db + runner + 00-tea
 seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 sync-template.sh            # push agents-actions updates into template-based repos
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
@@ -37,12 +35,11 @@ agent-sandbox/
   opencode/Dockerfile       # + opencode agent + config
   opencode/opencode-config/ # opencode.json (gitignored) + .example
 runner/config.yaml          # my-runner: ubuntu-latest label
-runner-agent/config.yaml    # agent-runner: agent-pi / agent-opencode labels + job envs
-.gitea/workflows/           # working copy of the agent workflows (staging for platform-fall)
+.gitea/workflows/           # ordinary CI workflows
 ```
 
 Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
-`data/` and `data-agent/` (runner state).
+`data/` (runner state), `data-00-tea/` (dispatcher state + task logs).
 
 ## Setup
 
@@ -50,7 +47,7 @@ Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
 
 - Docker + compose plugin
 - A llama.cpp server (OpenAI-compatible, `:8080`) reachable from the host —
-  the agents talk to it through `host.openshell.internal` (mapped to
+  the agents talk to it through `host.docker.internal` (mapped to
   `host-gateway` in compose)
 - Ports 3000 (web) and 222 (SSH) free
 
@@ -78,7 +75,7 @@ docker compose up -d db server
 4. creates and pushes both repos — this checkout as `gitea-with-agents`, the
    `agents-actions/` directory as the template — and marks it `template: true`
 5. mints the runner registration tokens via the admin API → `.env`
-6. starts both runners (they self-register)
+6. starts the runner (self-registers)
 
 Agents act as a dedicated `bot` user so you can review their work (commits,
 PRs, comments all show up under `bot`).
@@ -117,7 +114,7 @@ editing workflows in `agents-actions/`, push the update into each consuming
 repo:
 
 ```bash
-./sync-template.sh owner/platform-fall [owner/repo ...]
+./sync-template.sh owner/repo [owner/repo ...]
 ```
 
 It overwrites the template-managed files, removes superseded ones, leaves
@@ -130,7 +127,7 @@ actually changed.
 |---|---|
 | Stop / start everything | `docker compose down` / `docker compose up -d` |
 | Rebuild one agent image | edit config → `docker build -t agent-sandbox:<agent> agent-sandbox/<agent>` |
-| Change runner envs/labels | edit `runner*/config.yaml` + compose envs, then `docker compose up -d <service>` (**recreate**, a plain restart won't reload env) |
+| Change runner envs/labels | edit `runner/config.yaml` + compose envs, then `docker compose up -d <service>` (**recreate**, a plain restart won't reload env) |
 | DB access | `docker exec -it gitea-db-1 psql -U <user> -d gitea` |
 | Gitea CLI | `docker exec -u git gitea gitea admin ...` (no `su` inside the container — run directly as `git`) |
 | Gitea API | `curl -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/...` |
@@ -138,38 +135,26 @@ actually changed.
 
 ## How the agents work
 
-`agents-actions` ships two workflows:
+A `@pi` / `@opencode` mention on an issue or PR in a managed repo triggers a
+webhook to **00-tea**, which queues the task and runs it as an ephemeral
+`docker run --runtime=runsc agent-sandbox:<agent>` container. The agent
+checks out the repo, does the work (pushes commits, opens PRs), and posts a
+reply via `post-comment.sh`.
 
-- **`comment-assist.yaml`** — `issue_comment` on issues and PRs. Jobs
-  `assist-pi` / `assist-opencode` fire when the comment mentions `@pi` /
-  `@opencode`. The agent checks out the repo, does the work (pushes to the PR
-  head branch, or opens a new PR from a branch), and posts a reply.
-- **`pr-review.yml`** — `pull_request_review_comment` (inline diff comments)
-  only, so it never fires on regular issues.
+Loop prevention: replies are stamped `<!-- via:agent -->`; comments carrying
+that marker (or authored by the bot) are never enqueued.
 
-Loop prevention: replies are posted by `post-comment.sh` with a
-`<!-- via:agent -->` marker; both workflows' `if:` exclude comments containing
-it (the bot posts as itself, so actor-based checks would also work, but the
-marker is robust to quoting/forwarding). All per-repo requirements are
-documented in the template's README.
-
-### Ops agent (infra repo only)
-
-`gitea-with-agents` itself runs **`ops-assist.yaml`**: a `@ops <request>`
-comment lets an agent operate the stack — diagnose (read-only), restart /
-rebuild/re-register (operate), or propose changes to this repo as a PR
-(improve). The job container gets the host's docker socket and a read-only
-mount of this directory at `/infra` via per-job `container.options` in the
-workflow. Improvements never push to `main` directly — merge the PR, then
-`@ops apply #<n>` or run `./seed.sh` / `docker compose up -d` yourself.
-This workflow is deliberately **not** in the template: repos created from it
-must not get host docker access.
+The `agents-actions/` directory is a thin README-only template — new managed
+repos are added by appending to `AGENTD_REPOS` in `.env` and re-running
+`./seed.sh` (adds the bot as write collaborator; the global webhook needs no
+change).
 
 ## Review feedback
 
-Review comments left on a worker's PR are picked up and fed back to the
-worker agent. 00-tea enqueues a `review` task when a human leaves an inline
-diff comment on a PR (webhook / poll) — the worker's prompt then asks it to
-address that comment: make the changes, commit, and push to the PR head
-branch. This is human-driven feedback, not an automatic reviewer agent: there
-is no separate reviewer and no cap on how many rounds of review can happen.
+Human review comments on a worker's PR are picked up: 00-tea enqueues a
+`review` task when someone leaves an inline diff comment — the worker
+addresses it (changes, commit, push to the PR head branch). Separately,
+every work push goes through the automatic review chain (read-only
+`agent-review` → `rework` rounds, capped — see AGENTS.md), and `@infra` on
+this repo runs the infra agent, which repairs the stack itself (it is also
+auto-enqueued on infra-class task failures).
