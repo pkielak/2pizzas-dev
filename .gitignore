@@ -7,6 +7,13 @@ agent-sandbox/opencode/opencode-config/opencode.json
 data/
 data-agent/
 data-00-tea/
+data-android/
 gitea/
 postgres/
+
+# Local working clone (not part of this repo's content)
+browser-llm-bench/
+
+# Local TLS material for the pages HTTPS listeners (self-signed, per-machine)
+pages/certs/
 
