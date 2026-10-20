@@ -35,18 +35,21 @@ export async function chatListPage() {
 <p class="meta">chat agents act as the separate <code>${esc(CFG.chatLogin)}</code> Gitea user (audit separation from task work). read works everywhere; grant write per repo:</p>
 <div class="list">${repoErr ? `<div class="item"><div class="l2">repo list unavailable: <span class="err">${esc(repoErr)}</span></div></div>` : grantRows || '<div class="item"><div class="l2">no repos on this instance</div></div>'}</div>`;
   }
-  return `<h1>agent chat</h1>
+  const html = `<h1>agent chat</h1>
 <form id="newchat">
   <select name="agent"><option value="pi">pi</option><option value="opencode">opencode</option></select>
   <button type="submit">start chat</button>
 </form>
 <div class="list">${rows || '<div class="item"><div class="l2">no active chats</div></div>'}</div>
 ${grantUi}
-<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 00-tea task API, but cannot push or post.'} chats die on 00-tea restart or after ${CFG.chatIdleMs / 60000} min idle.</p>
-<script>
+<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 00-tea task API, but cannot push or post.'} chats die on 00-tea restart or after ${CFG.chatIdleMs / 60000} min idle.</p>`;
+  return {
+    html,
+    script: `<script>window.__pageInit = function(){
 const tk = new URLSearchParams(location.search).get('token');
 const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
-document.getElementById('newchat').onsubmit = async function (e) {
+const form = document.getElementById('newchat');
+if (form) form.onsubmit = async function (e) {
   e.preventDefault();
   const agent = this.agent.value;
   const r = await fetch(auth('/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent }) });
@@ -59,7 +62,8 @@ document.querySelectorAll('.grantbtn').forEach(b => b.onclick = async () => {
   const r = await fetch(auth('/api/chat/grant'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo: b.dataset.repo, grant }) });
   if (r.ok) location.reload(); else alert((await r.json()).error || 'grant failed');
 });
-</script>`;
+};</script>`,
+  };
 }
 
 export function chatView(c) {

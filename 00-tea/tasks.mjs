@@ -10,6 +10,7 @@ import { pickModel } from './llama.mjs';
 import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt } from './prompts.mjs';
 import { enqueueReview, enqueueRework } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
+import { liveBroadcast } from './live.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -281,15 +282,18 @@ export async function pump() {
   const t = db.prepare(`SELECT * FROM tasks WHERE status = 'queued' ORDER BY id LIMIT 1`).get();
   if (!t) return;
   db.prepare(`UPDATE tasks SET status='running', started_at=datetime('now') WHERE id=?`).run(t.id);
+  liveBroadcast('tasks');
   active++;
   try {
     await runTask(t);
     db.prepare(`UPDATE tasks SET status='success', finished_at=datetime('now') WHERE id=?`).run(t.id);
+    liveBroadcast('tasks');
     try { await afterTask(t); }
     catch (e) { console.error(`[after] task ${t.id}: ${e.message}`); }
   } catch (e) {
     db.prepare(`UPDATE tasks SET status='failure', finished_at=datetime('now'), error=? WHERE id=?`)
       .run(String(e.message).slice(0, 2000), t.id);
+    liveBroadcast('tasks');
   } finally {
     active--;
     kick(); // a slot just freed — start the next queued task now

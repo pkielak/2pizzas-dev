@@ -27,9 +27,39 @@ document.querySelectorAll('.sidebar a').forEach(function(a){a.addEventListener('
 var g=document.getElementById('giteaLink');if(g)g.href=location.protocol+'//'+location.hostname+':3000';</script>`;
 }
 
-export function page(title, bodyHtml, { auto = true, nav = null, app = false } = {}) {
+// Live update (replaces the old 3s location.reload() — no more tab-spinner
+// pulsing): subscribe to /live/stream, and on any event re-fetch this page
+// and swap ONLY <main>'s content in place. The page's own script (passed
+// via the `script` option, rendered OUTSIDE main) defines window.__pageInit,
+// which is re-run after every swap — innerHTML does not execute scripts, so
+// event bindings / link fixups must be re-established this way.
+const LIVE_SCRIPT = `<script>
+(function(){
+  var main = document.querySelector('main');
+  var busy = false;
+  function init(){ if (window.__pageInit) window.__pageInit(); }
+  function refresh(){
+    if (busy) return; busy = true;
+    fetch(location.pathname + location.search, { headers: { 'x-live-refresh': '1' } })
+      .then(function(r){ return r.text(); })
+      .then(function(html){
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var m = doc.querySelector('main');
+        if (m) main.innerHTML = m.innerHTML;
+        init();
+      })
+      .catch(function(){})
+      .then(function(){ busy = false; });
+  }
+  var es = new EventSource('/live/stream');
+  es.onmessage = function(){ refresh(); };
+  init();
+})();
+</script>`;
+
+export function page(title, bodyHtml, { auto = true, nav = null, app = false, script = '' } = {}) {
   const th = giteaTheme();
-  const reload = auto ? '<script>setTimeout(()=>location.reload(),3000)</script>' : '';
+  const live = auto ? LIVE_SCRIPT : '';
   const side = nav ? sidebar(nav) : '';
   // Colors come from Gitea's theme CSS (served same-origin, see giteaTheme());
   // every var() has a hardcoded dark fallback so the UI works if Gitea is down.
@@ -129,7 +159,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 }
 </style></head><body>
 <div class="layout${app ? ' app' : ''}">${side}<main class="${app ? 'app' : ''}">${bodyHtml}</main></div>
-${reload}</body></html>`;
+${script}${live}</body></html>`;
 }
 
 export const fmtTok = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n));

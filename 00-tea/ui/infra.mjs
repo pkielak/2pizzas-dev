@@ -78,9 +78,13 @@ ${dot(false, 130, 585)} ${label(142, 589, 'down', 'start')}
 ${dot(null, 205, 585)} ${label(217, 589, 'n/a · unknown', 'start')}
 </svg>`;
 
-    return `<h1>infra</h1>
+    return {
+      html: `<h1>infra</h1>
 <div style="overflow-x:auto">${svg}</div>
-<p class="meta">live status: green dot = running (docker ps), red = down. every agent job runs one-shot in a gVisor (runsc) sandbox; 00-tea, the runners and Gitea itself run on the host. gVisor egress policy: <code>gitea-policy.yaml</code>.</p>
-<script>document.querySelectorAll('a[href="#gitea"]').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000');</script>`;
+<p class="meta">live status: green dot = running (docker ps), red = down. every agent job runs one-shot in a gVisor (runsc) sandbox; 00-tea, the runners and Gitea itself run on the host. gVisor egress policy: <code>gitea-policy.yaml</code>.</p>`,
+      script: `<script>window.__pageInit = function(){
+document.querySelectorAll('a[href="#gitea"]').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000');
+};</script>`,
+    };
   })();
 }

@@ -5,6 +5,7 @@ import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
 import { pickModel } from './llama.mjs';
+import { liveBroadcast } from './live.mjs';
 
 // ── chat sessions (long-lived sandboxed agents over RPC/HTTP) ──────────────
 // The /chat UI talks to a LIVE agent inside a long-lived runsc container —
@@ -60,6 +61,7 @@ export const chatKill = (c, note) => {
   c.clients.clear();
   chats.delete(c.id);
   console.log(`[chat] ${c.id} (@${c.agent}) closed${note ? `: ${note}` : ''}`);
+  liveBroadcast('chat');
 };
 
 export const chatJson = (c) => ({
@@ -189,6 +191,7 @@ export async function createChat(agent) {
   }
   c.child.on('close', () => chatKill(c, 'container exited'));
   console.log(`[chat] ${id} started (@${agent}, model ${c.model}, container ${c.name})`);
+  liveBroadcast('chat');
   return c;
 }
 

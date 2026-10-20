@@ -66,6 +66,7 @@ import { managedRepos } from './repos.mjs';
 import { llamaModels, piDefaultModel } from './llama.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
+import { liveAdd, liveRemove } from './live.mjs';
 import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort } from './chat.mjs';
 import { page } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
@@ -82,6 +83,16 @@ import { backendsPage } from './ui/backends.mjs';
 // theme discovery, chat orphan reaping + idle killer
 import { activeCount } from './tasks.mjs';
 import './poll.mjs';
+import './live.mjs';
+
+// page functions return either a body string or { html, script } — the
+// script (window.__pageInit) is rendered OUTSIDE <main> so it survives the
+// in-place live updates (see layout.mjs)
+const renderPage = async (title, p, opts = {}) => {
+  const r = await p;
+  const b = typeof r === 'string' ? { html: r, script: '' } : r;
+  return page(title, b.html, { ...opts, script: b.script ?? '' });
+};
 
 const server = http.createServer(async (req, res) => {
   const send = (code, type, body) => {
@@ -200,7 +211,17 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/chat') {
     if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
-    return send(200, 'text/html', page('chat', await chatListPage(), { nav: 'chat' }));
+    return send(200, 'text/html', await renderPage('chat', chatListPage(), { nav: 'chat' }));
+  }
+
+  // live update feed for the dashboard: pages swap their <main> in place
+  // on any event (see live.mjs) — replaces the old 3s full-page reload
+  if (url.pathname === '/live/stream') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+    res.write('data: hello\n\n');
+    liveAdd(res);
+    req.on('close', () => liveRemove(res));
+    return;
   }
 
   if (url.pathname === '/healthz') return send(200, 'application/json', JSON.stringify({ ok: true, active: activeCount(), repos: managedRepos() }));
@@ -280,14 +301,14 @@ const server = http.createServer(async (req, res) => {
     const th = giteaTheme();
     return send(200, 'text/css', th.css || '/* gitea theme css unavailable — UI uses fallback palette */');
   }
-  if (url.pathname === '/') return send(200, 'text/html', page('home', await homePage(), { nav: 'home' }));
-  if (url.pathname === '/infra') return send(200, 'text/html', page('infra', await infraPage(), { nav: 'infra' }));
-  if (url.pathname === '/tasks') return send(200, 'text/html', page('tasks', tasksPage(), { nav: 'tasks' }));
-  if (url.pathname === '/android') return send(200, 'text/html', page('android', await androidPage(), { nav: 'android' }));
-  if (url.pathname === '/pages') return send(200, 'text/html', page('pages', await pagesPage(), { nav: 'pages' }));
-  if (url.pathname === '/repos') return send(200, 'text/html', page('repos', await reposPage(), { nav: 'repos' }));
-  if (url.pathname === '/stats') return send(200, 'text/html', page('stats', statsPage(), { nav: 'stats' }));
-  if (url.pathname === '/backends') return send(200, 'text/html', page('backends', await backendsPage(), { nav: 'backends' }));
+  if (url.pathname === '/') return send(200, 'text/html', await renderPage('home', homePage(), { nav: 'home' }));
+  if (url.pathname === '/infra') return send(200, 'text/html', await renderPage('infra', infraPage(), { nav: 'infra' }));
+  if (url.pathname === '/tasks') return send(200, 'text/html', await renderPage('tasks', tasksPage(), { nav: 'tasks' }));
+  if (url.pathname === '/android') return send(200, 'text/html', await renderPage('android', androidPage(), { nav: 'android' }));
+  if (url.pathname === '/pages') return send(200, 'text/html', await renderPage('pages', pagesPage(), { nav: 'pages' }));
+  if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
+  if (url.pathname === '/stats') return send(200, 'text/html', await renderPage('stats', statsPage(), { nav: 'stats' }));
+  if (url.pathname === '/backends') return send(200, 'text/html', await renderPage('backends', backendsPage(), { nav: 'backends' }));
   send(404, 'text/plain', 'not found');
 });
 

@@ -27,12 +27,16 @@ export async function reposPage() {
     <div class="l2">${tot} tasks (${ok} ok / ${bad} failed) · last activity: ${esc(last ?? '—')}</div>
   </a>`;
   }))).join('');
-  return `<h1>managed repos</h1>${hookLine}
+  return {
+    html: `<h1>managed repos</h1>${hookLine}
 <div class="list">${rows}</div>
-<p class="meta">repos self-enroll: mention <code>@pi</code> or <code>@opencode</code> on an issue in ANY repo — 00-tea persists it and grants the bot write access automatically. <code>AGENTD_REPOS</code> in .env pins repos (no ✕); the ✕ removes a self-enrolled repo (its bot collaborator grant stays in Gitea — remove it there too if you want it gone)</p>
-<script>document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);
+<p class="meta">repos self-enroll: mention <code>@pi</code> or <code>@opencode</code> on an issue in ANY repo — 00-tea persists it and grants the bot write access automatically. <code>AGENTD_REPOS</code> in .env pins repos (no ✕); the ✕ removes a self-enrolled repo (its bot collaborator grant stays in Gitea — remove it there too if you want it gone)</p>`,
+    script: `<script>window.__pageInit = function(){
+document.querySelectorAll('a.gl').forEach(a=>a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo);
 document.querySelectorAll('span.del').forEach(s=>s.onclick=(e)=>{e.preventDefault();e.stopPropagation();
   if (!confirm('remove '+s.dataset.repo+' from managed repos?')) return;
   fetch('/api/repos/'+encodeURIComponent(s.dataset.repo),{method:'DELETE'}).then(()=>location.reload());
-});</script>`;
+});
+};</script>`,
+  };
 }
