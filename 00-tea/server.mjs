@@ -427,7 +427,7 @@ function agentReviewPrompt({ issue, pr, refs, request }) {
     ? `The work is in PR #${pr}:
 BASE=$(curl -s -H "Authorization: token $AGENT_TOKEN" "$GITEA_API/repos/$GITEA_REPO/pulls/${pr}" | jq -r .base.ref)
 git fetch origin "pull/${pr}/head" && git checkout FETCH_HEAD && git fetch origin "$BASE"
-Review the diff: git diff "origin/${BASE}"...HEAD`
+Review the diff: git diff "origin/\${BASE}"...HEAD`
     : refs.map((r) =>
         r.old.replace(/0/g, '') === ''
           ? `git fetch origin "\${r.ref#refs/heads/}" && git diff $(git merge-base origin/main ${r.new})..${r.new}`
