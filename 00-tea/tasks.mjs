@@ -9,6 +9,7 @@ import { apiGet, apiPost } from './gitea.mjs';
 import { pickModel } from './llama.mjs';
 import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt } from './prompts.mjs';
 import { enqueueReview, enqueueRework } from './queue.mjs';
+import { setKick, kick } from './kick.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -291,6 +292,10 @@ export async function pump() {
       .run(String(e.message).slice(0, 2000), t.id);
   } finally {
     active--;
+    kick(); // a slot just freed — start the next queued task now
   }
 }
+setKick(pump);
+// 2s tick is a safety net (e.g. tasks queued while 00-tea was down); the
+// usual path is the event kick from enqueue()/pump() above
 setInterval(pump, 2000).unref?.();

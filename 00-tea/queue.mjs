@@ -1,6 +1,7 @@
 import { CFG, MARKER, MENTIONS } from './config.mjs';
 import { db } from './db.mjs';
 import { isManaged } from './repos.mjs';
+import { kick } from './kick.mjs';
 
 // ── enqueue ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(eventId ?? null, comment.id, repo, issue, agent, kind, comment.path ?? null, comment.line ?? null, body);
   console.log(`[enqueue] task for ${repo}#${issue} @${agent} (${kind}, comment ${comment.id})`);
+  kick(); // start it now, don't wait for the 2s pump tick
 }
 
 // Internal review-chain tasks: enqueued by 00-tea itself (never via the
@@ -40,6 +42,7 @@ export function enqueueReview(work, logText) {
      VALUES (?, ?, 'review', 'agent-review', ?, ?, ?, ?)`
   ).run(work.repo, work.issue, work.body ?? null, work.id, work.round ?? 1, pr ? +pr : null);
   console.log(`[review] task ${work.id} pushed → review enqueued (round ${work.round ?? 1}${pr ? `, PR #${pr}` : ''})`);
+  kick();
 }
 
 export function enqueueRework(review, concerns) {
@@ -51,4 +54,5 @@ export function enqueueRework(review, concerns) {
      VALUES (?, ?, ?, 'rework', ?, ?, ?, ?)`
   ).run(review.repo, review.issue, work?.agent ?? 'pi', concerns, review.id, (review.round ?? 1) + 1, review.pr ?? null);
   console.log(`[review] task ${review.id} verdict=fail → rework enqueued (round ${(review.round ?? 1) + 1}, @${work?.agent ?? 'pi'})`);
+  kick();
 }
