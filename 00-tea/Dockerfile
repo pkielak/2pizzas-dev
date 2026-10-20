@@ -6,8 +6,7 @@ FROM node:22-alpine
 RUN apk add --no-cache docker-cli
 
 WORKDIR /app
-COPY server.mjs ./
-COPY assets/ ./assets/
+COPY . ./
 RUN mkdir -p /data/work /data/logs
 
 VOLUME /data

@@ -79,8 +79,10 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   marked `failure` (`[00-tea] no-action` marker). Don't drop the enforcement
   block from the bootstrap or the marker check in `runTask()`.
 - **UI / observability**: dashboard at `http://127.0.0.1:3001` — `/` is a home
-  page (latest tasks + android builds + pages status), `/tasks` the full task
-  list, `/android` the latest builds on `android-runner` (admin actions-runs
+  page (latest tasks + android builds + pages status), `/infra` a live SVG
+  block diagram of the whole stack (Gitea → webhook → 00-tea → runsc agent
+  jobs → llama.cpp, runners, pages, chat — dots from `docker ps`),
+  `/tasks` the full task list, `/android` the latest builds on `android-runner` (admin actions-runs
   API via `ADMIN_TOKEN`; a run counts as android iff one of its jobs carries
   the `android` label — the runs API itself doesn't expose labels), `/pages`
   the gh-pages sites (driven by `PAGES_SITES` in `.env`: `repo:port:container`
@@ -164,7 +166,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
-| `00-tea/server.mjs` | the dispatcher: webhook receiver, sqlite queue, task runner, UI, agent chat (pi RPC / opencode serve bridge) |
+| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `llama.mjs` (model pick), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC / opencode serve bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |

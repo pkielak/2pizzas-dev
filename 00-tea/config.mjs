@@ -1,0 +1,46 @@
+// 00-tea configuration — everything is env-injected by docker-compose (.env).
+export const CFG = {
+  port: +(process.env.PORT || 3001),
+  dataDir: process.env.DATA_DIR || '/data',
+  secret: process.env.WEBHOOK_SECRET || '',
+  agentToken: process.env.AGENT_TOKEN || '',
+  giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
+  giteaHost: process.env.GITEA_HOST || 'host.docker.internal:3000', // reachable from JOB containers
+  // seed list of managed repos — self-enrolling (an @agent mention on an
+  // unmanaged repo persists it in managed_repos and grants the bot write
+  // access) makes this a convenience, not a gate
+  repos: (process.env.AGENTD_REPOS || '').split(',').map((s) => s.trim()).filter(Boolean),
+   images: {
+    pi: process.env.AGENT_IMAGE_PI || 'agent-sandbox:pi',
+    opencode: process.env.AGENT_IMAGE_OPENCODE || 'agent-sandbox:opencode',
+    review: process.env.AGENT_IMAGE_REVIEW || 'agent-sandbox:review',
+  },
+  reviewToken: process.env.REVIEW_TOKEN || '',        // bot token, READ scope — reviewer clone
+  reviewMaxRounds: +(process.env.REVIEW_MAX_ROUNDS || 3),
+  botLogin: process.env.BOT_LOGIN || 'bot',
+  botEmail: process.env.BOT_EMAIL || 'bot@localhost',
+  themeUser: process.env.AGENTD_THEME_USER || 'admin',   // whose Gitea theme the UI mirrors
+  giteaContainer: process.env.GITEA_CONTAINER || 'gitea',  // theme asset discovery (docker exec grep on the binary)
+  giteaDbContainer: process.env.GITEA_DB_CONTAINER || 'gitea-db-1',
+  giteaDbUser: process.env.GITEA_DB_USER || 'postgres',
+  giteaDbName: process.env.GITEA_DB_NAME || 'gitea',
+  adminToken: process.env.ADMIN_TOKEN || '', // admin-scope token — actions runs API
+  pagesSites: (process.env.PAGES_SITES || '').split(',').map((s) => s.trim()).filter(Boolean),
+  chatToken: process.env.CHAT_TOKEN || '',   // optional gate for /chat + /api/chat* (UI is tailnet-reachable)
+  // /chat agents act as the separate "chat" Gitea user (audit separation from
+  // task work): the token goes into the chat containers; per-repo WRITE
+  // access is still gated by collaborator grants (managed from the /chat UI)
+  chatGiteaToken: process.env.CHAT_GITEA_TOKEN || '',
+  chatLogin: process.env.CHAT_LOGIN || 'chat',
+  chatIdleMs: +(process.env.CHAT_IDLE_MINUTES || 30) * 60_000,  // kill idle chat containers
+  chatNetwork: process.env.CHAT_NETWORK || 'gitea_gitea',  // chat containers join it (reached by name)
+  pollIntervalMs: 60_000,
+  concurrency: 1,
+  llamaUrl: (process.env.LLAMA_CPP_URL || 'http://localhost:8080').replace(/\/+$/, ''),
+};
+
+export const MARKER = '<!-- via:agent -->';
+export const MENTIONS = [
+  { agent: 'pi', re: /@pi\b/ },
+  { agent: 'opencode', re: /@opencode\b/ },
+];
