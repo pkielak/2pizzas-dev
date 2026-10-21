@@ -7,8 +7,8 @@ import { CFG, MARKER } from './config.mjs';
 import { db, readLog, logPath } from './db.mjs';
 import { apiGet, apiPost } from './gitea.mjs';
 import { pickModel } from './llama.mjs';
-import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt } from './prompts.mjs';
-import { enqueueReview, enqueueRework } from './queue.mjs';
+import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt, infraPrompt } from './prompts.mjs';
+import { enqueueReview, enqueueRework, onTaskFailure } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
 import { liveBroadcast } from './live.mjs';
 
@@ -38,19 +38,25 @@ async function runTask(t) {
       t.kind === 'rework'
         ? t.body ?? ''                                    // the reviewer's concerns
         : stripMention(t.body ?? '', parent?.agent ?? t.agent);
+    const isInfra = t.agent === 'infra';
+    if (isInfra && !CFG.infraHostRepo)
+      throw new Error('INFRA_HOST_REPO not set — cannot run the infra agent');
+
     const prompt =
-      t.kind === 'review'
-        ? reviewPrompt({ issue: t.issue, request, cpath: t.cpath, line: t.line })
-        : t.kind === 'agent-review'
-          ? agentReviewPrompt({
-              issue: t.issue,
-              pr: t.pr ?? null,
-              refs: parseRefs(parent ? readLog(parent.id) : ''),
-              request,
-            })
-          : t.kind === 'rework'
-            ? reworkPrompt({ issue: t.issue, pr: t.pr ?? null, request })
-            : commentPrompt({ issue: t.issue, title: issueInfo.title, body: issueInfo.body, isPull, request });
+      t.agent === 'infra'
+        ? infraPrompt({ issue: t.issue, request })
+        : t.kind === 'review'
+          ? reviewPrompt({ issue: t.issue, request, cpath: t.cpath, line: t.line })
+          : t.kind === 'agent-review'
+            ? agentReviewPrompt({
+                issue: t.issue,
+                pr: t.pr ?? null,
+                refs: parseRefs(parent ? readLog(parent.id) : ''),
+                request,
+              })
+            : t.kind === 'rework'
+              ? reworkPrompt({ issue: t.issue, pr: t.pr ?? null, request })
+              : commentPrompt({ issue: t.issue, title: issueInfo.title, body: issueInfo.body, isPull, request });
 
     // 2a. model selection — prefer a model the router already has loaded
     //     (lazy-loading another 27B+ model fails while one is resident).
@@ -143,14 +149,28 @@ fi
     const delim = () => `EOF_${crypto.randomBytes(6).toString('hex')}`;
     const dPrompt = delim(), dPost = delim(), dJq = delim(), dOc = delim();
     // (dJq: the name is historical — it now carries the node filter)
+    // infra: the live infra repo is bind-mounted read-only at /infra-src;
+    // clone a container-local COPY from it (edits must not touch the host
+    // repo's .git) and repoint origin at the bot-authenticated remote so
+    // pushes attribute to the bot.
+    const cloneSection = isInfra
+      ? `echo '$ infra repo (live copy bind-mounted at /infra-src)'
+# the host repo is owned by the host user, not the container's root
+git config --global --add safe.directory /infra-src
+git config --global --add safe.directory /infra-src/.git
+git clone -q /infra-src repo
+cd repo
+git remote set-url origin "$CLONE_URL"
+`
+      : `echo '$ git clone ${t.repo}'
+git clone -q "$CLONE_URL" repo
+cd repo
+`;
     const bootstrap = `
 set -e
 mkdir -p /work && cd /work
 date -u +%Y-%m-%dT%H:%M:%S > /tmp/start-iso.txt
-echo '$ git clone ${t.repo}'
-git clone -q "$CLONE_URL" repo
-cd repo
-git config user.name "$BOT_NAME"
+${cloneSection}git config user.name "$BOT_NAME"
 git config user.email "$BOT_EMAIL"
 # BEFORE-snapshot of remote refs must be taken INSIDE the repo (a failure
 # here is fatal — an empty snapshot would make the later diff a false
@@ -173,8 +193,8 @@ ${dPrompt}
 PROMPT="$(cat /tmp/prompt.txt)"
 export PROMPT
 echo ''
-echo '$ ${t.agent} agent (runsc sandbox${modelSel ? `, model ${modelSel.id}` : ''})'
-` + (t.agent === 'pi'
+echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandbox'}${modelSel ? `, model ${modelSel.id}` : ''})'
+` + ((t.agent === 'pi' || t.agent === 'infra') // infra is pi-based
       ? `bash -o pipefail -c \'pi -p --mode json --model "llama.cpp/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .00-tea/output_filter.mjs\'\n` +
         // pi >= 0.82: the SESSION-end event is `agent_settled` — emitted in
         // prompt()'s finally, AFTER `agent_end` and all post-run processing
@@ -196,15 +216,23 @@ echo '$ ${t.agent} agent (runsc sandbox${modelSel ? `, model ${modelSel.id}` : '
         '  exit 1\nfi\necho "[00-tea] agent finished OK"') + enforce;
     const b64 = Buffer.from(bootstrap).toString('base64');
 
-    say(`$ docker run --rm --runtime=runsc ${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
+    say(`$ docker run --rm ${isInfra ? '(runc + host docker socket) ' : '--runtime=runsc '}${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
 
-    // 3. run the agent in a fresh gVisor-sandboxed container
+    // 3. run the agent in a fresh container. Every agent runs in the gVisor
+    // sandbox EXCEPT infra: it repairs the stack, so it runs on runc with the
+    // host docker socket + the live infra repo mounted read-only (the docker
+    // socket is the trust boundary — same as 00-tea itself).
     await new Promise((resolve, reject) => {
-      const child = spawn('docker', [
-        'run', '--rm',
-        '--runtime=runsc',
-        '--add-host=gitea:host-gateway',
-        '--add-host=host.docker.internal:host-gateway',
+    const dockerArgs = [
+      'run', '--rm',
+      ...(isInfra ? [] : ['--runtime=runsc']),
+      ...(isInfra
+        ? ['--name', `tea-infra-${t.id}`,
+           '-v', `${CFG.infraHostRepo}:/infra-src:ro`,
+           '-v', '/var/run/docker.sock:/var/run/docker.sock']
+        : []),
+      '--add-host=gitea:host-gateway',
+      '--add-host=host.docker.internal:host-gateway',
         // agent-review runs on the READ-ONLY token for everything (clone +
         // API): the reviewer physically cannot push or post — 00-tea posts
         // its comment from the task log.
@@ -217,7 +245,8 @@ echo '$ ${t.agent} agent (runsc sandbox${modelSel ? `, model ${modelSel.id}` : '
         '-e', `GITEA_API=http://${CFG.giteaHost}/api/v1`,
         '-e', `GITEA_REPO=${t.repo}`,
         CFG.images[t.agent], 'sh', '-c', 'sh -c "$(printf %s "$BOOTSTRAP_B64" | base64 -d)"',
-      ]);
+    ];
+    const child = spawn('docker', dockerArgs);
       const onOut = (d) => {
         const s = d.toString();
         say(s);
@@ -294,6 +323,7 @@ export async function pump() {
     db.prepare(`UPDATE tasks SET status='failure', finished_at=datetime('now'), error=? WHERE id=?`)
       .run(String(e.message).slice(0, 2000), t.id);
     liveBroadcast('tasks');
+    onTaskFailure(t, e.message); // infra-class → retry once + wake the infra agent
   } finally {
     active--;
     kick(); // a slot just freed — start the next queued task now

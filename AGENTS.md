@@ -43,6 +43,19 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   `[00-tea] ref:` / `[00-tea] pr:` log lines carry the pushed refs + PR
   number into the chain. Don't drop those marker lines, the review-body
   markers, or the verdict parse in `afterTask()`.
+- **Infra agent** (`agent-sandbox:infra`, `@infra` on the infra repo):
+  repairs the stack itself. It is the ONLY agent that runs on **runc** with
+  the host **docker socket** + the live infra repo bind-mounted read-only
+  (`INFRA_HOST_REPO` → `/infra-src`; the bootstrap clones a container-local
+  copy, so host `.git` is never touched). `onTaskFailure()` classifies
+  failures: infra-class (exit 143/137/130, docker/host errors) → the victim
+  is **retried once** (`tasks.retried_of`) AND an `agent-infra` task is
+  enqueued on a freshly opened incident issue (one per
+  `INFRA_COOLDOWN_MINUTES` window — later failures append to the existing
+  issue). Infra tasks never chase themselves. Infra code changes go to a
+  branch+PR and are reviewed by the normal chain; ops actions (rebuild,
+  `up -d`) it executes directly.
+- **For both** agents it queries the llama.cpp router (`LLAMA_CPP_URL` in
   For **both** agents it queries the llama.cpp router (`LLAMA_CPP_URL` in
   `.env`, `/v1/models`) and passes `--model llama.cpp/<id>`: the baked default
   model if it is **loaded**, otherwise whatever model is **loaded**
@@ -178,6 +191,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `runner/android/Dockerfile` | `gitea-android:latest` job image: JDK 21 + Android SDK + warm `~/.gradle` (label `android`) |
 | `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops` / `:review`) |
 | `agent-sandbox/review/skills/code-review/SKILL.md` | the reviewer's baked review skill (opencode skill dir) |
+| `agent-sandbox/infra/Dockerfile` | `agent-sandbox:infra` = pi + docker-cli (runc + docker socket, see infra agent) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model provider (llama.cpp, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
@@ -208,6 +222,7 @@ docker build -t agent-sandbox:base agent-sandbox
 docker build -t agent-sandbox:pi agent-sandbox/pi
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
 docker build -t agent-sandbox:ops agent-sandbox/ops
+docker build -t agent-sandbox:infra agent-sandbox/infra
 docker run --rm --entrypoint sh agent-sandbox:pi -c '<smoke test>'
 
 # Android job image (android-runner, label `android`)
@@ -348,5 +363,6 @@ revived it should run through 00-tea, not a dedicated runner.
 | chat | `curl -X POST :3001/api/chat -d '{"agent":"pi"}'` → `POST /api/chat/<id>/message` → SSE `/chat/<id>/stream` shows `text_delta`…`agent_settled` (pi) / `message.part.updated`…`session.idle` (opencode); `DELETE /api/chat/<id>` removes the container |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
+| infra agent | `@infra` on an issue in `INFRA_REPO` → task runs (runc, `docker ps` works inside); a task killed with 143/137 → retry task + `agent-infra` task on a new incident issue within the cooldown |
 | `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
 | end-to-end | full loop: `@pi` comment → task `success` → `bot` reply with `<!-- via:agent -->` on the issue |

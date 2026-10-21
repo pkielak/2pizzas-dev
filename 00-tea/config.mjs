@@ -14,9 +14,17 @@ export const CFG = {
     pi: process.env.AGENT_IMAGE_PI || 'agent-sandbox:pi',
     opencode: process.env.AGENT_IMAGE_OPENCODE || 'agent-sandbox:opencode',
     review: process.env.AGENT_IMAGE_REVIEW || 'agent-sandbox:review',
+    infra: process.env.AGENT_IMAGE_INFRA || 'agent-sandbox:infra',
   },
   reviewToken: process.env.REVIEW_TOKEN || '',        // bot token, READ scope — reviewer clone
   reviewMaxRounds: +(process.env.REVIEW_MAX_ROUNDS || 3),
+  // @infra agent: repairs the stack itself. The only agent that runs on runc
+  // with the host docker socket + the infra repo bind-mounted (see tasks.mjs).
+  // Auto-enqueued on infra-class failures (cooldown: one incident per window);
+  // @infra on the infra repo works it manually.
+  infraRepo: process.env.INFRA_REPO || 'owner/gitea-with-agents',
+  infraHostRepo: process.env.INFRA_HOST_REPO || '', // host path of the infra repo
+  infraCooldownMs: +(process.env.INFRA_COOLDOWN_MINUTES || 15) * 60_000,
   botLogin: process.env.BOT_LOGIN || 'bot',
   botEmail: process.env.BOT_EMAIL || 'bot@localhost',
   themeUser: process.env.AGENTD_THEME_USER || 'admin',   // whose Gitea theme the UI mirrors
@@ -43,4 +51,5 @@ export const MARKER = '<!-- via:agent -->';
 export const MENTIONS = [
   { agent: 'pi', re: /@pi\b/ },
   { agent: 'opencode', re: /@opencode\b/ },
+  { agent: 'infra', re: /@infra\b/ },
 ];

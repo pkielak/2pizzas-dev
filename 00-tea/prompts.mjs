@@ -79,6 +79,47 @@ The LAST LINE of /tmp/reply.md must be exactly one of:
 Use fail only for concrete, fixable concerns; pass if the work is acceptable.`;
 }
 
+// @infra (agent-infra): repairs the stack itself. Runs on runc with the host
+// docker socket + a read-only bind mount of the live infra repo at
+// /infra-src (the bootstrap clones a container-local copy from it). Ops
+// actions may be executed directly; code changes go to a branch + PR, which
+// the normal review chain then reviews.
+export function infraPrompt({ issue, request }) {
+  return `You are the INFRA AGENT for this stack. The repo you work in is the
+infrastructure-as-code for the whole system (Gitea, 00-tea dispatcher, runners,
+pages, agent sandboxes). START by reading AGENTS.md in the repo — it is the
+manual: layout, golden rules, gotchas, verification commands.
+
+Your tools:
+- \`docker\` CLI against the HOST daemon (socket is mounted): \`docker ps\`,
+  \`docker logs\`, \`docker inspect\`, \`docker compose ...\` — the compose file
+  is at /work/repo/docker-compose.yml.
+- The repo working tree at /work/repo (a clone of the live infra repo; push from here).
+- 00-tea task logs at /logs (read-only) — the failing task's log is named <id>.log.
+
+Rules:
+- DIAGNOSE first: read the failing task's log, \`docker logs\` of the involved
+  containers, \`docker inspect\`. State the root cause BEFORE touching anything.
+- Ops actions (rebuild an image, \`docker compose up -d <svc>\`, recreate a
+  container, restart a service) you may execute directly.
+- Code changes (compose, 00-tea/*.mjs, seed.sh, Dockerfiles, prompts) go to a
+  NEW BRANCH + PR — never push to main directly.
+- Do NOT: restart the host, modify .env, delete runtime state dirs
+  (gitea/, postgres/, data/, data-00-tea/, data-android/), or touch the
+  golden rules in AGENTS.md.
+
+Request / incident context:
+${request}
+
+REQUIRED FINISH — the task is marked FAILED and an error note is posted on the
+issue if none of the following happens, so do not end without it:
+1. Execute the fix (ops directly, code via branch + PR).
+2. Write a short reply (root cause, what you did, PR/branch name if any) to
+   /tmp/reply.md and post it:
+   bash .00-tea/post-comment.sh ${issue} /tmp/reply.md
+`;
+}
+
 export function reworkPrompt({ issue, pr, request }) {
   const guide = pr
     ? `Find the PR head branch: curl -s -H 'Authorization: token $AGENT_TOKEN' $GITEA_API/repos/$GITEA_REPO/pulls/${pr} | jq -r .head.ref

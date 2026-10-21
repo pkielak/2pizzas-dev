@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS managed_repos (
 for (const col of ['body TEXT', 'model TEXT', 'model_ctx INTEGER', 'tokens INTEGER',
   'parent_id INTEGER',  // review chain: the task this one was spawned by
   'round INTEGER',      // work round (1 = original, N+1 = rework after review N)
-  'pr INTEGER']) {      // PR the work landed in (known at review-enqueue time)
+  'pr INTEGER',         // PR the work landed in (known at review-enqueue time)
+  'retried_of INTEGER']) { // set when this task is the auto-retry of a failed one
   try { db.exec(`ALTER TABLE tasks ADD COLUMN ${col}`); } catch { /* already present */ }
 }
 db.exec('UPDATE tasks SET round = 1 WHERE round IS NULL'); // backfill pre-chain rows

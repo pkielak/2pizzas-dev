@@ -142,6 +142,13 @@ services:
       - REVIEW_TOKEN=${REVIEW_TOKEN}   # read-only bot token — reviewer clone (review chain)
       - AGENT_IMAGE_REVIEW=${AGENT_IMAGE_REVIEW:-agent-sandbox:review}
       - REVIEW_MAX_ROUNDS=${REVIEW_MAX_ROUNDS:-3}
+      # @infra agent: repairs the stack (runc + host docker socket + the infra
+      # repo bind-mounted read-only; see 00-tea/tasks.mjs). Auto-enqueued on
+      # infra-class failures; @infra on the infra repo works it manually.
+      - AGENT_IMAGE_INFRA=${AGENT_IMAGE_INFRA:-agent-sandbox:infra}
+      - INFRA_REPO=${INFRA_REPO:-owner/gitea-with-agents}
+      - INFRA_HOST_REPO=${INFRA_HOST_REPO:-}
+      - INFRA_COOLDOWN_MINUTES=${INFRA_COOLDOWN_MINUTES:-15}
       - GITEA_API=http://gitea:3000/api/v1
       - GITEA_HOST=host.docker.internal:3000
       - BOT_LOGIN=bot
