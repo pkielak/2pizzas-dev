@@ -42,8 +42,7 @@ export async function androidPage() {
   if (!CFG.adminToken) err = 'ADMIN_TOKEN not set — cannot list actions runs (add it to 00-tea in docker-compose.yml)';
   else { try { runs = await androidRuns(30); } catch (e) { err = e.message; } }
   return {
-    html: `<h1>android builds</h1>
-${err ? `<p class="err">${esc(err)}</p>` : ''}
+    html: `${err ? `<p class="err">${esc(err)}</p>` : ''}
 <div class="list">${runs.length ? runRows(runs) : '<div class="item"><div class="l2">no android builds yet — jobs opt in with <code>runs-on: android</code></div></div>'}</div>
 <p class="meta">built on <code>android-runner</code> (label <code>android</code>, image <code>gitea-android:latest</code>: JDK 21 + Android SDK + warm ~/.gradle) — separate from <code>my-runner</code> (ordinary CI)</p>`,
     script: `<script>window.__pageInit = function(){ glinkFix(); };</script>`,

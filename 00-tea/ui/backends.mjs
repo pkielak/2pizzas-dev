@@ -33,7 +33,7 @@ export async function backendsPage() {
     return `<p class="meta">${esc(b.name)} — <code>${esc(b.url)}</code></p><div class="list">${rows}</div>`;
   }).join('');
 
-  return `<h1>backends</h1>${agents}
+  return `${agents}
 <h2>inference</h2>${provs}
 <p class="meta">model selection for pi: baked default if it is loaded → else whichever model is loaded → else the default (lazy-load). one local llama.cpp endpoint for now; the backend list is shaped to accept another local endpoint on the network later.</p>`;
 }

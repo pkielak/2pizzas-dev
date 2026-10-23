@@ -3,7 +3,7 @@ import { esc, fmtTok } from './layout.mjs';
 
 export function statsPage() {
   const total = db.prepare('SELECT COUNT(*) n FROM tasks').get().n;
-  if (!total) return `<h1>stats</h1><p class="meta">no tasks yet</p>`;
+  if (!total) return `<p class="meta">no tasks yet</p>`;
   const st = {};
   for (const r of db.prepare('SELECT status, COUNT(*) n FROM tasks GROUP BY status').all()) st[r.status] = r.n;
   const tok = db.prepare('SELECT COUNT(*) n, SUM(tokens) s, AVG(tokens) a, MAX(tokens) m FROM tasks WHERE tokens IS NOT NULL').get();
@@ -19,8 +19,7 @@ export function statsPage() {
   const maxDay = Math.max(1, ...daily.map((d) => d.n));
   const tk = (v) => (v == null ? '—' : fmtTok(Math.round(v)));
 
-  return `<h1>stats</h1>
-<p class="meta">${total} tasks · <span class="success">${st.success ?? 0} success</span> · <span class="failure">${st.failure ?? 0} failed</span>${st.running ? ` · <span class="running">${st.running} running</span>` : ''}${st.queued ? ` · <span class="queued">${st.queued} queued</span>` : ''}</p>
+  return `<p class="meta">${total} tasks · <span class="success">${st.success ?? 0} success</span> · <span class="failure">${st.failure ?? 0} failed</span>${st.running ? ` · <span class="running">${st.running} running</span>` : ''}${st.queued ? ` · <span class="queued">${st.queued} queued</span>` : ''}</p>
 <h2>tokens</h2><div class="list"><div class="item">
   <div class="l1">${tk(tok.s)} total</div>
   <div class="l2">${tok.n} tasks measured · avg ${tk(tok.a)} · max ${tk(tok.m)} per task</div>

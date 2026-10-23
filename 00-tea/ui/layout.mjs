@@ -6,9 +6,9 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 
 function sidebar(active) {
   // gitea link resolved client-side: same host as the UI, port 3000
-  // mobile: off-canvas drawer toggled by #navToggle, closed by backdrop or nav click
-  return `<button id="navToggle" aria-label="menu">☰</button>
-<div id="backdrop"></div>
+  // mobile: off-canvas drawer toggled by #navToggle (in the top bar),
+  // closed by backdrop or nav click
+  return `<div id="backdrop"></div>
 <aside class="sidebar" id="sidebar"><span class="brand">00-tea</span>
 <a class="navl${active === 'home' ? ' on' : ''}" href="/">home</a>
 <a class="navl${active === 'infra' ? ' on' : ''}" href="/infra">infra</a>
@@ -61,9 +61,11 @@ export function page(title, bodyHtml, { auto = true, nav = null, app = false, sc
   const th = giteaTheme();
   const live = auto ? LIVE_SCRIPT : '';
   const side = nav ? sidebar(nav) : '';
+  // title bar: brand + current page, fixed top on mobile AND desktop
+  const top = nav ? `<header id="topbar"><button id="navToggle" aria-label="menu">☰</button><a class="tbrand" href="/">00-tea</a><span class="pgtitle">${esc(title)}</span></header>` : '';
   // Colors come from Gitea's theme CSS (served same-origin, see giteaTheme());
   // every var() has a hardcoded dark fallback so the UI works if Gitea is down.
-  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><title>${esc(title)} — 00-tea</title>
+  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} — 00-tea</title>
 <link rel="stylesheet" href="/assets/gitea-theme.css">
 <script>function glinkFix(){document.querySelectorAll('a.glink').forEach(function(a){a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo+'/actions/runs/'+a.dataset.run;});}</script>
 <style>
@@ -75,14 +77,20 @@ h1{font-size:20px;font-weight:700;letter-spacing:-.01em}
 h2{font-size:13px;font-weight:600;margin:22px 0 8px;color:var(--color-text-light-2,#aab);text-transform:uppercase;letter-spacing:.04em}
 /* mobile-first: off-canvas drawer; desktop (>=768px) pins it open */
 .layout{min-height:100vh}
-main{min-width:0;padding:16px;padding-top:56px;max-width:960px}
+main{min-width:0;padding:16px;padding-top:64px;max-width:960px}
+/* title bar: fixed top, full width on mobile, right of the sidebar on desktop */
+#topbar{position:fixed;top:0;left:0;right:0;height:48px;z-index:20;display:flex;align-items:center;gap:10px;padding:0 14px;line-height:1;background:var(--color-nav-bg,#0c0c0c);border-bottom:1px solid var(--color-light-border,#2a2a2a)}
+/* line-height:1 centers the em box, but glyphs (cap-height, no descenders
+   used) sit ~1px above the em center — nudge them back down */
+.tbrand{position:relative;top:1px;font-weight:700;font-size:15px;letter-spacing:-.02em;line-height:1;color:var(--color-text,#eee);text-decoration:none}
+.pgtitle{position:relative;top:2px;margin:0;font-size:13.5px;font-weight:600;line-height:1;color:var(--color-text-light-2,#bbb);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* full-height app layout (chat): header top, messages fill, input pinned bottom */
 main.app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .chatapp{flex:1;min-height:0;display:flex;flex-direction:column;max-width:960px;width:100%;margin:0 auto}
 .sidebar{position:fixed;top:0;left:0;height:100vh;width:200px;z-index:30;background:var(--color-nav-bg,#0c0c0c);border-right:1px solid var(--color-light-border,#2a2a2a);padding:18px 12px;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .18s ease-out}
 .sidebar.open{transform:none}
 .sidebar .brand{font-weight:700;font-size:15px;letter-spacing:-.02em;color:var(--color-text,#eee);padding:0 10px 18px}
-#navToggle{position:fixed;top:12px;left:12px;z-index:40;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#7ab);font:14px -apple-system,system-ui,sans-serif;padding:5px 11px;cursor:pointer}
+#navToggle{background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#7ab);font:14px -apple-system,system-ui,sans-serif;line-height:1;padding:6px 11px;cursor:pointer}
 #backdrop{display:none;position:fixed;inset:0;background:var(--color-overlay-backdrop,rgba(0,0,0,.55));z-index:25}
 #backdrop.show{display:block}
 .navl{display:block;color:var(--color-nav-text,#8ab);text-decoration:none;padding:8px 12px;font-size:13.5px}
@@ -154,11 +162,12 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 @media (min-width:768px){
   .sidebar{transform:none}
   #navToggle,#backdrop{display:none}
-  main{margin-left:200px;padding:28px 32px}
-  main.app{padding:16px 24px 12px}
+  #topbar{left:200px}
+  main{margin-left:200px;padding:68px 32px 28px}
+  main.app{padding:68px 24px 12px}
 }
 </style></head><body>
-<div class="layout${app ? ' app' : ''}">${side}<main class="${app ? 'app' : ''}">${bodyHtml}</main></div>
+<div class="layout${app ? ' app' : ''}">${top}${side}<main class="${app ? 'app' : ''}">${bodyHtml}</main></div>
 ${script}${live}</body></html>`;
 }
 

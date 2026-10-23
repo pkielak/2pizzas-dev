@@ -25,8 +25,7 @@ export async function homePage() {
   const runningN = db.prepare("SELECT COUNT(*) n FROM tasks WHERE status IN ('queued','running')").get().n;
   const runN = runs.filter((r) => ['queued', 'waiting', 'pending', 'running'].includes(r.status)).length;
   return {
-    html: `<h1>home</h1>
-<p class="meta">${runningN ? `<span class="running">${runningN} task${runningN > 1 ? 's' : ''} in flight</span> · ` : ''}${latestTask ? `last task ${esc(latestTask.status)} at ${esc(latestTask.created_at)}` : 'no tasks yet'}${runN ? ` · <span class="running">${runN} android build${runN > 1 ? 's' : ''} in flight</span>` : ''}</p>
+    html: `<p class="meta">${runningN ? `<span class="running">${runningN} task${runningN > 1 ? 's' : ''} in flight</span> · ` : ''}${latestTask ? `last task ${esc(latestTask.status)} at ${esc(latestTask.created_at)}` : 'no tasks yet'}${runN ? ` · <span class="running">${runN} android build${runN > 1 ? 's' : ''} in flight</span>` : ''}</p>
 <h2>latest tasks</h2><div class="list">${taskRows(5) || '<div class="item"><div class="l2">no tasks yet</div></div>'}</div>
 <p><a href="/tasks">all tasks →</a></p>
 <h2>latest android builds</h2><div class="list">${runs.length ? runRows(runs) : '<div class="item"><div class="l2">no android builds yet</div></div>'}</div>

@@ -23,7 +23,7 @@ export function taskRows(limit = 100) {
 
 export function tasksPage() {
   const rows = taskRows(100);
-  return `<h1>00-tea tasks</h1><div class="list">${rows}</div>`;
+  return `<div class="list">${rows}</div>`;
 }
 
 export function taskPage(t) {
@@ -34,7 +34,7 @@ export function taskPage(t) {
     kids.length ? `spawned ${kids.map((k) => `<a href="/task/${k}">#${k}</a>`).join(', ')}` : '',
   ].filter(Boolean).join(' · ');
   const head = `<a class="back" href="/tasks">← back to tasks</a>
-<div class="pagehead"><h1>task ${t.id} <span class="${t.status}">${t.status}</span>${t.status === 'running' ? '<span class="live">live</span>' : ''}</h1></div>
+<div class="pagehead"><span class="${t.status}">${t.status}</span>${t.status === 'running' ? '<span class="live">live</span>' : ''}</div>
 <p class="meta">${esc(t.repo)}#${t.issue} · @${esc(t.agent)}${[t.model ? ` · <span class="model">${esc(t.model)}</span>` : '', ctxLine(t)].filter(Boolean).join('')} · ${esc(t.kind)} · created ${esc(t.created_at)}
  · started ${esc(t.started_at ?? '—')} · finished ${esc(t.finished_at ?? '—')}
 ${chain ? `<br>${chain}` : ''}

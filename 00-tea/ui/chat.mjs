@@ -35,8 +35,7 @@ export async function chatListPage() {
 <p class="meta">chat agents act as the separate <code>${esc(CFG.chatLogin)}</code> Gitea user (audit separation from task work). read works everywhere; grant write per repo:</p>
 <div class="list">${repoErr ? `<div class="item"><div class="l2">repo list unavailable: <span class="err">${esc(repoErr)}</span></div></div>` : grantRows || '<div class="item"><div class="l2">no repos on this instance</div></div>'}</div>`;
   }
-  const html = `<h1>agent chat</h1>
-<form id="newchat">
+  const html = `<form id="newchat">
   <select name="agent"><option value="pi">pi</option><option value="opencode">opencode</option></select>
   <button type="submit">start chat</button>
 </form>
@@ -69,7 +68,7 @@ document.querySelectorAll('.grantbtn').forEach(b => b.onclick = async () => {
 export function chatView(c) {
   return `<div class="chatapp">
 <a class="back" href="/chat">← back to chats</a>
-<div class="pagehead"><h1>chat @${esc(c.agent)} <span class="meta">#${c.id}</span></h1><span class="meta" id="chatstate">idle</span></div>
+<div class="pagehead"><span class="meta" id="chatstate">idle</span></div>
 <p class="meta">${c.model ? `model <span class="model">${esc(c.model)}</span> · ` : ''}sandboxed container${CFG.chatGiteaToken ? `, Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted)` : ', no Gitea access'} · <a href="#" id="closechat">close chat</a></p>
 <div id="msgs"></div>
 <div class="chatin">

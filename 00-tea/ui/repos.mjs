@@ -28,7 +28,7 @@ export async function reposPage() {
   </a>`;
   }))).join('');
   return {
-    html: `<h1>managed repos</h1>${hookLine}
+    html: `${hookLine}
 <div class="list">${rows}</div>
 <p class="meta">repos self-enroll: mention <code>@pi</code> or <code>@opencode</code> on an issue in ANY repo — 00-tea persists it and grants the bot write access automatically. <code>AGENTD_REPOS</code> in .env pins repos (no ✕); the ✕ removes a self-enrolled repo (its bot collaborator grant stays in Gitea — remove it there too if you want it gone)</p>`,
     script: `<script>window.__pageInit = function(){
