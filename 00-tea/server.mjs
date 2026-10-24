@@ -26,7 +26,7 @@
  *   tasks.mjs     task runner (runsc job containers) + pump + afterTask
  *   webhook.mjs   Gitea webhook verification + handling
  *   poll.mjs      60s poll fallback (rescues lost webhooks)
- *   chat.mjs      long-lived chat sessions (pi RPC / opencode serve)
+ *   chat.mjs      long-lived chat sessions (pi RPC)
  *   ui/*.mjs      dashboard pages
  *
  * Endpoints:
@@ -38,10 +38,10 @@
  *   GET  /pages        gh-pages sites (last deployed commit per site)
  *   GET  /stats        usage stats (tasks, tokens, models, daily activity)
  *   GET  /backends     agents + inference providers (current setup)
- *   GET  /chat         agent chat — live sessions (pi RPC / opencode serve)
+ *   GET  /chat         agent chat — live sessions (pi RPC)
  *   GET  /chat/<id>    chat view (SSE stream)
  *   GET  /api/chat     active chat sessions
- *   POST /api/chat     start a chat session {agent: 'pi'|'opencode'}
+ *   POST /api/chat     start a chat session {agent: 'pi'}
  *   POST /api/chat/<id>/message   {message}
  *   POST /api/chat/<id>/abort
  *   DELETE /api/chat/<id>
@@ -123,7 +123,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/chat' && req.method === 'POST') {
     if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
     let body = '';
-    req.on('data', (d) => { body += d; });
+    req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
       let agent = '';
       try { agent = JSON.parse(body).agent; } catch { /* empty body */ }
@@ -144,7 +144,7 @@ const server = http.createServer(async (req, res) => {
     if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
     if (!CFG.chatGiteaToken) return send(502, 'application/json', JSON.stringify({ error: 'CHAT_GITEA_TOKEN not configured' }));
     let body = '';
-    req.on('data', (d) => { body += d; });
+    req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
       try {
         const { repo, grant } = JSON.parse(body);
@@ -167,7 +167,7 @@ const server = http.createServer(async (req, res) => {
   if (chatMsgMatch && req.method === 'POST') {
     if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
     let body = '';
-    req.on('data', (d) => { body += d; });
+    req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
       try {
         await chatMessage(+chatMsgMatch[1], JSON.parse(body).message);
@@ -200,6 +200,11 @@ const server = http.createServer(async (req, res) => {
     for (const line of c.lines) res.write(`data: ${line}\n\n`); // replay, then live
     c.clients.add(res);
     req.on('close', () => c.clients.delete(res));
+    // chatKill may have run between chats.get() and the add above (it
+    // clears the client set) — such a response would never be ended, so
+    // end it ourselves (if the kill runs LATER, we are in its client set
+    // and it ends us — the add/check is synchronous, so no gap)
+    if (c.dead) { res.write('event: done\ndata: \n\n'); res.end(); }
     return;
   }
   const chatPageMatch = url.pathname.match(/^\/chat\/(\d+)$/);

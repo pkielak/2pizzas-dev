@@ -36,7 +36,6 @@ export async function chatListPage() {
 <div class="list">${repoErr ? `<div class="item"><div class="l2">repo list unavailable: <span class="err">${esc(repoErr)}</span></div></div>` : grantRows || '<div class="item"><div class="l2">no repos on this instance</div></div>'}</div>`;
   }
   const html = `<form id="newchat">
-  <select name="agent"><option value="pi">pi</option><option value="opencode">opencode</option></select>
   <button type="submit">start chat</button>
 </form>
 <div class="list">${rows || '<div class="item"><div class="l2">no active chats</div></div>'}</div>
@@ -50,8 +49,7 @@ const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
 const form = document.getElementById('newchat');
 if (form) form.onsubmit = async function (e) {
   e.preventDefault();
-  const agent = this.agent.value;
-  const r = await fetch(auth('/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent }) });
+  const r = await fetch(auth('/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent: 'pi' }) });
   const j = await r.json();
   if (r.ok) location.href = '/chat/' + j.id; else alert(j.error || 'failed to start chat');
 };
@@ -77,7 +75,11 @@ export function chatView(c) {
 </div>
 </div>
 <script>
-const agent = ${JSON.stringify(c.agent)};
+// the page was opened with ?token= (when CHAT_TOKEN is set) — every request
+// from this page must carry it forward (EventSource cannot set headers)
+const tk = new URLSearchParams(location.search).get('token');
+const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
+document.querySelector('.back').href = auth('/chat');
 const box = document.getElementById('msgs');
 const stateEl = document.getElementById('chatstate');
 const ta = document.getElementById('msg');
@@ -104,72 +106,61 @@ const setStatus = (text) => {
   box.scrollTop = box.scrollHeight;
 };
 const userMsg = (t) => { curText = null; addEl('muser', escH(t)); };
-const textBlock = (pid) => { curText = addEl('mtext', ''); if (pid) curText.dataset.pid = pid; };
+const textBlock = () => { curText = addEl('mtext', ''); };
 const toolBlock = (name, arg) => addEl('mtool', '⚙ <b>' + escH(name) + '</b> <code>' + escH(String(arg).slice(0, 200)) + '</code>');
 const handle = (line) => {
   let e; try { e = JSON.parse(line); } catch { if (line.startsWith('[00-tea]')) addEl('msettle', escH(line)); return; }
-  // user messages travel through the stream (server-echoed) — the replay on
-  // (re)connect therefore rebuilds the FULL conversation, not just the
-  // agent side
+  // transcript events (user_message, text_block, tool_call, settle, error)
+  // are replayed on (re)connect — they rebuild the FULL conversation;
+  // live events (text_delta, thinking, working, tool_end, auto_retry) are
+  // not replayed — they only drive the status line + incremental text
   if (e.type === 'user_message') { userMsg(e.message); return; }
-  if (agent === 'pi') {
-    const d = e.assistantMessageEvent || {};
-    if (e.type === 'message_update') {
-      if (d.type === 'text_delta') {
-        if (!curText) textBlock();
-        curText.textContent += d.delta;
-        box.scrollTop = box.scrollHeight;
-        setStatus('writing…');
-      } else if (d.type === 'thinking_delta') setStatus('thinking…');
-    } else if (e.type === 'tool_execution_start') {
-      curText = null;
-      toolBlock(e.toolName, e.args && (e.args.command || JSON.stringify(e.args)));
-      setStatus('running ' + e.toolName + '…');
-    } else if (e.type === 'tool_execution_end') setStatus('thinking…');
-    else if (e.type === 'agent_start') setStatus('working…');
-    else if (e.type === 'agent_settled') { curText = null; setStatus(''); addEl('msettle', 'settled'); }
-    else if (e.type === 'auto_retry_start') setStatus('retrying (' + e.attempt + '/' + e.maxAttempts + ')…');
-    else if (e.type === 'response' && e.success === false) { setStatus(''); addEl('merr', 'error: ' + escH(e.error || 'command failed')); }
-  } else {
-    const p = e.properties || {};
-    if (e.type === 'message.part.updated' && p.part) {
-      if (p.part.type === 'reasoning') setStatus('thinking…');
-      else if (p.part.type === 'text') {
-        if (!curText || curText.dataset.pid !== p.part.id) textBlock(p.part.id);
-        curText.textContent = p.part.text; // part.text is cumulative
-        box.scrollTop = box.scrollHeight;
-        if (p.part.text) setStatus('writing…');
-      } else if (p.part.type === 'tool' && p.part.state && p.part.state.status === 'running') {
-        curText = null;
-        toolBlock(p.part.tool, (p.part.state.input && (p.part.state.input.command || JSON.stringify(p.part.state.input))) || '');
-        setStatus('running ' + p.part.tool + '…');
-      }
-    } else if (e.type === 'session.idle') { curText = null; setStatus(''); addEl('msettle', 'done'); }
-    else if (e.type === 'session.error') { setStatus(''); addEl('merr', 'error: ' + escH(JSON.stringify(p.error || p))); }
-  }
+  if (e.type === 'text_delta') {
+    if (!curText || curText.dataset.settled) textBlock(); // a settled block must never receive live deltas
+    curText.textContent += e.delta;
+    box.scrollTop = box.scrollHeight;
+    setStatus('writing…');
+  } else if (e.type === 'text_block') {
+    // settled block: live clients finalize their delta-built block (same
+    // text — a visual no-op), replay clients get it whole; mark it settled
+    // so the next live delta starts a FRESH block
+    if (!curText || curText.dataset.settled) textBlock();
+    curText.textContent = e.text;
+    curText.dataset.settled = 1;
+    box.scrollTop = box.scrollHeight;
+  } else if (e.type === 'tool_call') {
+    curText = null;
+    toolBlock(e.name, e.arg);
+    setStatus('running ' + e.name + '…');
+  } else if (e.type === 'tool_end') setStatus('thinking…');
+  else if (e.type === 'thinking') setStatus('thinking…');
+  else if (e.type === 'working') setStatus('working…');
+  else if (e.type === 'settle') { curText = null; setStatus(''); addEl('msettle', 'settled'); }
+  else if (e.type === 'auto_retry') setStatus('retrying (' + e.attempt + '/' + e.max + ')…');
+  else if (e.type === 'error') { setStatus(''); addEl('merr', 'error: ' + escH(e.message)); }
 };
-const es = new EventSource('/chat/${c.id}/stream');
+const es = new EventSource(auth('/chat/${c.id}/stream'));
 // every (re)connect replays the whole stream from the server — clear on open;
 // statusEl MUST be re-attached: addEl() inserts before it, and insertBefore
 // with a detached reference throws, silently killing all rendering
 es.onopen = () => { box.innerHTML = ''; box.appendChild(statusEl); };
 es.onmessage = (ev) => handle(ev.data);
-es.addEventListener('done', () => { location.href = '/chat'; });
+es.addEventListener('done', () => { location.href = auth('/chat'); });
 async function sendMsg() {
   const t = ta.value.trim();
   if (!t) return;
   ta.value = '';
   setStatus('sending…'); // the bubble arrives via the stream echo
-  const r = await fetch('/api/chat/${c.id}/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: t }) });
+  const r = await fetch(auth('/api/chat/${c.id}/message'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: t }) });
   if (!r.ok) { const j = await r.json().catch(() => ({})); addEl('merr', j.error || 'send failed'); setStatus(''); }
 }
 document.getElementById('send').onclick = sendMsg;
 ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
-document.getElementById('stop').onclick = () => fetch('/api/chat/${c.id}/abort', { method: 'POST' });
+document.getElementById('stop').onclick = () => fetch(auth('/api/chat/${c.id}/abort'), { method: 'POST' });
 document.getElementById('closechat').onclick = async (e) => {
   e.preventDefault();
-  await fetch('/api/chat/${c.id}', { method: 'DELETE' });
-  location.href = '/chat';
+  await fetch(auth('/api/chat/${c.id}'), { method: 'DELETE' });
+  location.href = auth('/chat');
 };
 </script>`;
 }

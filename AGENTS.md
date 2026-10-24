@@ -118,14 +118,22 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   `data-00-tea/theme.json` (10-min TTL); the first page after a cold start
   renders with the fallback palette for ~15s until discovery finishes.
   Finished tasks show the last 400 lines statically.
-- **Agent chat** (`/chat`): live conversations with pi/opencode in
-  LONG-LIVED runsc containers (the counterpart of the one-shot task
-  containers). pi runs `pi --mode rpc` (JSONL over stdin/stdout);
-  opencode runs `opencode serve` (REST + SSE; the model is passed per
-  message — `serve` has no `-m` flag). Both join the `gitea_gitea`
-  compose network (`CHAT_NETWORK`) and are reached by container name —
-  never publish host ports for this (a 127.0.0.1 publish is invisible to
-  the 00-tea container, which is itself a container). Chat containers
+- **Agent chat** (`/chat`): live conversations with pi in LONG-LIVED
+  runsc containers (the counterpart of the one-shot task containers).
+  pi runs `pi --mode rpc` (JSONL over stdin/stdout). The raw pi stream is
+  FILTERED server-side (`piLine()` in `chat.mjs`) before it hits the log,
+  the replay buffer, and the SSE clients — unfiltered it was every
+  text/thinking delta, tool partial results, and `agent_end` carrying the
+  FULL message history (57MB logs, a noise-poisoned replay buffer, tens of
+  MB per reconnect). Two lanes: `chatSay` = transcript events (user
+  messages, settled text blocks, tool calls, settle) → log + replay +
+  clients; `chatLive` = transient deltas/status → clients only. The UI's
+  `text_block` handler finalizes the delta-built block and marks it
+  `settled` so post-reconnect live deltas start a fresh block — don't drop
+  the filter or the settled-block semantics.
+  The container joins the `gitea_gitea` compose network (`CHAT_NETWORK`)
+  and is reached by container name — never publish host ports for this (a 127.0.0.1 publish
+  is invisible to the 00-tea container, which is itself a container). Chat containers
   act as the separate **`chat` Gitea user** (`CHAT_GITEA_TOKEN`,
   write:repository, seeded like the bot): they can read any repo and
   push/post ONLY where granted — per-repo write grants are
@@ -139,7 +147,8 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   Docker's built-in DNS, so the compose service name `gitea` does not
   resolve inside them. They die on 00-tea restart
   (orphans are reaped at startup via the `tea-chat-*` name filter) or
-  after `CHAT_IDLE_MINUTES` (default 30). Optional `CHAT_TOKEN` gates
+  after `CHAT_IDLE_MINUTES` (default 30) — a streaming turn never counts
+  as idle (a long tool run emits no stream events). Optional `CHAT_TOKEN` gates
   `/chat` + `/api/chat*` (the UI is tailnet-reachable). Killing the
   `docker run` client does NOT remove the container — `chatKill()` does
   `docker rm -f` by name (docker 29 no longer prints the container id).
@@ -179,7 +188,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
-| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `llama.mjs` (model pick), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC / opencode serve bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
+| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `llama.mjs` (model pick), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
@@ -360,7 +369,7 @@ revived it should run through 00-tea, not a dedicated runner.
 | compose / `.env` | `docker compose config -q` + recreate the service + `docker exec <container> printenv VAR` |
 | `00-tea/server.mjs` | `node --check`, then `docker compose build 00-tea && up -d`, `curl :3001/healthz` |
 | webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-00-tea` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
-| chat | `curl -X POST :3001/api/chat -d '{"agent":"pi"}'` → `POST /api/chat/<id>/message` → SSE `/chat/<id>/stream` shows `text_delta`…`agent_settled` (pi) / `message.part.updated`…`session.idle` (opencode); `DELETE /api/chat/<id>` removes the container |
+| chat | `curl -X POST :3001/api/chat -d '{"agent":"pi"}'` → `POST /api/chat/<id>/message` → SSE `/chat/<id>/stream` shows `text_delta`…`agent_settled`; `DELETE /api/chat/<id>` removes the container |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
 | infra agent | `@infra` on an issue in `INFRA_REPO` → task runs (runc, `docker ps` works inside); a task killed with 143/137 → retry task + `agent-infra` task on a new incident issue within the cooldown |
