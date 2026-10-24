@@ -42,6 +42,11 @@ export const CFG = {
   chatLogin: process.env.CHAT_LOGIN || 'chat',
   chatIdleMs: +(process.env.CHAT_IDLE_MINUTES || 30) * 60_000,  // kill idle chat containers
   chatNetwork: process.env.CHAT_NETWORK || 'gitea_gitea',  // chat containers join it (reached by name)
+  // resource caps for the long-lived, user-spawned chat containers — inference
+  // runs on the host's llama.cpp, so the container only needs room for node +
+  // git clones + light builds; without caps a runaway chat process is a host DoS
+  chatMemory: process.env.CHAT_MEMORY || '4g',
+  chatCpus: process.env.CHAT_CPUS || '2',
   pollIntervalMs: 60_000,
   concurrency: 1,
   llamaUrl: (process.env.LLAMA_CPP_URL || 'http://localhost:8080').replace(/\/+$/, ''),

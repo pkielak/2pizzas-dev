@@ -181,6 +181,10 @@ export async function createChat(agent) {
   c.child = spawn('docker', [
     'run', '--rm', '-i',
     '--runtime=runsc',
+    // caps on a long-lived, user-spawned container (inference is on the
+    // host's llama.cpp — this is just node + git + light builds)
+    '--memory', CFG.chatMemory,
+    '--cpus', CFG.chatCpus,
     '--network', CFG.chatNetwork,
     '--add-host=host.docker.internal:host-gateway',
     '--name', c.name,

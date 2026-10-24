@@ -165,6 +165,10 @@ services:
       - CHAT_LOGIN=chat
       # network the chat containers join (reached by container name, no port publish)
       - CHAT_NETWORK=${CHAT_NETWORK:-gitea_gitea}
+      # resource caps for the long-lived chat containers (inference is on the
+      # host's llama.cpp — the container only needs node + git + light builds)
+      - CHAT_MEMORY=${CHAT_MEMORY:-4g}
+      - CHAT_CPUS=${CHAT_CPUS:-2}
       # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
       - GITEA_DB_USER=${POSTGRES_USER}
       - GITEA_DB_NAME=${POSTGRES_DB}

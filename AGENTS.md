@@ -146,7 +146,13 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   collaborator permissions managed from the `/chat` UI
   (`POST /api/chat/grant`, tracked in `chat_grants`). This keeps
   chat-driven work auditable apart from task work (and `enqueue()`
-  ignores the `chat` sender, so chat posts never spawn tasks). With no
+  ignores the `chat` sender, so chat posts never spawn tasks). The
+  `/chat` grant UI re-verifies each `chat_grants` row against the real
+  collaborator permission on every page load (a human can revoke the
+  collaborator in Gitea directly) and drops stale rows — only a confirmed
+  404 drops, an API blip keeps the row. Chat containers are capped at
+  `CHAT_MEMORY`/`CHAT_CPUS` (default 4g/2 — inference is on the host's
+  llama.cpp, the container is just node + git + light builds). With no
   `CHAT_GITEA_TOKEN` they fall back to NO Gitea token (read the 00-tea
   task API via `host.docker.internal` only). Chat containers reach
   Gitea via `host.docker.internal:3000` — the runsc sandbox CANNOT use

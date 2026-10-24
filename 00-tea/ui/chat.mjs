@@ -16,12 +16,32 @@ export async function chatListPage() {
   if (CFG.chatGiteaToken) {
     const grantAt = Object.fromEntries(
       db.prepare('SELECT repo, granted_at FROM chat_grants').all().map((g) => [g.repo, g.granted_at]));
+    // drift cleanup: chat_grants is our OWN record — a human can revoke the
+    // collaborator in Gitea directly, leaving a stale "write since" row.
+    // Verify each recorded grant against the real permission (204 = yes,
+    // 404 = no) and drop the stale ones
+    for (const repo of [...Object.keys(grantAt)]) {
+      let state; // 'yes' | 'no' | 'unknown'
+      try {
+        state = (await apiGet(`/repos/${repo}/collaborators/${CFG.chatLogin}`, { token: CFG.chatGiteaToken, ok404: true })) !== null ? 'yes' : 'no';
+      } catch { state = 'unknown'; } // Gitea blip — never drop a row on an error
+      if (state === 'no') {
+        db.prepare('DELETE FROM chat_grants WHERE repo=?').run(repo);
+        delete grantAt[repo];
+      }
+    }
     let allRepos = [], repoErr = null;
     try {
       // /admin/repos does not exist in Gitea 1.27 — search covers all repos
-      // the admin token can see (private included)
-      const rs = await apiGet('/repos/search?limit=250', { token: CFG.adminToken });
-      allRepos = (rs.data ?? []).map((r) => r.full_name).sort();
+      // the admin token can see (private included). No total_count in the
+      // response, so paginate until a short page (was a blind limit=250)
+      for (let page = 1; ; page++) {
+        const rs = await apiGet(`/repos/search?limit=50&page=${page}`, { token: CFG.adminToken });
+        const batch = (rs.data ?? []).map((r) => r.full_name);
+        allRepos.push(...batch);
+        if (batch.length < 50) break;
+      }
+      allRepos.sort();
     } catch (e) { repoErr = e.message; }
     const grantRows = allRepos.map((r) => {
       const granted = grantAt[r];
