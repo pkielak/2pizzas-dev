@@ -101,11 +101,21 @@ const server = http.createServer(async (req, res) => {
   // with ?token=… which sets the 30-day session cookie. If a token was
   // JUST rejected (it's in the URL), don't auto-redirect with the saved
   // one — that would 401→redirect→401 loop; show the form for a correction
-  const chat401 = () => send(401, 'text/html',
-    `<!doctype html><html><head><meta charset="utf-8"><title>chat token required</title>
-    <style>body{font:14px system-ui;max-width:60ch;margin:4em auto;color:#333}
-    input[type=password]{width:100%;box-sizing:border-box;padding:9px;font-size:14px;margin:10px 0}
-    button{padding:9px 18px;font-size:14px;cursor:pointer}a{color:#7ab}</style></head>
+  const chat401 = () => {
+    // theme-aware like the rest of the UI: Gitea theme CSS + --color-* vars
+    // with dark fallbacks (degrades gracefully if Gitea is down)
+    const th = giteaTheme();
+    return send(401, 'text/html',
+    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>chat token required — 00-tea</title>
+    <link rel="stylesheet" href="/assets/gitea-theme.css">
+    <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
+    h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
+    a{color:var(--color-primary-light-2,#7ab)}
+    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd)}
+    input[type=password]::placeholder{color:var(--color-text-light-4,#777)}
+    input[type=password]:focus{outline:none;border-color:var(--color-primary,#7ab)}
+    button{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:7px;padding:9px 18px;cursor:pointer;font-size:14px}
+    button:hover{border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}</style></head>
     <body>
     <h2>chat is token-protected</h2>
     <p id="hint">Enter your <code>CHAT_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
@@ -131,6 +141,7 @@ const server = http.createServer(async (req, res) => {
     };
     </script>
     </body></html>`);
+  };
 
   const send = (code, type, body) => {
     const headers = { 'content-type': type };
