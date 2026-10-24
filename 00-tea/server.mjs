@@ -67,12 +67,13 @@ import { llamaModels, piDefaultModel } from './llama.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort } from './chat.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE } from './chat.mjs';
 import { page } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
 import { tasksPage, taskPage } from './ui/tasks.mjs';
 import { chatListPage, chatView } from './ui/chat.mjs';
+import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
 import { pagesPage } from './ui/pages.mjs';
 import { reposPage } from './ui/repos.mjs';
@@ -95,13 +96,40 @@ const renderPage = async (title, p, opts = {}) => {
 };
 
 const server = http.createServer(async (req, res) => {
-  // 401 for the chat gate — a usable hint instead of a bare text string
+  // 401 for the chat gate — an UNLOCK form: the first chat use prompts for
+  // the token, stores it in localStorage (this browser only), and retries
+  // with ?token=… which sets the 30-day session cookie. If a token was
+  // JUST rejected (it's in the URL), don't auto-redirect with the saved
+  // one — that would 401→redirect→401 loop; show the form for a correction
   const chat401 = () => send(401, 'text/html',
-    `<!doctype html><html><head><meta charset="utf-8"><title>chat token required</title></head>
-    <body style="font:14px system-ui;max-width:64ch;margin:4em auto;color:#333">
+    `<!doctype html><html><head><meta charset="utf-8"><title>chat token required</title>
+    <style>body{font:14px system-ui;max-width:60ch;margin:4em auto;color:#333}
+    input[type=password]{width:100%;box-sizing:border-box;padding:9px;font-size:14px;margin:10px 0}
+    button{padding:9px 18px;font-size:14px;cursor:pointer}a{color:#7ab}</style></head>
+    <body>
     <h2>chat is token-protected</h2>
-    <p>Open <code>/chat?token=…</code> once (your <code>CHAT_TOKEN</code> from <code>.env</code>) —
-    the response sets a 30-day session cookie and you won't need the <code>?token=</code> param again.</p>
+    <p id="hint">Enter your <code>CHAT_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
+    this browser and sets a 30-day session cookie — you won't be asked again.
+    You can also manage it from the <a href="/settings">settings page</a>.</p>
+    <form id="f"><input type="password" id="tk" placeholder="chat token" autocomplete="off" autofocus>
+    <button type="submit">unlock</button></form>
+    <script>
+    const params = new URLSearchParams(location.search);
+    const saved = localStorage.getItem('tea_chat_token');
+    if (params.get('token') !== null) {
+      document.getElementById('hint').textContent = 'The token in the URL was rejected.' + (saved ? ' Edit the saved token below and unlock again.' : '');
+      document.getElementById('tk').value = saved || '';
+    } else if (saved) {
+      location.replace('/chat?token=' + encodeURIComponent(saved));
+    }
+    document.getElementById('f').onsubmit = (e) => {
+      e.preventDefault();
+      const v = document.getElementById('tk').value.trim();
+      if (!v) return;
+      localStorage.setItem('tea_chat_token', v);
+      location.replace('/chat?token=' + encodeURIComponent(v));
+    };
+    </script>
     </body></html>`);
 
   const send = (code, type, body) => {
@@ -223,6 +251,14 @@ const server = http.createServer(async (req, res) => {
     if (!c) return send(404, 'text/plain', 'no such chat');
     return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
   }
+  // clear the chat session cookie (authenticates via cookie/param, then
+  // the clearing set-cookie overwrites the one chatAuthed() just set)
+  if (url.pathname === '/api/chat/logout' && req.method === 'POST') {
+    if (!chatAuthed(req, url, res)) return chat401();
+    res.setHeader('set-cookie', `${CHAT_COOKIE}=; Path=/; Max-Age=0`);
+    return send(200, 'application/json', '{"ok":true}');
+  }
+
   if (url.pathname === '/chat') {
     if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'text/html', await renderPage('chat', chatListPage(), { nav: 'chat' }));
@@ -323,6 +359,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
   if (url.pathname === '/stats') return send(200, 'text/html', await renderPage('stats', statsPage(), { nav: 'stats' }));
   if (url.pathname === '/backends') return send(200, 'text/html', await renderPage('backends', backendsPage(), { nav: 'backends' }));
+  if (url.pathname === '/settings') return send(200, 'text/html', await renderPage('settings', settingsPage(), { nav: 'settings' }));
   send(404, 'text/plain', 'not found');
 });
 

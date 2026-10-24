@@ -64,7 +64,9 @@ ${grantUi}
   return {
     html,
     script: `<script>window.__pageInit = function(){
-const tk = new URLSearchParams(location.search).get('token');
+// token carrier fallback (the session cookie is primary; this covers
+// cookie-blocked browsers) — URL param, else the localStorage saved token
+const tk = new URLSearchParams(location.search).get('token') || localStorage.getItem('tea_chat_token');
 const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
 const form = document.getElementById('newchat');
 if (form) form.onsubmit = async function (e) {
@@ -95,9 +97,9 @@ export function chatView(c) {
 </div>
 </div>
 <script>
-// the page was opened with ?token= (when CHAT_TOKEN is set) — every request
-// from this page must carry it forward (EventSource cannot set headers)
-const tk = new URLSearchParams(location.search).get('token');
+// token carrier fallback (the session cookie is primary; this covers
+// cookie-blocked browsers) — URL param, else the localStorage saved token
+const tk = new URLSearchParams(location.search).get('token') || localStorage.getItem('tea_chat_token');
 const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
 document.querySelector('.back').href = auth('/chat');
 const box = document.getElementById('msgs');

@@ -18,6 +18,7 @@ function sidebar(active) {
 <a class="navl${active === 'pages' ? ' on' : ''}" href="/pages">pages</a>
 <a class="navl${active === 'repos' ? ' on' : ''}" href="/repos">repos</a>
 <a class="navl${active === 'stats' ? ' on' : ''}" href="/stats">stats</a>
+<a class="navl${active === 'settings' ? ' on' : ''}" href="/settings">settings</a>
 <a class="navl${active === 'backends' ? ' on' : ''}" href="/backends">backends</a>
 <a class="navl sbfoot" id="giteaLink" href="#">gitea ↗</a></aside>
 <script>var sb=document.getElementById('sidebar'),bd=document.getElementById('backdrop'),tg=document.getElementById('navToggle');
