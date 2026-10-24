@@ -137,6 +137,8 @@ const handle = (line) => {
   else if (e.type === 'working') setStatus('working…');
   else if (e.type === 'settle') { curText = null; setStatus(''); addEl('msettle', 'settled'); }
   else if (e.type === 'auto_retry') setStatus('retrying (' + e.attempt + '/' + e.max + ')…');
+  else if (e.type === 'compaction') setStatus('compacting context…');
+  else if (e.type === 'compacted') { curText = null; addEl('mcompacted', '— context compacted —'); }
   else if (e.type === 'error') { setStatus(''); addEl('merr', 'error: ' + escH(e.message)); }
 };
 const es = new EventSource(auth('/chat/${c.id}/stream'));

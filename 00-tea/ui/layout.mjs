@@ -143,6 +143,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .mtool code{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .merr{color:var(--color-error-text,#f76);font-size:12.5px;margin:8px 0;white-space:pre-wrap}
 .msettle{color:var(--color-text-light-3,#666);font-size:11.5px;margin:12px 0;text-align:right}
+.mcompacted{color:var(--color-text-light-3,#666);font-size:11.5px;margin:12px 0;text-align:center}
 .mstatus{color:var(--color-primary-light-1,#7cf);font-size:12.5px;margin:8px 0;opacity:.85}
 .chatin{display:flex;gap:8px;align-items:stretch;flex:none;margin-top:4px}
 .chatbtns{display:flex;flex-direction:column;gap:8px;align-items:stretch}

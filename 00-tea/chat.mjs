@@ -76,6 +76,14 @@ const piLine = (c, raw) => {
   switch (e.type) {
     case 'agent_start': c.isStreaming = true; return chatLive(c, { type: 'working' });
     case 'agent_settled': c.isStreaming = false; return chatSay(c, { type: 'settle' });
+    // compaction (long-chat context management): live status while it runs,
+    // a transcript marker when done (replayed on reconnect). pi continues
+    // the turn itself (see the set_auto_compaction note in createChat);
+    // agent_settled follows
+    case 'compaction_start': return chatLive(c, { type: 'compaction', phase: 'start', reason: e.reason });
+    case 'compaction_end':
+      if (e.errorMessage) return chatSay(c, { type: 'error', message: `compaction failed: ${e.errorMessage}` });
+      return chatSay(c, { type: 'compacted', reason: e.reason });
     case 'message_update': {
       const d = e.assistantMessageEvent || {};
       if (d.type === 'text_delta') return chatLive(c, { type: 'text_delta', delta: d.delta });
@@ -182,6 +190,15 @@ export async function createChat(agent) {
     '--model', `llama.cpp/${modelSel?.id ?? 'unknown'}`,
     '--append-system-prompt', CHAT_SYSTEM,
   ]);
+
+  // auto-compaction ON for this long-lived session (the image bakes it off —
+  // for one-shot task runs a post-run summarization is pure downside). pi
+  // handles the continuation itself: past the threshold (window − 16K)
+  // _checkCompaction() compacts and the _runAgentPrompt loop calls
+  // agent.continue(); an overflow mid-turn is compacted and auto-retried.
+  // All of it happens BEFORE agent_settled, so no re-prompting is needed
+  // here — the stream just carries compaction_start/end through it
+  c.child.stdin.write(JSON.stringify({ type: 'set_auto_compaction', enabled: true }) + '\n');
   const dec = new StringDecoder('utf8');
   let buf = '';
   c.child.stdout.on('data', (d) => {

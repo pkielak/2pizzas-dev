@@ -130,7 +130,13 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   clients; `chatLive` = transient deltas/status → clients only. The UI's
   `text_block` handler finalizes the delta-built block and marks it
   `settled` so post-reconnect live deltas start a fresh block — don't drop
-  the filter or the settled-block semantics.
+  the filter or the settled-block semantics. Long-lived chat sessions also
+  get auto-compaction enabled at runtime (`set_auto_compaction` RPC command
+  — the image bakes it OFF for one-shot task runs): pi handles the
+  post-compaction continuation itself (threshold → compact +
+  `agent.continue()`; overflow mid-turn → compact + auto-retry), all before
+  `agent_settled`, so 00-tea needs no re-prompting logic; `compaction_start`/
+  `end` surface in the UI as a status line + `compacted` transcript marker.
   The container joins the `gitea_gitea` compose network (`CHAT_NETWORK`)
   and is reached by container name — never publish host ports for this (a 127.0.0.1 publish
   is invisible to the 00-tea container, which is itself a container). Chat containers
