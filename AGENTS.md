@@ -161,7 +161,10 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   (orphans are reaped at startup via the `tea-chat-*` name filter) or
   after `CHAT_IDLE_MINUTES` (default 30) — a streaming turn never counts
   as idle (a long tool run emits no stream events). Optional `CHAT_TOKEN` gates
-  `/chat` + `/api/chat*` (the UI is tailnet-reachable). Killing the
+  `/chat` + `/api/chat*` (the UI is tailnet-reachable): a request authenticated
+  via `?token=`/`x-chat-token` sets a 30-day HttpOnly `tea_chat_token` cookie,
+  so the token is only typed into a URL once per browser — after that the
+  bare /chat works (cookie is checked first, then param/header). Killing the
   `docker run` client does NOT remove the container — `chatKill()` does
   `docker rm -f` by name (docker 29 no longer prints the container id).
   The compose `name: gitea` pin keeps the network `gitea_gitea`.

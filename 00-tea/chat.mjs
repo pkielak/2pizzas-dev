@@ -39,9 +39,22 @@ import { liveBroadcast } from './live.mjs';
 export const chats = new Map(); // id -> session
 let chatSeq = 0;
 
-export const chatAuthed = (req, url) =>
-  !CFG.chatToken || url.searchParams.get('token') === CFG.chatToken ||
-  req.headers['x-chat-token'] === CFG.chatToken;
+// The chat gate: ?token= param, x-chat-token header, or the session cookie.
+// A request that authenticates via param/header gets a 30-day HttpOnly
+// cookie set, so the token only has to be typed into a URL ONCE — after
+// that the bare /chat works (the browser keeps presenting the cookie,
+// which EventSource/fetch/send all do automatically). HttpOnly keeps page
+// JS from reading it; SameSite=Lax keeps it off cross-site requests.
+export const CHAT_COOKIE = 'tea_chat_token';
+export const chatAuthed = (req, url, res) => {
+  if (!CFG.chatToken) return true;
+  const cookie = (req.headers.cookie || '').split('; ').find((c) => c.startsWith(`${CHAT_COOKIE}=`));
+  if (cookie && cookie.slice(CHAT_COOKIE.length + 1) === CFG.chatToken) return true;
+  const ok = url.searchParams.get('token') === CFG.chatToken || req.headers['x-chat-token'] === CFG.chatToken;
+  if (ok && res)
+    res.setHeader('set-cookie', `${CHAT_COOKIE}=${CFG.chatToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
+  return ok;
+};
 
 // transcript event: log file + replay buffer + all SSE clients
 const chatSay = (c, ev) => {

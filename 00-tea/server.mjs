@@ -95,6 +95,15 @@ const renderPage = async (title, p, opts = {}) => {
 };
 
 const server = http.createServer(async (req, res) => {
+  // 401 for the chat gate — a usable hint instead of a bare text string
+  const chat401 = () => send(401, 'text/html',
+    `<!doctype html><html><head><meta charset="utf-8"><title>chat token required</title></head>
+    <body style="font:14px system-ui;max-width:64ch;margin:4em auto;color:#333">
+    <h2>chat is token-protected</h2>
+    <p>Open <code>/chat?token=…</code> once (your <code>CHAT_TOKEN</code> from <code>.env</code>) —
+    the response sets a 30-day session cookie and you won't need the <code>?token=</code> param again.</p>
+    </body></html>`);
+
   const send = (code, type, body) => {
     const headers = { 'content-type': type };
     if (type === 'text/html' || type === 'text/css') headers['cache-control'] = 'no-store'; // never serve stale UI/theme
@@ -121,7 +130,7 @@ const server = http.createServer(async (req, res) => {
 
   // ── chat ──
   if (url.pathname === '/api/chat' && req.method === 'POST') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
@@ -136,12 +145,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/chat' && req.method === 'GET') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'application/json', JSON.stringify([...chats.values()].map(chatJson)));
   }
   // grant/revoke the "chat" user write access to a repo (collaborator API)
   if (url.pathname === '/api/chat/grant' && req.method === 'POST') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     if (!CFG.chatGiteaToken) return send(502, 'application/json', JSON.stringify({ error: 'CHAT_GITEA_TOKEN not configured' }));
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
@@ -165,7 +174,7 @@ const server = http.createServer(async (req, res) => {
   }
   const chatMsgMatch = url.pathname.match(/^\/api\/chat\/(\d+)\/message$/);
   if (chatMsgMatch && req.method === 'POST') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
@@ -178,14 +187,14 @@ const server = http.createServer(async (req, res) => {
   }
   const chatAbortMatch = url.pathname.match(/^\/api\/chat\/(\d+)\/abort$/);
   if (chatAbortMatch && req.method === 'POST') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     try { await chatAbort(+chatAbortMatch[1]); send(200, 'application/json', '{"ok":true}'); }
     catch (e) { send(400, 'application/json', JSON.stringify({ error: e.message })); }
     return;
   }
   const chatItemMatch = url.pathname.match(/^\/api\/chat\/(\d+)$/);
   if (chatItemMatch) {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     const c = chats.get(+chatItemMatch[1]);
     if (!c) return send(404, 'application/json', '{}');
     if (req.method === 'DELETE') { chatKill(c, 'closed by user'); return send(200, 'application/json', '{"ok":true}'); }
@@ -193,7 +202,7 @@ const server = http.createServer(async (req, res) => {
   }
   const chatStreamMatch = url.pathname.match(/^\/chat\/(\d+)\/stream$/);
   if (chatStreamMatch) {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     const c = chats.get(+chatStreamMatch[1]);
     if (!c) return send(404, 'text/plain', 'no such chat');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -209,13 +218,13 @@ const server = http.createServer(async (req, res) => {
   }
   const chatPageMatch = url.pathname.match(/^\/chat\/(\d+)$/);
   if (chatPageMatch) {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     const c = chats.get(+chatPageMatch[1]);
     if (!c) return send(404, 'text/plain', 'no such chat');
     return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
   }
   if (url.pathname === '/chat') {
-    if (!chatAuthed(req, url)) return send(401, 'text/plain', 'chat token required (CHAT_TOKEN)');
+    if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'text/html', await renderPage('chat', chatListPage(), { nav: 'chat' }));
   }
 
