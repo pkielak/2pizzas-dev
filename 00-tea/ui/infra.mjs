@@ -19,17 +19,15 @@ export async function dockerNames() {
 // 00-tea 380..620, llama 730..970, y 250..360), RUNNERS/SERVERS at the
 // bottom (3 boxes w 200 at x 30/280/530, y 460..560). Every connector is
 // a straight H/V polyline — no diagonals, no crossings, no hop arcs:
-// 00-tea dispatches UP to all five agent containers (bus y=180, drops
-// at the agent centers 110/305/500/695/890); agents→gitea returns down
-// the left (x=80 → y=215 → x=150 → gitea top, left of the dispatch bus
-// start 110… the bus starts at 110, the lane at 80, so no crossing);
-// llama→agents exits llama's right side (x=970), runs up the right
-// margin (x=985) above everything, crosses the top (y=20) and drops
-// onto every agent container from above; gitea→runners fans out below
-// (bus y=410, drops at 130/380/630).
+// Three colored lines rise from the middle row to a tri-color convergence
+// bus at y=180: gitea (green, x=150), 00-tea (blue, x=500), llama (purple,
+// x=850). The bus drops into every agent container (110/305/500/695/890).
+// gitea→runners fans out below (bus y=410, drops at 130/380/630).
 // Line labels sit 8px above their line, centered on the segment.
 const F = 'stroke:var(--color-primary,#7ab);stroke-width:1.5;fill:none;opacity:.75';
+const C_GITEA = '#3fb950', C_00TEA = '#58a6ff', C_LLAMA = '#bc8cff';
 const conn = (d, arrow = true) => `<path d="${d}" style="${F}"${arrow ? ' marker-end="url(#arr)"' : ''}/>`;
+const connC = (d, color, markerId, arrow = true) => `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none" opacity=".75"${arrow ? ` marker-end="url(#${markerId})"` : ''}/>`;
 const label = (x, y, t, anchor = 'middle') => `<text x="${x}" y="${y}" font-size="11.5" fill="var(--color-text-light-2,#888)" text-anchor="${anchor}">${t}</text>`;
 const rlabel = (x, y, t) => `<text transform="rotate(-90 ${x} ${y})" x="${x}" y="${y}" font-size="11.5" fill="var(--color-text-light-2,#888)" text-anchor="middle">${t}</text>`;
 
@@ -62,7 +60,13 @@ ${lines.map((l, i) => `<text x="${x + 30}" y="${y + 45 + i * 16}" font-size="12"
     const loaded = models ? models.filter((m) => m.loaded).map((m) => m.id) : [];
 
     const svg = `<svg id="diag" viewBox="0 0 1000 570" style="width:100%;display:block;cursor:grab;touch-action:none" xmlns="http://www.w3.org/2000/svg">
-<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary,#7ab)"/></marker></defs>
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary,#7ab)"/></marker>
+<marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_GITEA}"/></marker>
+<marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_00TEA}"/></marker>
+<marker id="arr-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_LLAMA}"/></marker>
+
+</defs>
 
 ${block(30, 40, 160, 100, '@pi', ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
 ${block(225, 40, 160, 100, '@opencode', ['agent-sandbox:opencode', agentBusy('opencode') ? 'task in flight' : 'idle'], agentBusy('opencode') ? true : null)}
@@ -74,9 +78,9 @@ ${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN}
 ${block(380, 250, 240, 110, '00-tea', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-00-tea'), '/tasks')}
 ${block(730, 250, 240, 110, 'llama.cpp router', [esc(CFG.llamaUrl), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable · no model loaded') : 'unreachable'], models ? true : false)}
 
-${block(30, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · ordinary CI'], up('gitea-runner'))}
-${block(280, 460, 200, 100, 'android-runner', ['label: android', 'gitea-android:latest image'], up('gitea-android-runner'))}
-${block(530, 460, 200, 100, 'pages', [CFG.pagesSites.length ? CFG.pagesSites.map((s) => `${esc(s.split(':')[0])} :${esc(s.split(':')[1])}`).join(' · ') : 'no sites (PAGES_SITES)', 'serves gh-pages branches'], pagesUp)}
+${block(150, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · ordinary CI'], up('gitea-runner'))}
+${block(400, 460, 200, 100, 'android-runner', ['label: android', 'gitea-android:latest image'], up('gitea-android-runner'))}
+${block(650, 460, 200, 100, 'pages', [CFG.pagesSites.length ? CFG.pagesSites.map((s) => `${esc(s.split(':')[0])} :${esc(s.split(':')[1])}`).join(' · ') : 'no sites (PAGES_SITES)', 'serves gh-pages branches'], pagesUp)}
 
 <!-- gitea → 00-tea · 00-tea → llama -->
 ${conn('M 270 305 L 380 305')}
@@ -84,39 +88,31 @@ ${label(325, 297, 'webhook')}
 ${conn('M 620 305 L 730 305')}
 ${label(675, 297, 'model pick')}
 
-<!-- ONE bidirectional bus (y=180) between 00-tea / gitea and the agent
-     row: 00-tea drops onto it (x=500), it drops into every agent
-     container (tasks, one-shot runsc), and its left end drops into
-     gitea (x=110) — that IS the bot-work return path (push · PR ·
-     comments). No second bus, so nothing crosses anything. -->
-${conn('M 500 250 L 500 180', false)}
-${conn('M 110 180 L 890 180', false)}
-${conn('M 110 180 L 110 140')}
-${conn('M 305 180 L 305 140')}
-${conn('M 500 180 L 500 140')}
-${conn('M 695 180 L 695 140')}
-${conn('M 890 180 L 890 140')}
-${conn('M 110 180 L 110 250')}
-${label(490, 192, 'tasks ↓ · runsc one-shot / long-lived (chat) · bot work ↑', 'end')}
+<!-- Three colored sources rise from bottom of band (y=184) to middle row (y=250) -->
+${connC('M 150 184 L 150 250', C_GITEA, 'arr-g')}
+${label(138, 222, 'bot work', 'end')}
+${connC('M 500 250 L 500 184', C_00TEA, 'arr-b')}
+${label(512, 222, 'tasks', 'start')}
+${connC('M 850 250 L 850 184', C_LLAMA, 'arr-p')}
+${label(862, 222, 'llm /v1', 'start')}
 
-<!-- llama → all agent containers: out of llama's right side, up around
-     the chat containers, across the top, drops onto every agent -->
-${conn('M 970 305 L 985 305 L 985 20 L 110 20', false)}
-${conn('M 110 20 L 110 40')}
-${conn('M 305 20 L 305 40')}
-${conn('M 500 20 L 500 40')}
-${conn('M 695 20 L 695 40')}
-${conn('M 890 20 L 890 40')}
-${label(500, 12, 'llm /v1 · all agents')}
+<!-- convergence band: solid 6px block (y 178–184), three 2px rects touching -->
+<rect x="107" y="178" width="786" height="2" fill="${C_GITEA}" opacity=".8"/>
+<rect x="107" y="180" width="786" height="2" fill="${C_00TEA}" opacity=".8"/>
+<rect x="107" y="182" width="786" height="2" fill="${C_LLAMA}" opacity=".8"/>
+
+<!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140) -->
+${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 3}" y="140" width="2" height="38" fill="${C_GITEA}" opacity=".7"/><rect x="${x - 1}" y="140" width="2" height="40" fill="${C_00TEA}" opacity=".7"/><rect x="${x + 1}" y="140" width="2" height="42" fill="${C_LLAMA}" opacity=".7"/>`).join('')}
+${label(500, 196, 'runsc one-shot / long-lived (chat)', 'middle')}
 
 <!-- gitea → runners + pages (CI bus, y=410) -->
 ${conn('M 150 360 L 150 410', false)}
-${conn('M 130 410 L 630 410', false)}
-${conn('M 130 410 L 130 460')}
-${conn('M 380 410 L 380 460')}
-${conn('M 630 410 L 630 460')}
-${label(250, 402, 'Gitea Actions (CI)')}
-${label(500, 402, 'syncs gh-pages branch (60s)')}
+${conn('M 150 410 L 750 410', false)}
+${conn('M 250 410 L 250 460')}
+${conn('M 500 410 L 500 460')}
+${conn('M 750 410 L 750 460')}
+${label(375, 402, 'Gitea Actions (CI)')}
+${label(625, 402, 'syncs gh-pages branch (60s)')}
 
 </svg>`;
 
