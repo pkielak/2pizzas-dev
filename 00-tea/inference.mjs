@@ -15,8 +15,8 @@ import fs from 'node:fs';
 // backend from LLAMA_CPP_URL is used, so an un-migrated stack keeps working.
 
 let regCache = { at: 0, value: null };
-export function readRegistry() {
-  if (regCache.value && Date.now() - regCache.at < 5_000) return regCache.value;
+export function readRegistry(force = false) {
+  if (!force && regCache.value && Date.now() - regCache.at < 5_000) return regCache.value;
   let backends = null;
   try {
     const j = JSON.parse(fs.readFileSync(CFG.inferenceFile, 'utf8'));
@@ -133,4 +133,79 @@ export async function checkBakedSync(agent, sel) {
   if (!models) return `provider '${sel.provider}' is not baked into ${agent}'s image config — run ./setup.sh --rebuild after editing inference.json`;
   if (!models.has(sel.id)) return `model '${sel.provider}/${sel.id}' is not in the baked ${agent} image config — run ./setup.sh --rebuild after editing inference.json`;
   return null;
+}
+
+// provider IDs present in the baked agent image configs right now (for the
+// "not baked — run ./setup.sh --rebuild" badge in the UI)
+export async function bakedProviderIds() {
+  const { pi, oc } = await bakedProviders();
+  return [...new Set([...Object.keys(pi ?? {}), ...Object.keys(oc ?? {})])];
+}
+
+// ── registry mutations (UI: /api/backends) ─────────────────────────
+// CFG.inferenceFile is a BIND-MOUNTED host file: writes must be IN PLACE
+// (truncate+write). An atomic rename would swap the inode and the container
+// would keep seeing the old file forever.
+const B_ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+function normalizeBackend(b) {
+  if (!B_ID_RE.test(String(b.id ?? ''))) throw new Error('backend id: letters/digits/.-_ (e.g. llama.cpp, openrouter)');
+  if (!/^https?:\/\//.test(String(b.url ?? ''))) throw new Error('backend url: http(s):// required');
+  b.id = String(b.id).toLowerCase();
+  b.url = String(b.url).replace(/\/+$/, '');
+  b.apiKey = String(b.apiKey ?? '');
+  b.defaultModel = b.defaultModel || null;
+  b.priority = Number(b.priority) || 0;
+  return b;
+}
+function writeRegistry(r) {
+  fs.writeFileSync(CFG.inferenceFile, JSON.stringify(r, null, 2) + '\n'); // in place, never rename
+  regCache = { at: 0, value: null }; // invalidate the read cache immediately
+}
+export async function registryFresh() { return { backends: readRegistry(true) }; }
+export async function addBackend(fields) {
+  const r = await registryFresh();
+  const b = normalizeBackend({ ...fields });
+  if (r.backends.some((x) => x.id === b.id)) throw new Error(`backend ${b.id} already exists`);
+  b.priority = r.backends.reduce((m, x) => Math.max(m, x.priority), 0) + 1; // new backends go last
+  r.backends.push(b);
+  writeRegistry(r);
+  console.log(`[inference] + backend ${b.id} (${b.url}) p${b.priority}`);
+  return r;
+}
+export async function updateBackend(id, fields) {
+  const r = await registryFresh();
+  const b = r.backends.find((x) => x.id === id);
+  if (!b) throw new Error(`no backend ${id}`);
+  for (const k of ['id', 'url', 'apiKey', 'defaultModel', 'priority']) {
+    if (fields[k] !== undefined && fields[k] !== b[k]) {
+      if (k === 'id' && r.backends.some((x) => x.id === String(fields[k]).toLowerCase())) throw new Error(`backend ${fields[k]} already exists`);
+      b[k] = fields[k];
+    }
+  }
+  normalizeBackend(b);
+  writeRegistry(r);
+  console.log(`[inference] ~ backend ${b.id} (${b.url}) p${b.priority}`);
+  return r;
+}
+export async function deleteBackend(id) {
+  const r = await registryFresh();
+  if (r.backends.length <= 1) throw new Error('refusing to remove the last backend');
+  const i = r.backends.findIndex((x) => x.id === id);
+  if (i < 0) throw new Error(`no backend ${id}`);
+  r.backends.splice(i, 1);
+  r.backends.forEach((x, n) => { x.priority = n + 1; }); // keep priorities dense
+  writeRegistry(r);
+  console.log(`[inference] - backend ${id}`);
+  return r;
+}
+export async function moveBackend(id, dir) {
+  const r = await registryFresh();
+  const i = r.backends.findIndex((x) => x.id === id);
+  const j = i + (dir === 'up' ? -1 : 1);
+  if (i < 0 || j < 0 || j >= r.backends.length) return r;
+  [r.backends[i], r.backends[j]] = [r.backends[j], r.backends[i]];
+  r.backends.forEach((x, n) => { x.priority = n + 1; });
+  writeRegistry(r);
+  console.log(`[inference] ⇅ backend ${id} ${dir} → p${i + (dir === 'up' ? -1 : 1) + 1}`);
+  return r;
 }

@@ -38,6 +38,11 @@
  *   GET  /pages        gh-pages sites (last deployed commit per site)
  *   GET  /stats        usage stats (tasks, tokens, models, daily activity)
  *   GET  /backends     agents + inference providers (current setup)
+ *   POST   /api/backends              add backend {id,url,apiKey,defaultModel}
+ *   PATCH  /api/backends/:id          update fields
+ *   POST   /api/backends/:id/up|down  reorder priority
+ *   DELETE /api/backends/:id          remove (last one is protected)
+ *   GET  /api/backends/baked          provider ids baked into the agent images
  *   GET  /chat         agent chat — live sessions (pi RPC)
  *   GET  /chat/<id>    chat view (SSE stream)
  *   GET  /api/chat     active chat sessions
@@ -63,7 +68,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { managedRepos } from './repos.mjs';
-import { readRegistry, backendModels, piDefaultModel } from './inference.mjs';
+import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
@@ -288,6 +293,27 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/healthz') return send(200, 'application/json', JSON.stringify({ ok: true, active: activeCount(), repos: managedRepos() }));
   if (url.pathname === '/api/tasks') {
     return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 100').all()));
+  }
+  // ── inference backends (inference.json — see inference.mjs) ──
+  const readJson = (rq) => new Promise((resolve, reject) => {
+    let body = '';
+    rq.on('data', (d) => { body += d; if (body.length > 256 * 1024) { reject(new Error('body too large')); rq.destroy(); } });
+    rq.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('bad json')); } });
+  });
+  const backendApi = async (fn) => {
+    try { await fn(); send(200, 'application/json', '{"ok":true}'); }
+    catch (e) { send(400, 'application/json', JSON.stringify({ error: e.message })); }
+  };
+  if (url.pathname === '/api/backends/baked' && req.method === 'GET')
+    return send(200, 'application/json', JSON.stringify({ providers: await bakedProviderIds() }));
+  if (url.pathname === '/api/backends' && req.method === 'POST')
+    return backendApi(async () => { await addBackend(await readJson(req)); });
+  const backendItemMatch = url.pathname.match(/^\/api\/backends\/([^/]+)(?:\/(up|down))?$/);
+  if (backendItemMatch && url.pathname !== '/api/backends/baked') {
+    const id = decodeURIComponent(backendItemMatch[1]);
+    if (req.method === 'DELETE') return backendApi(() => deleteBackend(id));
+    if (req.method === 'PATCH') return backendApi(async () => { await updateBackend(id, await readJson(req)); });
+    if (backendItemMatch[2] && req.method === 'POST') return backendApi(() => moveBackend(id, backendItemMatch[2]));
   }
   // remove a self-enrolled repo (env-listed ones are pinned — no-op → 404)
   const repoDelMatch = url.pathname.match(/^\/api\/repos\/(.+)$/);

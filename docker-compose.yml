@@ -182,8 +182,10 @@ services:
     volumes:
       - ./data-00-tea:/data
       # inference backend registry (gitignored — carries API keys); 00-tea
-      # re-reads it on change, no restart needed
-      - ./inference.json:/app/inference.json:ro
+      # re-reads it on change, no restart needed. NO :ro — the /backends UI
+      # edits it IN PLACE (a rename would swap the bind inode and the
+      # container would keep seeing the old file)
+      - ./inference.json:/app/inference.json
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001
