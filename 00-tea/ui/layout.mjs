@@ -142,6 +142,11 @@ main.app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:
 .pagehead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
 .pagehead h1{margin:0}
 .back{display:inline-block;text-decoration:none;font-size:12.5px;color:var(--color-text-light-2,#999);margin-bottom:10px}
+/* compact one-line chat header: ← #id · status … close */
+.chathead{display:flex;align-items:center;gap:8px;flex:none;margin:0 0 2px}
+.chathead .back{margin:0}
+.chid{font-weight:600;font-size:13px}
+.chclose{margin-left:auto}
 .back:hover{color:var(--color-text,#ddd);text-decoration:underline}
 /* console: shared stream surface for task logs AND chat */
 .console{background:var(--color-console-bg,#0a0a0a);color:var(--color-console-fg,#d7d7d7);border:1px solid var(--color-console-border,#2a2a2a);border-radius:var(--radius);padding:14px 16px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;margin-top:12px;max-height:calc(100vh - 240px)}
@@ -160,7 +165,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .msettle{color:var(--color-text-light-3,#666);font-size:11.5px;margin:12px 0;text-align:right}
 .mcompacted{color:var(--color-text-light-3,#666);font-size:11.5px;margin:12px 0;text-align:center}
 .mstatus{color:var(--color-primary-light-1,#7cf);font-size:12.5px;margin:8px 0;opacity:.85}
+.mend{color:var(--color-warning-text,#fc6);font-size:12.5px;margin:12px 0;text-align:center;border-top:1px solid var(--color-light-border,#333);padding-top:10px}
 .chatin{display:flex;gap:8px;align-items:stretch;flex:none;margin-top:4px}
+.chatin.endednote{align-items:center}
 .chatbtns{display:flex;flex-direction:column;gap:8px;align-items:stretch}
 .chatbtns .ic{display:inline-block;margin-right:7px;vertical-align:middle;transform:translateY(-1px)}
 #send{border-color:var(--color-success-text,#3a3)}

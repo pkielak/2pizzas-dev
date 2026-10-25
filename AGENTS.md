@@ -180,7 +180,13 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   resolve inside them. They die on 00-tea restart
   (orphans are reaped at startup via the `tea-chat-*` name filter) or
   after `CHAT_IDLE_MINUTES` (default 30) — a streaming turn never counts
-  as idle (a long tool run emits no stream events). Optional `CHAT_TOKEN` gates
+  as idle (a long tool run emits no stream events). Every session is
+  RECORDED in the `chat_sessions` sqlite table (agent, model, created/
+  ended, end reason, message count, log file) — `/chat` lists past
+  sessions and `/chat/<id>` of an ended session renders a read-only
+  transcript from its log (`chatHistory()`; the log IS the transcript).
+  chatSeq ids restart at 1 per 00-tea run, so a dead id resolves to the
+  newest row with it. Optional `CHAT_TOKEN` gates
   `/chat` + `/api/chat*` (the UI is tailnet-reachable). Token UX: the 401 is
   an UNLOCK form (first chat use prompts for the token; a just-rejected
   token shows the form instead of auto-redirecting — that would loop), the

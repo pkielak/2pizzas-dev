@@ -1,15 +1,41 @@
 import { CFG } from '../config.mjs';
 import { db } from '../db.mjs';
 import { apiGet } from '../gitea.mjs';
-import { chats } from '../chat.mjs';
+import { chats, chatSessions, chatHistory } from '../chat.mjs';
 import { esc } from './layout.mjs';
+
+// one line of the persisted transcript (log line: parsed event or plain
+// marker text) → a rendered message block (same classes as the live view)
+const historyBlock = (line) => {
+  let e;
+  try { e = JSON.parse(line); } catch { e = line; }
+  if (typeof e === 'string')
+    return `<div class="msettle">${esc(e)}</div>`;
+  switch (e.type) {
+    case 'user_message': return `<div class="muser">${esc(e.message)}</div>`;
+    case 'text_block': return `<div class="mtext">${esc(e.text)}</div>`;
+    case 'tool_call': return `<div class="mtool">⚙ <b>${esc(e.name)}</b> <code>${esc(String(e.arg).slice(0, 200))}</code></div>`;
+    case 'settle': return `<div class="msettle">settled</div>`;
+    case 'compacted': return `<div class="mcompacted">— context compacted —</div>`;
+    case 'error': return `<div class="merr">error: ${esc(e.message)}</div>`;
+    default: return ''; // live-only events never reach the log
+  }
+};
 
 // ── chat pages ─────────────────────────────────────────────────────────────
 
 export async function chatListPage() {
   const rows = [...chats.values()].map((c) => `<a class="item" href="/chat/${c.id}">
     <div class="l1">@${esc(c.agent)} <span>#${c.id}</span> ${c.isStreaming ? '<span class="running">streaming</span>' : '<span class="success">idle</span>'}</div>
-    <div class="l2">${c.model ? `model <span class="model">${esc(c.model)}</span> · ` : ''}last activity ${esc(new Date(c.lastActive).toISOString().slice(11, 19))} UTC</div>
+    <div class="l2">${c.model ? `model <span class="model">${esc(c.model)}</span> · ` : ''}started ${esc(new Date(c.startedAt).toISOString().slice(5, 16).replace('T', ' '))} UTC · last activity ${esc(new Date(c.lastActive).toISOString().slice(11, 19))} UTC</div>
+  </a>`).join('\n');
+  // past sessions: persisted rows (chat_sessions) — the whole history is
+  // still readable from each session's log file
+  const past = chatSessions(100)
+    .filter((r) => !chats.has(r.id)) // live ones are in the section above
+    .map((r) => `<a class="item" href="/chat/${r.id}">
+    <div class="l1">@${esc(r.agent)} <span>#${r.id}</span> <span class="badge">ended</span></div>
+    <div class="l2">${esc(r.created_at?.slice(5, 16) ?? '')} → ${esc(r.ended_at?.slice(11, 19) ?? '?')} UTC · ${esc(r.end_reason ?? '?')} · ${r.messages} message${r.messages === 1 ? '' : 's'}</div>
   </a>`).join('\n');
   // grant UI: every repo on the instance, with a per-repo grant/revoke toggle
   let grantUi = '';
@@ -58,9 +84,12 @@ export async function chatListPage() {
   const html = `<form id="newchat">
   <button type="submit">start chat</button>
 </form>
+<h2>active</h2>
 <div class="list">${rows || '<div class="item"><div class="l2">no active chats</div></div>'}</div>
+<h2>past sessions</h2>
+<div class="list">${past || '<div class="item"><div class="l2">none yet</div></div>'}</div>
 ${grantUi}
-<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 00-tea task API, but cannot push or post.'} chats die on 00-tea restart or after ${CFG.chatIdleMs / 60000} min idle.</p>`;
+<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 00-tea task API, but cannot push or post.'} chats die on 00-tea restart or after ${CFG.chatIdleMs / 60000} min idle — their transcripts stay readable under <i>past sessions</i>.</p>`;
   return {
     html,
     script: `<script>window.__pageInit = function(){
@@ -86,10 +115,13 @@ document.querySelectorAll('.grantbtn').forEach(b => b.onclick = async () => {
 }
 
 export function chatView(c) {
+  // one compact header bar (the transcript's start marker already carries
+  // model + start time, so no separate meta row)
   return `<div class="chatapp">
-<a class="back" href="/chat">← back to chats</a>
-<div class="pagehead"><span class="meta" id="chatstate">idle</span></div>
-<p class="meta">${c.model ? `model <span class="model">${esc(c.model)}</span> · ` : ''}sandboxed container${CFG.chatGiteaToken ? `, Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted)` : ', no Gitea access'} · <a href="#" id="closechat">close chat</a></p>
+<div class="chathead">
+<a class="back" href="/chat">←</a><span class="chid">#${c.id}</span><span class="meta" id="chatstate">idle</span>
+<a class="back chclose" href="#" id="closechat">close</a>
+</div>
 <div id="msgs"></div>
 <div class="chatin">
   <textarea id="msg" rows="2" placeholder="message ${esc(c.agent)}… (Enter sends, Shift+Enter newline)"></textarea>
@@ -169,7 +201,23 @@ const es = new EventSource(auth('/chat/${c.id}/stream'));
 // with a detached reference throws, silently killing all rendering
 es.onopen = () => { box.innerHTML = ''; box.appendChild(statusEl); };
 es.onmessage = (ev) => handle(ev.data);
-es.addEventListener('done', () => { location.href = auth('/chat'); });
+// session ended (idle timeout / killed / container died): the server sends
+// the [00-tea] chat closed line JUST BEFORE this event, so the reason is
+// already on screen — freeze the UI in place instead of a silent redirect
+es.addEventListener('done', () => {
+  es.close();
+  setStatus('');
+  stateEl.textContent = 'ended';
+  stateEl.className = 'meta';
+  const b = document.createElement('div');
+  b.className = 'mend';
+  b.innerHTML = 'session ended — <a href="' + auth('/chat') + '">back to chats</a> (transcript kept under past sessions)';
+  box.insertBefore(b, statusEl);
+  box.scrollTop = box.scrollHeight;
+  ta.disabled = true;
+  document.getElementById('send').disabled = true;
+  document.getElementById('stop').disabled = true;
+});
 async function sendMsg() {
   const t = ta.value.trim();
   if (!t) return;
@@ -184,7 +232,20 @@ document.getElementById('stop').onclick = () => fetch(auth('/api/chat/${c.id}/ab
 document.getElementById('closechat').onclick = async (e) => {
   e.preventDefault();
   await fetch(auth('/api/chat/${c.id}'), { method: 'DELETE' });
-  location.href = auth('/chat');
+  location.href = auth('/chat'); // the done banner fires on the way out
 };
 </script>`;
+}
+
+// read-only transcript of a dead session (log file → message blocks)
+export function chatHistoryView(row) {
+  const blocks = chatHistory(row).map(historyBlock).join('\n');
+  return `<div class="chatapp">
+<div class="chathead">
+<a class="back" href="/chat">←</a><span class="chid">#${row.id}</span><span class="badge">ended</span>
+<span class="meta">${esc(row.end_reason ?? '')} · ${row.messages} msg · ${esc(row.created_at?.slice(5, 16) ?? '')} → ${esc(row.ended_at?.slice(11, 19) ?? '')}</span>
+</div>
+<div id="msgs">${blocks || '<div class="msettle">empty session</div>'}</div>
+<div class="chatin endednote"><span class="meta">this session has ended — its transcript is preserved. <a href="/chat">start a new chat</a></span></div>
+</div>`;
 }

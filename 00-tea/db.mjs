@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS poll_state (
   repo TEXT PRIMARY KEY,
   since TEXT
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id         INTEGER NOT NULL,      -- chatSeq id (restarts at 1 per 00-tea run — rows are unique with created_at, the implicit rowid is the PK)
+  agent      TEXT NOT NULL,
+  model      TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at   TEXT,
+  end_reason TEXT,                  -- 'idle timeout' | 'closed by user' | 'container exited'
+  log_file   TEXT,
+  messages   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_id ON chat_sessions(id, created_at);
 CREATE TABLE IF NOT EXISTS chat_grants (
   repo       TEXT PRIMARY KEY,
   granted_at TEXT NOT NULL DEFAULT (datetime('now'))

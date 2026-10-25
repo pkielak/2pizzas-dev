@@ -46,7 +46,9 @@
  *   GET  /chat         agent chat — live sessions (pi RPC)
  *   GET  /chat/<id>    chat view (SSE stream)
  *   GET  /api/chat     active chat sessions
+ *   GET  /api/chat/sessions   all sessions (live + past, from chat_sessions)
  *   POST /api/chat     start a chat session {agent: 'pi'}
+ *   GET  /api/chat/<id>/history   transcript of a dead session
  *   POST /api/chat/<id>/message   {message}
  *   POST /api/chat/<id>/abort
  *   DELETE /api/chat/<id>
@@ -72,12 +74,12 @@ import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBacke
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE } from './chat.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatHistory } from './chat.mjs';
 import { page } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
 import { tasksPage, taskPage } from './ui/tasks.mjs';
-import { chatListPage, chatView } from './ui/chat.mjs';
+import { chatListPage, chatView, chatHistoryView } from './ui/chat.mjs';
 import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
 import { pagesPage } from './ui/pages.mjs';
@@ -192,6 +194,23 @@ const server = http.createServer(async (req, res) => {
     if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'application/json', JSON.stringify([...chats.values()].map(chatJson)));
   }
+  if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
+    if (!chatAuthed(req, url, res)) return chat401();
+    // live status overlaid on the persisted rows (a live session's row has
+    // ended_at NULL — same rows, one source of truth)
+    const rows = chatSessions().map((r) => {
+      const live = chats.get(r.id);
+      return { ...r, active: !!live, isStreaming: live?.isStreaming ?? false, lastActive: live ? live.lastActive : (r.ended_at || r.created_at) };
+    });
+    return send(200, 'application/json', JSON.stringify(rows));
+  }
+  const chatHistoryMatch = url.pathname.match(/^\/api\/chat\/(\d+)\/history$/);
+  if (chatHistoryMatch && req.method === 'GET') {
+    if (!chatAuthed(req, url, res)) return chat401();
+    const row = chatSessionRow(+chatHistoryMatch[1]);
+    if (!row) return send(404, 'application/json', JSON.stringify({ error: 'no such session' }));
+    return send(200, 'application/json', JSON.stringify({ session: row, lines: chatHistory(row) }));
+  }
   // grant/revoke the "chat" user write access to a repo (collaborator API)
   if (url.pathname === '/api/chat/grant' && req.method === 'POST') {
     if (!chatAuthed(req, url, res)) return chat401();
@@ -264,8 +283,11 @@ const server = http.createServer(async (req, res) => {
   if (chatPageMatch) {
     if (!chatAuthed(req, url, res)) return chat401();
     const c = chats.get(+chatPageMatch[1]);
-    if (!c) return send(404, 'text/plain', 'no such chat');
-    return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
+    if (c) return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
+    // dead session — read-only transcript from its log
+    const row = chatSessionRow(+chatPageMatch[1]);
+    if (!row) return send(404, 'text/plain', 'no such chat');
+    return send(200, 'text/html', page(`chat ${row.id} (ended)`, chatHistoryView(row), { auto: false, nav: 'chat', app: true }));
   }
   // clear the chat session cookie (authenticates via cookie/param, then
   // the clearing set-cookie overwrites the one chatAuthed() just set)

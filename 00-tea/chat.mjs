@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
+import { db } from './db.mjs';
 import { pickModel } from './inference.mjs';
 import { liveBroadcast } from './live.mjs';
 
@@ -21,9 +22,11 @@ import { liveBroadcast } from './live.mjs';
 // 00-tea is a dumb bridge: browser SSE ⇄ agent stream, POST message ⇄ agent
 // command. Chat containers get NO Gitea token — they chat and can read the
 // 00-tea task API (via host.docker.internal), they cannot push or post.
-// Sessions are in-memory: a 00-tea restart abandons them (orphaned
-// tea-chat-* containers are reaped at startup), idle ones are killed after
-// CHAT_IDLE_MINUTES.
+// Sessions are in-memory (a 00-tea restart abandons them — orphaned
+// tea-chat-* containers are reaped at startup, idle ones are killed after
+// CHAT_IDLE_MINUTES) but every session is RECORDED in the chat_sessions
+// table with its log file — the /chat page lists past sessions and
+// /chat/<id> renders the full transcript of a dead one from its log.
 //
 // The raw pi JSONL is FILTERED (piLine) before it reaches the log, the
 // replay buffer, and the SSE clients — unfiltered it was every text/
@@ -128,6 +131,8 @@ const piLine = (c, raw) => {
 export const chatKill = (c, note) => {
   if (c.dead) return;
   c.dead = true;
+  db.prepare('UPDATE chat_sessions SET ended_at=datetime(\'now\'), end_reason=? WHERE id=? AND ended_at IS NULL')
+    .run(note || 'ended', c.id);
   // killing the `docker run` client does NOT remove the container — rm it by name
   // (docker 29 no longer prints the container id on `docker run`)
   try { c.child.kill('SIGKILL'); } catch { /* already gone */ }
@@ -144,8 +149,33 @@ export const chatKill = (c, note) => {
 
 export const chatJson = (c) => ({
   id: c.id, agent: c.agent, model: c.model, isStreaming: c.isStreaming,
-  lastActive: c.lastActive,
+  lastActive: c.lastActive, startedAt: c.startedAt,
 });
+
+// ── persisted session records (chat_sessions) ───────────────────────────────
+// chatSeq ids restart at 1 on every 00-tea run, so a dead id resolves to the
+// NEWEST row carrying it (an older run's session with the same id is
+// shadowed — acceptable: ids are per-run by design)
+export const chatSessionRow = (id) => db
+  .prepare('SELECT * FROM chat_sessions WHERE id=? ORDER BY created_at DESC LIMIT 1').get(id);
+
+export const chatSessions = (limit = 100) => db
+  .prepare('SELECT * FROM chat_sessions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
+
+// transcript of a (dead) session from its log file: the log IS the
+// server-authoritative transcript (chatSay writes every settled event)
+export const chatHistory = (row) => {
+  if (!row || !row.log_file) return [];
+  let text = '';
+  try { text = fs.readFileSync(row.log_file, 'utf8'); } catch { return []; }
+  const lines = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let e; try { e = JSON.parse(line); } catch { e = line; }
+    lines.push(e);
+  }
+  return lines;
+};
 
 // The chat agent's extra context: read-only eyes on the dispatcher itself,
 // so a chat can answer "what are my agents doing / which model is loaded".
@@ -169,7 +199,7 @@ export async function createChat(agent) {
     id, agent, model: modelSel ? `${modelSel.provider}/${modelSel.id}` : null,
     isStreaming: false, dead: false,
     clients: new Set(), lines: [],
-    lastActive: Date.now(),
+    lastActive: Date.now(), startedAt: Date.now(),
     logFile: '',
     child: null, name: '',
   };
@@ -181,6 +211,11 @@ export async function createChat(agent) {
   c.name = `tea-chat-${id}-${suffix}`;
   fs.mkdirSync(path.dirname(c.logFile), { recursive: true });
   chats.set(id, c);
+  db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file) VALUES (?,?,?,?)')
+    .run(id, agent, c.model, c.logFile);
+  // start marker in the transcript (replayed on reconnect, and the first
+  // line of the saved history)
+  chatSay(c, `[00-tea] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}`);
 
   // Gitea access for the chat agent: separate "chat" user (audit separation
   // from task work). Write still requires a per-repo collaborator grant.
@@ -246,6 +281,7 @@ export function chatMessage(id, message) {
   if (!message) throw new Error('empty message');
   message = message.slice(0, 20000);
   c.lastActive = Date.now();
+  db.prepare('UPDATE chat_sessions SET messages = messages + 1 WHERE id=?').run(id);
   // echo the user message into the stream: the transcript is SERVER-
   // authoritative, so a reconnect/reload replays the whole conversation
   // (user bubbles included) instead of only the agent side
