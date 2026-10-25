@@ -225,6 +225,9 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
     await new Promise((resolve, reject) => {
     const dockerArgs = [
       'run', '--rm',
+      // cap the job container so it can't eat the cores reserved for
+      // llama.cpp (setup.sh CPU plan: host cores = llama + ~4 for agents)
+      '--cpus', CFG.agentCpus,
       ...(isInfra ? [] : ['--runtime=runsc']),
       ...(isInfra
         ? ['--name', `tea-infra-${t.id}`,

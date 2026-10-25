@@ -23,6 +23,7 @@ directory in this repo (`seed.sh` pushes it).
 
 ```
 docker-compose.yml          # gitea + db + runner + 00-tea
+setup.sh                    # one-command interactive setup wizard (8 steps)
 seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 sync-template.sh            # push agents-actions updates into template-based repos
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
@@ -43,6 +44,41 @@ Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
 
 ## Setup
 
+### One command
+
+```bash
+./setup.sh
+```
+
+An interactive 8-step wizard takes a bare checkout to a running, fully
+seeded stack:
+
+1. **preflight** — docker/compose/jq/git, ports 3000/3001/3002/222, runsc,
+   llama.cpp router reachability
+2. **agent model configs** — generates the gitignored
+   `agent-sandbox/pi/pi-settings/models.json` and
+   `agent-sandbox/opencode/opencode-config/opencode.json` from the `.example`
+   files + the live model list of your llama.cpp router
+3. **`.env`** — generated (or finished) interactively: Gitea URL, admin user,
+   postgres creds (auto-generated password), router URL, managed repos
+4. **images** — builds `00-tea`, `gitea-pages`, `agent-sandbox:{base,pi,
+   opencode,review,infra,ops}` and (asked) `gitea-android`
+5. **Gitea + Postgres** — `compose up -d db server`, waits for health
+6. **seed** — runs `seed.sh` (users, tokens, repos, runners, global webhook)
+7. **full stack** — `compose up -d` for everything
+8. **verify + summary** — API/dispatcher/runner/webhook/router checks, links,
+   and a "try it" prompt
+
+Every step is idempotent — re-run `./setup.sh` anytime (e.g. after changing
+the model set: `./setup.sh --rebuild`). Flags:
+
+| Flag | Effect |
+|---|---|
+| `--yes` | non-interactive: defaults + existing `.env` |
+| `--rebuild` | force-rebuild all images |
+| `--skip-build` | skip image builds |
+| `--no-android` | skip the large `gitea-android` build |
+
 ### Prerequisites
 
 - Docker + compose plugin
@@ -50,64 +86,24 @@ Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
   the agents talk to it through `host.docker.internal` (mapped to
   `host-gateway` in compose)
 - Ports 3000 (web) and 222 (SSH) free
+- gVisor (`runsc`) — agent task sandboxes
 
-### 1. Configure secrets
+### Manual setup (what the wizard does, step by step)
 
-```bash
-cp .env.example .env
-$EDITOR .env   # postgres user/password at minimum
-```
-
-### 2. Start and seed
-
-```bash
-docker compose up -d db server
-./seed.sh
-```
-
-`seed.sh` is idempotent and does the rest:
-
-1. waits for Gitea on `:3000`
-2. creates the admin (`ADMIN_USER`) and `bot` users — passwords from `.env`,
-   generated and written back if absent
-3. generates all API tokens (`GITEA_TOKEN`, `AGENT_TOKEN`, `ADMIN_TOKEN`) and
-   writes them into `.env`
-4. creates and pushes both repos — this checkout as `gitea-with-agents`, the
-   `agents-actions/` directory as the template — and marks it `template: true`
-5. mints the runner registration tokens via the admin API → `.env`
-6. starts the runner (self-registers)
+1. `cp .env.example .env` + fill in postgres creds (at minimum)
+2. create the agent model configs from the `.example` files (wizard step 2)
+3. build the images (wizard step 4)
+4. `docker compose up -d db server && ./seed.sh` — idempotent: users,
+   tokens → `.env`, repos, runner registration tokens, global webhook
 
 Agents act as a dedicated `bot` user so you can review their work (commits,
 PRs, comments all show up under `bot`).
 
-### 3. Build the agent images
+New repos: create from the `agents-actions` template — they self-enroll on
+the first `@pi`/`@opencode` mention (00-tea grants the bot write access
+itself), so no manual collaborator step is needed.
 
-```bash
-# base first, then the variants
-cd agent-sandbox
-docker build -t agent-sandbox:base .
-cd pi
-cp pi-settings/models.json.example pi-settings/models.json   # fill in llama.cpp host + key
-docker build -t agent-sandbox:pi .
-cd ../opencode
-cp opencode-config/opencode.json.example opencode-config/opencode.json  # same
-docker build -t agent-sandbox:opencode .
-cd ..
-docker build -t agent-sandbox:ops ops     # pi + docker CLI, for the @ops agent
-```
-
-The real config files (`models.json`, `opencode.json`) contain the llama.cpp
-API key and are gitignored; the builds fail fast with a hint if they're missing.
-
-### 4. Create a repo from the template
-
-1. New Repository → **Create from template → agents-actions**
-2. Add `bot` as collaborator with **write** (Settings → Collaborators), or:
-   `PUT /repos/{owner}/{repo}/collaborators/bot` with `{"permission":"write"}`
-
-Now `@pi` / `@opencode` comments on that repo work.
-
-### 5. Updating template-based repos
+### Updating template-based repos
 
 Gitea templates are a one-time copy — they don't propagate changes. After
 editing workflows in `agents-actions/`, push the update into each consuming

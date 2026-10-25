@@ -169,6 +169,9 @@ services:
       # host's llama.cpp — the container only needs node + git + light builds)
       - CHAT_MEMORY=${CHAT_MEMORY:-4g}
       - CHAT_CPUS=${CHAT_CPUS:-2}
+      # cap for one-shot agent job containers (1 concurrent) — protects the
+      # host cores reserved for llama.cpp (setup.sh CPU plan)
+      - AGENT_CPUS=${AGENT_CPUS:-2}
       # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
       - GITEA_DB_USER=${POSTGRES_USER}
       - GITEA_DB_NAME=${POSTGRES_DB}

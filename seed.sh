@@ -6,6 +6,7 @@
 # already-running instance).
 #
 # Usage:
+#   ./setup.sh          # preferred — interactive wizard that does all of this
 #   cp .env.example .env && $EDITOR .env   # postgres creds at minimum
 #   docker compose up -d db server
 #   ./seed.sh
@@ -34,7 +35,36 @@ set_env() {
 }
 
 user_exists() { curl -sf "$GITEA_URL/api/v1/users/$1" >/dev/null 2>&1; }
-token_valid() { curl -sf -H "Authorization: token $1" "$GITEA_URL/api/v1/user" >/dev/null 2>&1; }
+# token_usable — the token is RECOGNIZED by Gitea. Scoped tokens
+# (read:repository, write:repository) cannot call /api/v1/user (needs
+# read:user), so check the auth-failure message, not the status code —
+# a 403 "Forbidden" means the token works, just without that scope.
+token_usable() {
+  local body
+  body=$(curl -s -H "Authorization: token $1" "$GITEA_URL/api/v1/user" 2>/dev/null) || true
+  [[ -n $body && $body != *"invalid username, password or token"* ]]
+}
+# gen_token USER NAME SCOPES — mints a token; if the name is already in use
+# (stale .env, manual token) the old one is deleted first via the admin API,
+# so seed stays idempotent instead of dying with "name has been used already"
+gen_token() {
+  local user=$1 name=$2 scopes=$3 val id admin
+  if val=$(docker exec -u git gitea gitea admin user generate-access-token \
+      --username "$user" --token-name "$name" --scopes "$scopes" --raw 2>/dev/null); then
+    printf '%s' "$val"; return
+  fi
+  # a valid admin-scope token for the cleanup API (GITEA_TOKEN is minted
+  # first, so it is available even while ADMIN_TOKEN itself is being fixed)
+  if token_usable "${GITEA_TOKEN:-}"; then admin=$GITEA_TOKEN; else admin=$ADMIN_TOKEN; fi
+  id=$(curl -sf -H "Authorization: token $admin" \
+    "$GITEA_URL/api/v1/admin/users/$user/tokens" 2>/dev/null \
+    | jq -r --arg n "$name" '.[] | select(.name == $n) | .id' || true)
+  [[ -n $id ]] && curl -sf -X DELETE -H "Authorization: token $admin" \
+    "$GITEA_URL/api/v1/admin/users/$user/tokens/$id" >/dev/null
+  val=$(docker exec -u git gitea gitea admin user generate-access-token \
+    --username "$user" --token-name "$name" --scopes "$scopes" --raw)
+  printf '%s' "$val"
+}
 runner_registered() {
   curl -sf -H "Authorization: token $ADMIN_TOKEN" \
     "$GITEA_URL/api/v1/admin/actions/runners?limit=50" 2>/dev/null \
@@ -83,33 +113,27 @@ done
 log "API tokens"
 declare -A tok_names=( [GITEA_TOKEN]="$ADMIN_USER" [AGENT_TOKEN]="$BOT_USER" [ADMIN_TOKEN]="$ADMIN_USER" )
 for k in GITEA_TOKEN AGENT_TOKEN ADMIN_TOKEN; do
-  if token_valid "${!k}"; then echo "$k: ok"; skip
+  if token_usable "${!k}"; then echo "$k: ok"; skip
   else
-    val=$(docker exec -u git gitea gitea admin user generate-access-token \
-      --username "${tok_names[$k]}" --token-name seed --scopes all --raw)
+    val=$(gen_token "${tok_names[$k]}" seed all)
     set_env "$k" "$val"; echo "$k: generated → written to .env"
   fi
 done
 # Read-only bot token for the code REVIEWER (00-tea review chain): the review
 # container clones with it and gets nothing else, so a reviewer physically
 # cannot push — it can only review.
-if token_valid "${REVIEW_TOKEN:-}"; then echo "REVIEW_TOKEN: ok"; skip
+if token_usable "${REVIEW_TOKEN:-}"; then echo "REVIEW_TOKEN: ok"; skip
 else
-  val=$(docker exec -u git gitea gitea admin user generate-access-token \
-    --username "$BOT_USER" --token-name review --scopes read:repository --raw)
+  val=$(gen_token "$BOT_USER" review read:repository)
   set_env REVIEW_TOKEN "$val"; echo "REVIEW_TOKEN: generated (read:repository) → written to .env"
 fi
 # Write token for the /chat agents (user "chat"): chat containers receive it
 # so the agent can clone/push/post AS THE chat user — Gitea history then
 # shows chat-driven work under a separate login, not under bot or the admin.
 # Write access per repo is still gated by collaborator grants (/chat UI).
-# NOTE: no token_valid() here — write:repository can't call /api/v1/user
-# (needs read:user), so a non-empty value is the check; a revoked token must
-# be removed from .env to trigger regeneration.
-if [[ -n ${CHAT_GITEA_TOKEN:-} ]]; then echo "CHAT_GITEA_TOKEN: ok"; skip
+if token_usable "${CHAT_GITEA_TOKEN:-}"; then echo "CHAT_GITEA_TOKEN: ok"; skip
 else
-  val=$(docker exec -u git gitea gitea admin user generate-access-token \
-    --username "$CHAT_USER" --token-name 00-tea-chat --scopes write:repository --raw)
+  val=$(gen_token "$CHAT_USER" 00-tea-chat write:repository)
   set_env CHAT_GITEA_TOKEN "$val"; echo "CHAT_GITEA_TOKEN: generated (write:repository) → written to .env"
 fi
 

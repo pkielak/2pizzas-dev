@@ -47,6 +47,9 @@ export const CFG = {
   // git clones + light builds; without caps a runaway chat process is a host DoS
   chatMemory: process.env.CHAT_MEMORY || '4g',
   chatCpus: process.env.CHAT_CPUS || '2',
+  // cap for the one-shot agent JOB containers (task pump runs 1 concurrent) —
+  // keeps the host cores reserved for llama.cpp (see setup.sh CPU plan)
+  agentCpus: process.env.AGENT_CPUS || '2',
   pollIntervalMs: 60_000,
   concurrency: 1,
   llamaUrl: (process.env.LLAMA_CPP_URL || 'http://localhost:8080').replace(/\/+$/, ''),

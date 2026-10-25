@@ -213,6 +213,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
 | `00-tea/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, **global webhook**, bot collaborators — safe to re-run |
+| `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) — shared by android-runner |
