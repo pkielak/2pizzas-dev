@@ -29,7 +29,7 @@ export async function backendsPage() {
       : '<li class="meta">unreachable</li>';
     const notBaked = !baked.includes(b.id);
     return `<div class="card" id="backend-${b.id}" style="margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="bhead">
         <strong>${b.id}</strong>
         <span class="meta">priority ${b.priority}</span>
         ${b.id === piDef?.provider && b.defaultModel === piDef.id ? '<span class="badge badge-success">★ pi default</span>' : ''}
@@ -66,12 +66,20 @@ export async function backendsPage() {
     .bform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
     .bform input{background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd);padding:7px 10px;font-size:13px}
     .bform input:focus{outline:none;border-color:var(--color-primary,#7ab)}
+    .bhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    /* small screens: stack the forms, full-width inputs, wrap long urls */
+    @media (max-width:720px){
+      .bform{flex-direction:column;align-items:stretch}
+      .bform input{width:100%;min-width:0}
+      .bform .bbtn{width:100%}
+      .bhead .meta{flex-basis:100%;order:9;word-break:break-all}
+    }
     .badge{border-radius:9px;padding:1px 8px;font-size:11px;background:#333;color:#ddd}
     .badge-success{background:#0a5;color:#fff}
     .badge-info{background:#246;color:#fff}
     </style>
     <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="bhead">
         <strong>next task will use</strong>
         <code>${picked.provider}/${picked.id}</code>
         <span class="meta">(${picked.source})</span>
@@ -79,7 +87,7 @@ export async function backendsPage() {
     </div>
     ${backends.map((b, i) => row(b, models[i], i)).join('')}
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="bhead">
         <strong>add a backend</strong>
         <span class="meta">any OpenAI-compatible /v1 endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …</span>
       </div>
@@ -95,7 +103,7 @@ export async function backendsPage() {
       images — <code>./setup.sh --rebuild</code> — until then it shows a <strong>not baked</strong> badge.</p>
     </div>
     <div class="card">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="bhead">
         <strong>agents</strong>
         <span class="meta">images: ${CFG.images.pi} · ${CFG.images.opencode}</span>
       </div>
