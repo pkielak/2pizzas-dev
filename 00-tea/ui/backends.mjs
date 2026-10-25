@@ -106,6 +106,7 @@ export async function backendsPage() {
       </table>
     </div>`,
     script: `
+    <script>
     const val = (f, k) => f.querySelector('[data-f=' + k + ']').value.trim();
     const post = async (path, opts) => {
       const r = await fetch(path, { method: opts?.method || 'POST', headers: { 'content-type': 'application/json' }, body: opts?.body ? JSON.stringify(opts.body) : undefined });
@@ -133,6 +134,7 @@ export async function backendsPage() {
         const f = document.getElementById('edit-' + id);
         if (await post('/api/backends/' + encodeURIComponent(id), { method: 'PATCH', body: { url: val(f,'url'), apiKey: val(f,'apiKey'), defaultModel: val(f,'defaultModel') } })) location.reload();
       }
-    });`,
+    });
+    </script>`,
   };
 }
