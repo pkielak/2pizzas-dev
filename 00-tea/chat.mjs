@@ -91,7 +91,13 @@ const piLine = (c, raw) => {
   try { e = JSON.parse(raw); } catch { return chatSay(c, raw); } // [00-tea]/[stderr] markers
   switch (e.type) {
     case 'agent_start': c.isStreaming = true; return chatLive(c, { type: 'working' });
-    case 'agent_settled': c.isStreaming = false; return chatSay(c, { type: 'settle' });
+    case 'agent_settled':
+      c.isStreaming = false;
+      chatSay(c, { type: 'settle' });
+      // refresh the ctx-usage display from pi (its own context-window
+      // estimate — the same number pi uses for compaction decisions)
+      c.child.stdin.write(JSON.stringify({ type: 'get_session_stats' }) + '\n');
+      return;
     // compaction (long-chat context management): live status while it runs,
     // a transcript marker when done (replayed on reconnect). pi continues
     // the turn itself (see the set_auto_compaction note in createChat);
@@ -122,6 +128,16 @@ const piLine = (c, raw) => {
     case 'tool_execution_end': return chatLive(c, { type: 'tool_end' });
     case 'auto_retry_start': return chatLive(c, { type: 'auto_retry', attempt: e.attempt, max: e.maxAttempts });
     case 'response':
+      if (e.command === 'get_session_stats') {
+        const cu = e.data && e.data.contextUsage;
+        if (cu && cu.tokens != null) { // null right after compaction — next turn refreshes
+          c.ctxUsed = cu.tokens;
+          if (cu.contextWindow) c.modelCtx = cu.contextWindow;
+          db.prepare('UPDATE chat_sessions SET tokens=? WHERE rowid=?').run(c.ctxUsed, c.rowid);
+          chatLive(c, { type: 'ctx', tokens: c.ctxUsed, window: c.modelCtx });
+        }
+        return;
+      }
       if (e.success === false) chatSay(c, { type: 'error', message: e.error || 'command failed' });
       return;
     default: return;
@@ -131,8 +147,8 @@ const piLine = (c, raw) => {
 export const chatKill = (c, note) => {
   if (c.dead) return;
   c.dead = true;
-  db.prepare('UPDATE chat_sessions SET ended_at=datetime(\'now\'), end_reason=? WHERE id=? AND ended_at IS NULL')
-    .run(note || 'ended', c.id);
+  db.prepare('UPDATE chat_sessions SET ended_at=datetime(\'now\'), end_reason=? WHERE rowid=? AND ended_at IS NULL')
+    .run(note || 'ended', c.rowid);
   // killing the `docker run` client does NOT remove the container — rm it by name
   // (docker 29 no longer prints the container id on `docker run`)
   try { c.child.kill('SIGKILL'); } catch { /* already gone */ }
@@ -161,6 +177,14 @@ export const chatSessionRow = (id) => db
 
 export const chatSessions = (limit = 100) => db
   .prepare('SELECT * FROM chat_sessions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
+
+// true iff this persisted row belongs to a LIVE session: chatSeq ids restart
+// at 1 per 00-tea run, so matching must compare created_at, not id alone
+// (sqlite stores 'YYYY-MM-DD HH:MM:SS' UTC)
+export const chatRowLive = (r) => {
+  const live = chats.get(r.id);
+  return !!live && new Date(live.startedAt).toISOString().replace('T', ' ').slice(0, 19) === r.created_at;
+};
 
 // transcript of a (dead) session from its log file: the log IS the
 // server-authoritative transcript (chatSay writes every settled event)
@@ -200,6 +224,7 @@ export async function createChat(agent) {
     isStreaming: false, dead: false,
     clients: new Set(), lines: [],
     lastActive: Date.now(), startedAt: Date.now(),
+    ctxUsed: 0, modelCtx: modelSel?.ctx ?? 0, // pi's get_session_stats refines both after the first turn
     logFile: '',
     child: null, name: '',
   };
@@ -211,8 +236,10 @@ export async function createChat(agent) {
   c.name = `tea-chat-${id}-${suffix}`;
   fs.mkdirSync(path.dirname(c.logFile), { recursive: true });
   chats.set(id, c);
-  db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file) VALUES (?,?,?,?)')
-    .run(id, agent, c.model, c.logFile);
+  // rowid scopes later UPDATEs — chatSeq ids restart per run, so a bare
+  // WHERE id=? would hit older rows sharing the same id
+  c.rowid = db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file) VALUES (?,?,?,?)')
+    .run(id, agent, c.model, c.logFile).lastInsertRowid;
   // start marker in the transcript (replayed on reconnect, and the first
   // line of the saved history)
   chatSay(c, `[00-tea] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}`);
@@ -281,7 +308,7 @@ export function chatMessage(id, message) {
   if (!message) throw new Error('empty message');
   message = message.slice(0, 20000);
   c.lastActive = Date.now();
-  db.prepare('UPDATE chat_sessions SET messages = messages + 1 WHERE id=?').run(id);
+  db.prepare('UPDATE chat_sessions SET messages = messages + 1 WHERE rowid=?').run(c.rowid);
   // echo the user message into the stream: the transcript is SERVER-
   // authoritative, so a reconnect/reload replays the whole conversation
   // (user bubbles included) instead of only the agent side
@@ -298,12 +325,15 @@ export function chatAbort(id) {
 }
 
 // reap chat containers orphaned by a previous 00-tea run (they are plain
-// docker containers — they outlive the dispatcher that spawned them)
+// docker containers — they outlive the dispatcher that spawned them) AND
+// close out their session rows (a kill-by-restart never ran chatKill, so
+// their ended_at is still NULL)
 execFile('docker', ['ps', '-aq', '--filter', 'name=tea-chat-', '--format', '{{.ID}}'],
   (err, out) => {
     if (err) return;
     for (const cid of out.trim().split('\n')) if (cid) execFile('docker', ['rm', '-f', cid]);
   });
+db.prepare(`UPDATE chat_sessions SET ended_at=created_at, end_reason='00-tea restart' WHERE ended_at IS NULL`).run();
 
 setInterval(() => {
   for (const c of [...chats.values()])

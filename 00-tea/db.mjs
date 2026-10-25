@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   ended_at   TEXT,
   end_reason TEXT,                  -- 'idle timeout' | 'closed by user' | 'container exited'
   log_file   TEXT,
-  messages   INTEGER NOT NULL DEFAULT 0
+  messages   INTEGER NOT NULL DEFAULT 0,
+  tokens     INTEGER          -- last known context usage (pi get_session_stats → contextUsage.tokens)
 );
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_id ON chat_sessions(id, created_at);
 CREATE TABLE IF NOT EXISTS chat_grants (
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS managed_repos (
   PRIMARY KEY (owner, name)
 );
 `);
+try { db.exec('ALTER TABLE chat_sessions ADD COLUMN tokens INTEGER'); } catch { /* already present */ } // live dbs from before the tokens column
 for (const col of ['body TEXT', 'model TEXT', 'model_ctx INTEGER', 'tokens INTEGER',
   'parent_id INTEGER',  // review chain: the task this one was spawned by
   'round INTEGER',      // work round (1 = original, N+1 = rework after review N)

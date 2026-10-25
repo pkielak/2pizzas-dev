@@ -74,7 +74,7 @@ import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBacke
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatHistory } from './chat.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatHistory, chatRowLive } from './chat.mjs';
 import { page } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
@@ -197,10 +197,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
     if (!chatAuthed(req, url, res)) return chat401();
     // live status overlaid on the persisted rows (a live session's row has
-    // ended_at NULL — same rows, one source of truth)
+    // ended_at NULL). chatSeq ids restart at 1 per 00-tea run, so overlay
+    // ONLY the row whose created_at matches the live session's start — an
+    // older row with the same id is a dead session that merely shares the id
     const rows = chatSessions().map((r) => {
       const live = chats.get(r.id);
-      return { ...r, active: !!live, isStreaming: live?.isStreaming ?? false, lastActive: live ? live.lastActive : (r.ended_at || r.created_at) };
+      const isActive = chatRowLive(r);
+      return { ...r, active: isActive, isStreaming: isActive ? live.isStreaming : false, lastActive: isActive ? live.lastActive : (r.ended_at || r.created_at) };
     });
     return send(200, 'application/json', JSON.stringify(rows));
   }

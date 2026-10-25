@@ -1,8 +1,8 @@
 import { CFG } from '../config.mjs';
 import { db } from '../db.mjs';
 import { apiGet } from '../gitea.mjs';
-import { chats, chatSessions, chatHistory } from '../chat.mjs';
-import { esc } from './layout.mjs';
+import { chats, chatSessions, chatHistory, chatRowLive } from '../chat.mjs';
+import { esc, fmtTok } from './layout.mjs';
 
 // one line of the persisted transcript (log line: parsed event or plain
 // marker text) → a rendered message block (same classes as the live view)
@@ -32,7 +32,7 @@ export async function chatListPage() {
   // past sessions: persisted rows (chat_sessions) — the whole history is
   // still readable from each session's log file
   const past = chatSessions(100)
-    .filter((r) => !chats.has(r.id)) // live ones are in the section above
+    .filter((r) => !chatRowLive(r)) // live ones are in the section above (id-only matching would shadow an older run's same-id row)
     .map((r) => `<a class="item" href="/chat/${r.id}">
     <div class="l1">@${esc(r.agent)} <span>#${r.id}</span> <span class="badge">ended</span></div>
     <div class="l2">${esc(r.created_at?.slice(5, 16) ?? '')} → ${esc(r.ended_at?.slice(11, 19) ?? '?')} UTC · ${esc(r.end_reason ?? '?')} · ${r.messages} message${r.messages === 1 ? '' : 's'}</div>
@@ -127,12 +127,15 @@ export function chatView(c) {
   <textarea id="msg" rows="2" placeholder="message ${esc(c.agent)}… (Enter sends, Shift+Enter newline)"></textarea>
   <div class="chatbtns"><button id="send"><span class="ic">▷</span>send</button><button id="stop"><span class="ic">□</span>stop</button></div>
 </div>
+<div class="meta ctxline" id="ctxline">${c.model ? `<span class="model">${esc(c.model)}</span>` : ''}${c.modelCtx ? ` · <span class="ctx">0/${fmtTok(c.modelCtx)} tok (0%)</span>` : ''}</div>
 </div>
 <script>
 // token carrier fallback (the session cookie is primary; this covers
 // cookie-blocked browsers) — URL param, else the localStorage saved token
 const tk = new URLSearchParams(location.search).get('token') || localStorage.getItem('tea_chat_token');
 const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
+const MODEL = ${c.model ? `'<span class="model">${esc(c.model)}</span>'` : "''"};
+const ctxline = document.getElementById('ctxline');
 document.querySelector('.back').href = auth('/chat');
 const box = document.getElementById('msgs');
 const stateEl = document.getElementById('chatstate');
@@ -193,6 +196,12 @@ const handle = (line) => {
   else if (e.type === 'auto_retry') setStatus('retrying (' + e.attempt + '/' + e.max + ')…');
   else if (e.type === 'compaction') setStatus('compacting context…');
   else if (e.type === 'compacted') { curText = null; addEl('mcompacted', '— context compacted —'); }
+  else if (e.type === 'ctx') {
+    // pi's own context-window estimate, refreshed after every turn
+    const t = e.tokens, w = e.window;
+    const f = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    ctxline.innerHTML = MODEL + (w ? ' · <span class="ctx">' + f(t) + '/' + f(w) + ' tok (' + Math.min(100, Math.round(t / w * 100)) + '%)</span>' : '');
+  }
   else if (e.type === 'error') { setStatus(''); addEl('merr', 'error: ' + escH(e.message)); }
 };
 const es = new EventSource(auth('/chat/${c.id}/stream'));
@@ -243,7 +252,7 @@ export function chatHistoryView(row) {
   return `<div class="chatapp">
 <div class="chathead">
 <a class="back" href="/chat">←</a><span class="chid">#${row.id}</span><span class="badge">ended</span>
-<span class="meta">${esc(row.end_reason ?? '')} · ${row.messages} msg · ${esc(row.created_at?.slice(5, 16) ?? '')} → ${esc(row.ended_at?.slice(11, 19) ?? '')}</span>
+<span class="meta">${esc(row.end_reason ?? '')} · ${row.messages} msg${row.tokens ? ` · <span class="ctx">${fmtTok(row.tokens)} tok ctx</span>` : ''} · ${esc(row.created_at?.slice(5, 16) ?? '')} → ${esc(row.ended_at?.slice(11, 19) ?? '')}</span>
 </div>
 <div id="msgs">${blocks || '<div class="msettle">empty session</div>'}</div>
 <div class="chatin endednote"><span class="meta">this session has ended — its transcript is preserved. <a href="/chat">start a new chat</a></span></div>

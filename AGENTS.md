@@ -186,7 +186,13 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   sessions and `/chat/<id>` of an ended session renders a read-only
   transcript from its log (`chatHistory()`; the log IS the transcript).
   chatSeq ids restart at 1 per 00-tea run, so a dead id resolves to the
-  newest row with it. Optional `CHAT_TOKEN` gates
+  newest row with it; ALL writes to the table are scoped by rowid (a bare
+  `WHERE id=?` hits older same-id rows), and live-row matching compares
+  `created_at` (`chatRowLive()`). The model + ctx-usage line under the chat
+  input comes from pi's `get_session_stats` (`contextUsage` — pi's own
+  window estimate), queried after every `agent_settled`; last value persists
+  in `chat_sessions.tokens`. A 00-tea restart backfills `ended_at` on
+  orphaned rows (`00-tea restart`). Optional `CHAT_TOKEN` gates
   `/chat` + `/api/chat*` (the UI is tailnet-reachable). Token UX: the 401 is
   an UNLOCK form (first chat use prompts for the token; a just-rejected
   token shows the form instead of auto-redirecting — that would loop), the

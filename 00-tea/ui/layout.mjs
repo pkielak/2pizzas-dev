@@ -167,6 +167,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .mstatus{color:var(--color-primary-light-1,#7cf);font-size:12.5px;margin:8px 0;opacity:.85}
 .mend{color:var(--color-warning-text,#fc6);font-size:12.5px;margin:12px 0;text-align:center;border-top:1px solid var(--color-light-border,#333);padding-top:10px}
 .chatin{display:flex;gap:8px;align-items:stretch;flex:none;margin-top:4px}
+.ctxline{flex:none;margin-top:6px;min-height:1em}
 .chatin.endednote{align-items:center}
 .chatbtns{display:flex;flex-direction:column;gap:8px;align-items:stretch}
 .chatbtns .ic{display:inline-block;margin-right:7px;vertical-align:middle;transform:translateY(-1px)}
