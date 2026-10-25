@@ -1,7 +1,7 @@
 import { CFG } from '../config.mjs';
 import { db } from '../db.mjs';
 import { managedRepos } from '../repos.mjs';
-import { llamaModels } from '../llama.mjs';
+import { readRegistry, backendModels } from '../inference.mjs';
 import { execFileP } from '../util.mjs';
 import { esc } from './layout.mjs';
 
@@ -34,9 +34,11 @@ const rlabel = (x, y, t) => `<text transform="rotate(-90 ${x} ${y})" x="${x}" y=
 
 export function infraPage() {
   return (async () => {
+    const backends = readRegistry();
+    const first = backends[0];
     const [running, models, managedN, inFlight] = await Promise.all([
       dockerNames(),
-      llamaModels().catch(() => null),
+      backendModels(first).catch(() => null),
       Promise.resolve(managedRepos().length),
       Promise.resolve(db.prepare("SELECT agent, COUNT(*) n FROM tasks WHERE status IN ('queued','running') GROUP BY agent").all()),
     ]);
@@ -78,7 +80,7 @@ ${block(810, 40, 160, 100, 'chat containers', ['long-lived runsc', chatN === nul
 
 ${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN} managed repo${managedN === 1 ? '' : 's'} · bot + chat users`], up('gitea') === null ? null : (up('gitea') && up('gitea-db-1')), '#gitea')}
 ${block(380, 250, 240, 110, '00-tea', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-00-tea'), '/tasks')}
-${block(730, 250, 240, 110, 'llama.cpp router', [esc(CFG.llamaUrl), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable · no model loaded') : 'unreachable'], models ? true : false)}
+${block(730, 250, 240, 110, esc(first.id) + (backends.length > 1 ? ` +${backends.length - 1}` : ''), [esc(first.url) + (backends.length > 1 ? ` · ${backends.length} backends` : ''), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable') : 'unreachable'], models ? true : false)}
 
 ${block(150, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · ordinary CI'], up('gitea-runner'))}
 ${block(400, 460, 200, 100, 'android-runner', ['label: android', 'gitea-android:latest image'], up('gitea-android-runner'))}

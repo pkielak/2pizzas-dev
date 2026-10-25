@@ -19,7 +19,7 @@
  *   db.mjs        sqlite schema + task log helpers
  *   gitea.mjs     Gitea API client
  *   repos.mjs     managed repos (env seed ∪ self-enrolled) + enroll
- *   llama.mjs     model selection (llama.cpp router)
+ *   inference.mjs backend registry + model selection (inference.json)
  *   theme.mjs     Gitea theme mirroring for the UI
  *   prompts.mjs   agent prompts (comment / review / agent-review / rework)
  *   queue.mjs     enqueue + internal review-chain tasks
@@ -63,7 +63,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { managedRepos } from './repos.mjs';
-import { llamaModels, piDefaultModel } from './llama.mjs';
+import { readRegistry, backendModels, piDefaultModel } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
@@ -382,9 +382,14 @@ server.listen(CFG.port, () => {
   console.log(`[00-tea] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
   (async () => {
     try {
-      const ms = await llamaModels();
-      const loaded = ms.filter((m) => m.loaded).map((m) => m.id).join(', ') || 'none';
-      console.log(`[llama] ${CFG.llamaUrl}: ${ms.map((m) => m.id).join(', ') || 'no models'} · loaded: ${loaded} · pi default: ${await piDefaultModel() ?? 'n/a'}`);
-    } catch (e) { console.error(`[llama] ${e.message}`); }
+      for (const b of readRegistry()) {
+        try {
+          const ms = await backendModels(b);
+          const loaded = ms.filter((m) => m.loaded).map((m) => m.id).join(', ') || 'none';
+          console.log(`[inference] ${b.id} (p${b.priority}) ${b.url}: ${ms.map((m) => m.id).join(', ') || 'no models'} · loaded: ${loaded}`);
+        } catch (e) { console.error(`[inference] ${b.id} (${b.url}): ${e.message}`); }
+      }
+      console.log(`[inference] pi baked default: ${JSON.stringify(await piDefaultModel())}`);
+    } catch (e) { console.error(`[inference] ${e.message}`); }
   })();
 });

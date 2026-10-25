@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
-import { pickModel } from './llama.mjs';
+import { pickModel } from './inference.mjs';
 import { liveBroadcast } from './live.mjs';
 
 // ── chat sessions (long-lived sandboxed agent over RPC) ─────────────────────
@@ -166,7 +166,7 @@ export async function createChat(agent) {
   chatSeq++;
   const id = chatSeq;
   const c = {
-    id, agent, model: modelSel?.id ?? null,
+    id, agent, model: modelSel ? `${modelSel.provider}/${modelSel.id}` : null,
     isStreaming: false, dead: false,
     clients: new Set(), lines: [],
     lastActive: Date.now(),
@@ -204,7 +204,7 @@ export async function createChat(agent) {
     ...giteaEnv,
     CFG.images.pi,
     'pi', '--mode', 'rpc',
-    '--model', `llama.cpp/${modelSel?.id ?? 'unknown'}`,
+    '--model', `${modelSel?.provider ?? 'none'}/${modelSel?.id ?? 'unknown'}`,
     '--append-system-prompt', CHAT_SYSTEM,
   ]);
 

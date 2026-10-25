@@ -184,68 +184,84 @@ else
   warn "  latest release: https://github.com/google/gvisor/releases — download runsc + containerd-shim-runsc-v1-<arch>, install both to /usr/local/bin, then restart the docker daemon"
 fi
 
-# llama.cpp router — needed for the agents, not for the stack itself
-LLAMA_PREFLIGHT=$(env_get LLAMA_CPP_URL)
-if [[ -n $LLAMA_PREFLIGHT ]] && curl -sf --max-time 3 "$LLAMA_PREFLIGHT/v1/models" >/dev/null 2>&1; then
-  ok "llama.cpp router reachable at $LLAMA_PREFLIGHT"
-elif [[ -n $LLAMA_PREFLIGHT ]]; then
-  warn "llama.cpp router NOT reachable at $LLAMA_PREFLIGHT — the stack works, but agent tasks will fail until it is up"
+# inference backends — needed for the agents, not for the stack itself
+INFER_PREFLIGHT=$( [[ -f inference.json ]] && jq -r '.backends[0].url' inference.json 2>/dev/null )
+[[ -n $INFER_PREFLIGHT ]] || INFER_PREFLIGHT=$(env_get LLAMA_CPP_URL)
+if [[ -n $INFER_PREFLIGHT ]] && curl -sf --max-time 3 "$INFER_PREFLIGHT/v1/models" >/dev/null 2>&1; then
+  ok "inference backend reachable at $INFER_PREFLIGHT"
+elif [[ -n $INFER_PREFLIGHT ]]; then
+  warn "inference backend NOT reachable at $INFER_PREFLIGHT — the stack works, but agent tasks will fail until it is up (or a lower-priority backend takes over)"
 else
-  warn "no LLAMA_CPP_URL set yet — you will be asked for it in the .env step"
+  warn "no inference backend configured yet — you will be asked for one in step 2"
 fi
 
-# ── 2. agent model config files (gitignored) ───────────────────────
-step "Agent model configs (baked into the agent images)"
-# pi: agent-sandbox/pi/pi-settings/models.json
-# opencode: agent-sandbox/opencode/opencode-config/opencode.json
-# Both are gitignored (they carry the router API key) and are COPY'd into
-# the images at build time — missing files abort the build.
+# ── 2. inference backends (inference.json → baked into agent images) ───────────────────────
+step "Inference backends (inference.json)"
+# Single source of truth: every backend is an OpenAI-compatible /v1 endpoint
+# (local llama.cpp router, vLLM, Ollama, OpenRouter, ...). 00-tea reads the
+# file at runtime (re-read on change, no restart); this step bakes the SAME
+# list into the pi/opencode configs (gitignored, COPY'd into the images — a
+# backend added after the last --rebuild won't work inside the agents, and
+# 00-tea logs a warning pointing here).
 LLAMA_URL=$(env_get LLAMA_CPP_URL)
 [[ -n $LLAMA_URL ]] || LLAMA_URL="http://localhost:8080"
 
-# model list: prefer the live router, fall back to the .example set
-LIVE_MODELS=$(curl -sf --max-time 3 "$LLAMA_URL/v1/models" 2>/dev/null | jq -c '[.data[].id]' 2>/dev/null || true)
-if [[ -n $LIVE_MODELS ]]; then ok "model list read from router: $(echo "$LIVE_MODELS" | jq -r 'join(", ")')"
-else warn "router unreachable — generated configs will use the .example model list"; fi
+if [[ -f inference.json ]]; then
+  ok "registry: $(jq -r '[.backends[] | .id + " (" + .url + ")"] | join(", ")' inference.json)"
+else
+  backends='{"backends":[]}'
+  i=0
+  while :; do
+    i=$((i + 1))
+    ask "backend $i id (provider id baked into the agent images)" "$([[ $i == 1 ]] && echo llama.cpp || echo "backend$i")" B_ID
+    ask "backend $i url (OpenAI-compatible base)" "$([[ $i == 1 ]] && echo $LLAMA_URL)" B_URL
+    ask "backend $i api key (empty if none)" "" B_KEY
+    ask "backend $i default model (empty = first in its list)" "" B_DEF
+    b=$(jq -n --arg id "$B_ID" --arg url "$B_URL" --arg key "$B_KEY" --arg def "$B_DEF" --argjson p "$i" \
+      '{id:$id, url:$url, apiKey:$key, priority:$p, defaultModel:(if $def=="" then null else $def)}')
+    backends=$(jq --argjson b "$b" '.backends += [$b]' <<<"$backends")
+    yesno "add another backend?" n || break
+  done
+  jq . <<<"$backends" > inference.json
+  ok "inference.json created"
+fi
+# keep the legacy env var in sync with the top-priority backend
+LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
 
-gen_pi_models() { # URL KEY OUT_FILE
-  local url=$1 key=${2:-no-key} out=$3
-  if [[ -n $LIVE_MODELS ]]; then
-    jq -n --arg b "$url/v1" --arg k "$key" --argjson ids "$LIVE_MODELS" \
-      '{providers:{"llama.cpp":{baseUrl:$b,api:"openai-completions",apiKey:$k,
-        models:[($ids[]|{id:.,contextWindow:65536})]}}}' > "$out"
-  else
-    sed "s|<your-llama-cpp-api-key>|$key|; s|http://localhost:8080/v1|$url/v1|" \
-      agent-sandbox/pi/pi-settings/models.json.example > "$out"
-  fi
-}
-gen_opencode_config() { # URL KEY OUT_FILE
-  local url=$1 key=${2:-no-key} out=$3
-  if [[ -n $LIVE_MODELS ]]; then
-    local first; first=$(echo "$LIVE_MODELS" | jq -r '.[0]')
-    jq -n --arg b "$url/v1" --arg k "$key" --arg m "llama.cpp/$first" --argjson ids "$LIVE_MODELS" \
-      '{model:$m,
-        provider:{"llama.cpp":{npm:"@ai-sdk/openai-compatible",name:"llama.cpp",
-          options:{baseURL:$b,apiKey:$k},
-          models:($ids|map({(.):{name:.}}))|add)}}' > "$out"
-  else
-    sed "s|YOUR_API_KEY|$key|; s|http://<LLAMA_CPP_HOST:PORT>/v1|$url/v1|" \
-      agent-sandbox/opencode/opencode-config/opencode.json.example > "$out"
-  fi
-}
-
+# bake the registry into the agent configs — live model list per backend,
+# falling back to its defaultModel when the backend is unreachable
 PI_MODELS=agent-sandbox/pi/pi-settings/models.json
 OC_CONFIG=agent-sandbox/opencode/opencode-config/opencode.json
-LLAMA_KEY=""
-if [[ ! -f $PI_MODELS || ! -f $OC_CONFIG ]]; then
-  ask "llama.cpp router URL (as reachable from the host)" "$LLAMA_URL" LLAMA_URL
-  ask "router API key (empty if the router requires none)" "" LLAMA_KEY
-  [[ -f $PI_MODELS ]] || { gen_pi_models "$LLAMA_URL" "$LLAMA_KEY" "$PI_MODELS"; ok "generated $PI_MODELS"; }
-  [[ -f $OC_CONFIG ]] || { gen_opencode_config "$LLAMA_URL" "$LLAMA_KEY" "$OC_CONFIG"; ok "generated $OC_CONFIG"; }
-else
-  ok "pi models.json present"
-  ok "opencode config present"
-fi
+IDS_JSON='{}'
+while IFS= read -r b; do
+  burl=$(jq -r '.url' <<<"$b"); bkey=$(jq -r '.apiKey' <<<"$b"); bdef=$(jq -r '.defaultModel // empty' <<<"$b")
+  ids=$(curl -sf --max-time 3 ${bkey:+-H "Authorization: Bearer $bkey"} "$burl/v1/models" 2>/dev/null | jq -c '[.data[].id]' || true)
+  [[ -n $ids ]] || ids='[]'
+  [[ -n $bdef ]] && ids=$(jq -c --arg d "$bdef" 'if index($d) then . else [$d] + . end' <<<"$ids")
+  [[ -n ${ids//[[:space:]]/} && $ids != "[]" ]] || warn "backend $(jq -r .id <<<"$b"): no model list (unreachable + no defaultModel) — the agent images will have no models for it"
+  IDS_JSON=$(jq -n --argjson acc "$IDS_JSON" --arg k "$(jq -r .id <<<"$b")" --argjson v "$ids" '$acc + {($k): $v}')
+done < <(jq -c '.backends[]' inference.json)
+
+jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$IDS_JSON" '
+  {providers: ($backends | map({key: .id, value: {
+      baseUrl: (.url | rtrimstr("/") + "/v1"),
+      api: "openai-completions",
+      apiKey: (if .apiKey == "" then "no-key" else .apiKey end),
+      models: (($ids[.id] // []) | map({id:., contextWindow:65536}))
+  }}) | from_entries)}' > "$PI_MODELS"
+ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + (.value.models | length | tostring)] | join(", ")' "$PI_MODELS")"
+
+FIRST_ID=$(jq -r '.backends[0].id' inference.json)
+FIRST_MODEL=$(jq -r --arg k "$FIRST_ID" '((.[$k] // [null])[0]) // "unknown"' <<<"$IDS_JSON")
+jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$IDS_JSON" --arg m "$FIRST_ID/$FIRST_MODEL" '
+  {model: $m,
+   provider: ($backends | map({key: .id, value: {
+      npm: "@ai-sdk/openai-compatible",
+      name: .id,
+      options: {baseURL: (.url | rtrimstr("/") + "/v1"), apiKey: (if .apiKey == "" then "no-key" else .apiKey end)},
+      models: (($ids[.id] // []) | map({(.):{name:.}}) | add) // {}
+   }}) | from_entries)}' > "$OC_CONFIG"
+ok "baked $OC_CONFIG (default model $FIRST_ID/$FIRST_MODEL)"
 
 # ── 3. .env ─────────────────────────────────────────────────────────
 step ".env"
@@ -308,23 +324,32 @@ for k in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB GITEA_URL ADMIN_USER LLAMA_
 done
 ok ".env complete"
 
-# CPU allocation — llama.cpp (host inference) vs the agent side.
+# CPU allocation — only relevant when a backend runs ON THIS HOST (the
+# agents share its cores). External backends: nothing to reserve.
 # The task pump runs ONE agent job at a time (concurrency=1); chat
 # containers are capped at CHAT_CPUS each; the rest is gitea/00-tea/runner.
 # Inference dominates, so it gets the bulk of the cores.
-cores=$(nproc 2>/dev/null || echo 8)
-AGENT_RESERVE=4
-llama_rec=$(( cores > AGENT_RESERVE + 2 ? cores - AGENT_RESERVE : 2 ))
-ask "cores for llama.cpp (host has $cores; ~$AGENT_RESERVE kept for agent jobs + chat + system)" "$llama_rec" LLAMA_CPUS
-[[ $LLAMA_CPUS =~ ^[0-9]+$ ]] || LLAMA_CPUS=$llama_rec
-set_env LLAMA_CPUS "$LLAMA_CPUS"
-left=$(( cores - LLAMA_CPUS ))
-if (( left < AGENT_RESERVE )); then
-  warn "only $left cores left for agents/chat/system — agent tasks will be slow while inference runs"
+LOCAL_BACKEND=0
+while IFS= read -r h; do
+  case $h in localhost|127.*|host-gateway) LOCAL_BACKEND=1 ;; esac
+done < <(jq -r '.backends[].url' inference.json | sed -E 's|^[a-z]+://||; s|/.*||')
+if [[ $LOCAL_BACKEND == 1 ]]; then
+  cores=$(nproc 2>/dev/null || echo 8)
+  AGENT_RESERVE=4
+  llama_rec=$(( cores > AGENT_RESERVE + 2 ? cores - AGENT_RESERVE : 2 ))
+  ask "cores for the local inference backend (host has $cores; ~$AGENT_RESERVE kept for agent jobs + chat + system)" "$llama_rec" LLAMA_CPUS
+  [[ $LLAMA_CPUS =~ ^[0-9]+$ ]] || LLAMA_CPUS=$llama_rec
+  set_env LLAMA_CPUS "$LLAMA_CPUS"
+  left=$(( cores - LLAMA_CPUS ))
+  if (( left < AGENT_RESERVE )); then
+    warn "only $left cores left for agents/chat/system — agent tasks will be slow while inference runs"
+  else
+    ok "CPU plan: local inference=$LLAMA_CPUS · agents+chat+system=$left"
+  fi
+  ok "run the local router with -t $LLAMA_CPUS (threads) to match"
 else
-  ok "CPU plan: llama.cpp=$LLAMA_CPUS · agents+chat+system=$left"
+  ok "all backends are external — no local CPU reservation needed"
 fi
-ok "run the router with -t $LLAMA_CPUS (threads) to match"
 
 # ── 4. build images ─────────────────────────────────────────────────
 step "Images"
@@ -344,7 +369,11 @@ else
   build_img 00-tea           ./00-tea
   build_img gitea-pages:latest ./pages
   build_img agent-sandbox:base  agent-sandbox
-  build_img agent-sandbox:pi    agent-sandbox/pi  --build-arg "LLAMA_BASE_URL=$LLAMA_URL"
+  # LLAMA_BASE_URL is only used by pi's bundled llama.cpp extension provider
+  # — pass the url of the backend with that id (else the first one)
+  LLAMA_BAKE_URL=$(jq -r '[.backends[] | select(.id == "llama.cpp")] | .[0].url // empty' inference.json)
+  [[ -n $LLAMA_BAKE_URL ]] || LLAMA_BAKE_URL=$LLAMA_URL
+  build_img agent-sandbox:pi    agent-sandbox/pi  --build-arg "LLAMA_BASE_URL=$LLAMA_BAKE_URL"
   build_img agent-sandbox:opencode agent-sandbox/opencode
   build_img agent-sandbox:review   agent-sandbox/review
   build_img agent-sandbox:infra    agent-sandbox/infra

@@ -1,5 +1,6 @@
 # Secrets
 .env
+inference.json
 agent-sandbox/pi/pi-settings/models.json
 agent-sandbox/opencode/opencode-config/opencode.json
 

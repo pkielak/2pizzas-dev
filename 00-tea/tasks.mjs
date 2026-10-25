@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { CFG, MARKER } from './config.mjs';
 import { db, readLog, logPath } from './db.mjs';
 import { apiGet, apiPost } from './gitea.mjs';
-import { pickModel } from './llama.mjs';
+import { pickModel, checkBakedSync } from './inference.mjs';
 import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt, infraPrompt } from './prompts.mjs';
 import { enqueueReview, enqueueRework, onTaskFailure } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
@@ -58,14 +58,20 @@ async function runTask(t) {
               ? reworkPrompt({ issue: t.issue, pr: t.pr ?? null, request })
               : commentPrompt({ issue: t.issue, title: issueInfo.title, body: issueInfo.body, isPull, request });
 
-    // 2a. model selection — prefer a model the router already has loaded
-    //     (lazy-loading another 27B+ model fails while one is resident).
-    //     Both agents share the router; opencode's --model overrides its
-    //     baked config (the model id must exist in that config's list).
+    // 2a. model selection — walk the inference backends by priority
+    //     (inference.json). Backends that report load state (llama.cpp
+    //     router): prefer a model already loaded (lazy-loading another 27B+
+    //     model fails while one is resident); others: their default. Unreach-
+    //     able backends are skipped (failover). The per-agent --model override
+    //     must name a provider+model BAKED into the agent image —
+    //     checkBakedSync turns a stale image into a warning, not an opaque fail.
     const modelSel = await pickModel();
     if (modelSel) {
-      db.prepare('UPDATE tasks SET model=?, model_ctx=? WHERE id=?').run(modelSel.id, modelSel.ctx, t.id);
-      say(`$ model: ${modelSel.id} (ctx ${modelSel.ctx}, ${modelSel.source})\n`);
+      const modelFull = `${modelSel.provider}/${modelSel.id}`;
+      db.prepare('UPDATE tasks SET model=?, model_ctx=? WHERE id=?').run(modelFull, modelSel.ctx, t.id);
+      say(`$ model: ${modelFull} (ctx ${modelSel.ctx}, ${modelSel.source})\n`);
+      const syncWarn = await checkBakedSync(t.agent, modelSel);
+      if (syncWarn) say(`[00-tea] WARNING: ${syncWarn}\n`);
     }
 
     // 2. self-contained bootstrap script, executed INSIDE the job container.
@@ -193,9 +199,9 @@ ${dPrompt}
 PROMPT="$(cat /tmp/prompt.txt)"
 export PROMPT
 echo ''
-echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandbox'}${modelSel ? `, model ${modelSel.id}` : ''})'
+echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandbox'}${modelSel ? `, model ${modelSel.provider}/${modelSel.id}` : ''})'
 ` + ((t.agent === 'pi' || t.agent === 'infra') // infra is pi-based
-      ? `bash -o pipefail -c \'pi -p --mode json --model "llama.cpp/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .00-tea/output_filter.mjs\'\n` +
+      ? `bash -o pipefail -c \'pi -p --mode json --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .00-tea/output_filter.mjs\'\n` +
         // pi >= 0.82: the SESSION-end event is `agent_settled` — emitted in
         // prompt()'s finally, AFTER `agent_end` and all post-run processing
         // (retries, compaction). `agent_end` only closes the loop, so it is
@@ -209,7 +215,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         'if grep \'"type":"agent_end"\' /tmp/agent-out.jsonl | tail -n1 | grep -q \'"errorMessage"\' || grep -q \'"finalError"\' /tmp/agent-out.jsonl; then\n' +
         '  echo "[00-tea] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
         '  exit 1\nfi\necho "[00-tea] agent finished OK"'
-      : `bash -o pipefail -c 'opencode run --format json --auto --model "llama.cpp/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | OPENCODE_MODEL="llama.cpp/${modelSel.id}" node .00-tea/opencode_filter.mjs'\n` +
+      : `bash -o pipefail -c 'opencode run --format json --auto --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | OPENCODE_MODEL="${modelSel.provider}/${modelSel.id}" node .00-tea/opencode_filter.mjs'\n` +
         'tail -n1 /tmp/agent-out.jsonl > /tmp/last-event.json\n' +
         `if grep -q '"type":"error"' /tmp/last-event.json || ! grep -q '"type":"step_finish"' /tmp/last-event.json; then\n` +
         '  echo "[00-tea] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +

@@ -55,15 +55,29 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   issue). Infra tasks never chase themselves. Infra code changes go to a
   branch+PR and are reviewed by the normal chain; ops actions (rebuild,
   `up -d`) it executes directly.
-- **For both** agents it queries the llama.cpp router (`LLAMA_CPP_URL` in
-  For **both** agents it queries the llama.cpp router (`LLAMA_CPP_URL` in
-  `.env`, `/v1/models`) and passes `--model llama.cpp/<id>`: the baked default
-  model if it is **loaded**, otherwise whatever model is **loaded**
-  (lazy-loading a second 27B+ model fails while one is resident), else the
-  default. Model + ctx window are stored per task; the per-agent JSON stream
-  filter (`output_filter.mjs` / `opencode_filter.mjs`) emits a final
-  `[00-tea] usage: model=… tokens=…` line that 00-tea saves — the UI shows
-  `model · used/window tok (pct)` on every task.
+- **Inference is backend-agnostic.** The backend registry is
+  `inference.json` (repo root, gitignored, mounted ro into 00-tea;
+  `inference.json.example` committed): every backend is an OpenAI-compatible
+  `/v1` endpoint (local llama.cpp router, vLLM, Ollama, OpenRouter, …) with
+  `id` (the provider ID baked into the agent images), `url`, `apiKey`,
+  `priority`, `defaultModel`. `00-tea/inference.mjs` walks them by priority:
+  a backend that **reports load state** (the llama.cpp router) → its default
+  if **loaded**, else whatever is **loaded** (lazy-loading a second 27B+
+  model fails while one is resident), else the default (lazy-load); a
+  backend **without** load state → its default; **unreachable** backends are
+  skipped (failover). Tasks/chats get `--model <provider>/<id>`; model is
+  stored per task as `provider/id` (so `/stats` splits usage per backend).
+  The agent images BAKE the same registry (setup.sh generates
+  `pi-settings/models.json` + `opencode.json` from it) — a `--model` missing
+  from the baked config fails opaquely inside the agent, so
+  `checkBakedSync()` logs a `[00-tea] WARNING: … run ./setup.sh --rebuild`
+  instead. 00-tea re-reads `inference.json` on change (no restart); the
+  images need `./setup.sh --rebuild`. Legacy fallback: without the file,
+  single backend from `LLAMA_CPP_URL`. Model + ctx window are stored per
+  task; the per-agent JSON stream filter (`output_filter.mjs` /
+  `opencode_filter.mjs`) emits a final `[00-tea] usage: model=… tokens=…`
+  line that 00-tea saves — the UI shows `model · used/window tok (pct)` on
+  every task.
 - **Webhooks are at-least-once** → deliveries and tasks are deduped on
   `(repo, kind, comment_id)`. A 60s poll fallback (managed repos only) rescues
   any webhook Gitea never delivered.
@@ -207,7 +221,8 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
-| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `llama.mjs` (model pick), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
+| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `inference.mjs` (backend registry + model pick + bake-sync check), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
+| `inference.json` | inference backend registry (gitignored; `inference.json.example` committed) — see the backend-agnostic bullet above |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
@@ -221,7 +236,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops` / `:review`) |
 | `agent-sandbox/review/skills/code-review/SKILL.md` | the reviewer's baked review skill (opencode skill dir) |
 | `agent-sandbox/infra/Dockerfile` | `agent-sandbox:infra` = pi + docker-cli (runc + docker socket, see infra agent) |
-| `agent-sandbox/pi/pi-settings/models.json` | pi's model provider (llama.cpp, gitignored) |
+| `agent-sandbox/pi/pi-settings/models.json` | pi's model providers (baked from `inference.json`, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
 | `.gitea/workflows/` | ordinary CI workflows (e.g. `mirror-to-github.yaml`) — run on my-runner |
@@ -335,12 +350,13 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
   Don't inline the pipeline back into the dash script — the `bash -c` subshell
   only sees `PROMPT` because it is `export`ed.
 - **The agent images bake the model list AND the default model** at build
-  time (pi: `models.json` + `settings.json`; opencode: `opencode.json`). If
-  the host's llama.cpp model set changes (new preset, default swapped),
-  update the files, rebuild the image, and verify against `/v1/models` on the
-  host. opencode's per-task `--model` override must name a model that exists
-  in its baked `opencode.json` list, or it fails with an opaque
-  "Unexpected server error".
+  time (pi: `models.json` + `settings.json`; opencode: `opencode.json`) —
+  both generated by `setup.sh` from `inference.json` (all backends as
+  providers). If the model set changes, re-run `./setup.sh --rebuild`. A
+  per-task `--model <provider>/<id>` missing from the baked config fails with
+  an opaque agent error — `checkBakedSync()` in `inference.mjs` catches this
+  up front and logs `[00-tea] WARNING: … run ./setup.sh --rebuild` in the
+  task log; don't remove that check.
 - **pi 0.82+ has auto-compaction ON by default** and runs it in
   `_handlePostAgentRun()` — i.e. it emits `compaction_start`/`compaction_end`
   to the `--mode json` stream AFTER the `agent_end` line (a full extra

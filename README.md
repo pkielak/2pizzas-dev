@@ -13,7 +13,8 @@ with a summary, all under a reviewable `bot` user.
 | `db` | Postgres 14 |
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — for ordinary CI |
 | `00-tea` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
-| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with a local llama.cpp model provider |
+| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with the inference backends from `inference.json` |
+| `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 00-tea walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
 
 The **template repo `owner/agents-actions`** is a thin README (the old agent
 workflows are gone). The authoritative copy lives in the `agents-actions/`
@@ -26,6 +27,7 @@ docker-compose.yml          # gitea + db + runner + 00-tea
 setup.sh                    # one-command interactive setup wizard (8 steps)
 seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 sync-template.sh            # push agents-actions updates into template-based repos
+inference.json              # inference backend registry (gitignored; .example committed)
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
 gitea-policy.yaml           # sandbox egress policy for agent binaries (network allowlist)
 agents-actions/             # exact content of the agents-actions template repo (source of truth)
@@ -54,13 +56,14 @@ An interactive 8-step wizard takes a bare checkout to a running, fully
 seeded stack:
 
 1. **preflight** — docker/compose/jq/git, ports 3000/3001/3002/222, runsc,
-   llama.cpp router reachability
-2. **agent model configs** — generates the gitignored
-   `agent-sandbox/pi/pi-settings/models.json` and
-   `agent-sandbox/opencode/opencode-config/opencode.json` from the `.example`
-   files + the live model list of your llama.cpp router
+   inference backend reachability
+2. **inference backends** — builds/edits `inference.json` (the backend
+   registry: any OpenAI-compatible endpoint — local llama.cpp router,
+   vLLM, Ollama, OpenRouter, …) and bakes the same list into the gitignored
+   `agent-sandbox/{pi,opencode}` model configs, using each backend's live
+   model list
 3. **`.env`** — generated (or finished) interactively: Gitea URL, admin user,
-   postgres creds (auto-generated password), router URL, managed repos
+   postgres creds (auto-generated password), managed repos, CPU plan
 4. **images** — builds `00-tea`, `gitea-pages`, `agent-sandbox:{base,pi,
    opencode,review,infra,ops}` and (asked) `gitea-android`
 5. **Gitea + Postgres** — `compose up -d db server`, waits for health

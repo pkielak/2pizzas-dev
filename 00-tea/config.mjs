@@ -52,6 +52,9 @@ export const CFG = {
   agentCpus: process.env.AGENT_CPUS || '2',
   pollIntervalMs: 60_000,
   concurrency: 1,
+  // inference backend registry (repo-root file, mounted ro) — see inference.mjs
+  inferenceFile: process.env.INFERENCE_FILE || '/app/inference.json',
+  // legacy single-backend fallback when inference.json is absent
   llamaUrl: (process.env.LLAMA_CPP_URL || 'http://localhost:8080').replace(/\/+$/, ''),
 };
 

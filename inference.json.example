@@ -1,0 +1,12 @@
+{
+  "_comment": "inference backend registry — copy to inference.json (gitignored; it carries API keys). Every backend is an OpenAI-compatible /v1 endpoint: a local llama.cpp router, vLLM, Ollama, LiteLLM, OpenRouter, ... 00-tea walks them by priority (unreachable ones are skipped — failover); setup.sh bakes the same list into the agent images. After editing: ./setup.sh --rebuild (rebakes the images) — 00-tea itself picks up changes without a restart.",
+  "backends": [
+    {
+      "id": "llama.cpp",
+      "url": "http://localhost:8080",
+      "apiKey": "",
+      "priority": 1,
+      "defaultModel": null
+    }
+  ]
+}
