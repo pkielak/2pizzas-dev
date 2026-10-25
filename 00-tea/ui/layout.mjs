@@ -98,6 +98,20 @@ main.app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:
 .navl:hover{color:var(--color-text,#cde);text-decoration:none}
 .navl.on{color:var(--color-text,#fff);font-weight:600}
 .sbfoot{margin-top:auto}
+/* section surface for block content (forms, tables, diagrams) — the
+   row-based counterpart is .list/.item below; both follow an <h2> */
+.card{border:1px solid var(--color-light-border,#2a2a2a);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;background:var(--color-secondary-alpha-10,rgba(255,255,255,.02))}
+/* generic small button (admin actions) — .grantbtn stays for repo grants */
+.btn{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:var(--radius-sm);padding:3px 10px;cursor:pointer;font-size:12px}
+.btn:hover:not(:disabled){border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.danger:hover:not(:disabled){border-color:#d66;color:#f99}
+.btn.primary{background:var(--color-button-primary-background,var(--color-primary,#3a7));border-color:transparent;color:var(--color-button-primary-text,#fff)}
+/* generic info badges (the .queued/.running/… pills are task-state only) */
+.badge{display:inline-block;border-radius:9px;padding:1px 8px;font-size:11px;background:var(--color-secondary-alpha-20,#333);color:var(--color-text-light-2,#ddd);white-space:nowrap}
+.badge-success{background:rgba(90,200,90,.15);color:var(--color-success-text,#6d6)}
+.badge-info{background:rgba(90,140,255,.15);color:var(--color-primary-light-1,#7cf)}
+.badge-warn{background:rgba(255,180,60,.15);color:#fc6}
 /* card surface (no tables): each .item is a whole-block clickable row */
 .list{border:1px solid var(--color-light-border,#2a2a2a);border-radius:var(--radius);overflow:hidden;background:var(--color-secondary-alpha-10,rgba(255,255,255,.02))}
 .item{display:block;text-decoration:none;color:inherit;padding:11px 15px;border-bottom:1px solid var(--color-light-border,#242424)}

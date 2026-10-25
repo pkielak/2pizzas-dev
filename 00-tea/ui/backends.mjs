@@ -19,7 +19,6 @@ export async function backendsPage() {
   const models = await Promise.all(modelsP);
   const first = backends[0];
   const firstModels = models[0] ?? [];
-  const loadedIds = new Set(firstModels.filter((m) => m.loaded).map((m) => m.id));
 
   const row = (b, ms, i) => {
     const modelsHtml = ms
@@ -28,29 +27,29 @@ export async function backendsPage() {
           ${b.defaultModel === m.id ? '<span class="meta">★ default</span>' : ''}</li>`).join('')
       : '<li class="meta">unreachable</li>';
     const notBaked = !baked.includes(b.id);
-    return `<div class="card" id="backend-${b.id}" style="margin-bottom:12px">
-      <div class="bhead">
-        <strong>${b.id}</strong>
+    return `<div class="card" id="backend-${b.id}">
+      <div class="l1">
+        ${b.id}
         <span class="meta">priority ${b.priority}</span>
         ${b.id === piDef?.provider && b.defaultModel === piDef.id ? '<span class="badge badge-success">★ pi default</span>' : ''}
         ${b.apiKey ? '<span class="badge badge-info">keyed</span>' : ''}
-        ${notBaked ? '<span class="badge" style="background:#8a5b00;color:#fff" title="add it via ./setup.sh --rebuild — until then tasks cannot use this backend">not baked</span>' : ''}
-        <span class="meta">${b.url}</span>
+        ${notBaked ? '<span class="badge badge-warn" title="not in the baked agent images — run ./setup.sh --rebuild; until then tasks cannot use this backend">not baked</span>' : ''}
         <span style="flex:1"></span>
-        <button class="bbtn" data-act="up" data-id="${b.id}" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button class="bbtn" data-act="down" data-id="${b.id}" ${i === backends.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="bbtn" data-act="edit" data-id="${b.id}">edit</button>
-        <button class="bbtn bbtn-danger" data-act="del" data-id="${b.id}" ${backends.length <= 1 ? 'disabled' : ''} title="remove">✕</button>
+        <button class="btn" data-act="up" data-id="${b.id}" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="btn" data-act="down" data-id="${b.id}" ${i === backends.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="btn" data-act="edit" data-id="${b.id}">edit</button>
+        <button class="btn danger" data-act="del" data-id="${b.id}" ${backends.length <= 1 ? 'disabled' : ''} title="remove">✕</button>
       </div>
+      <div class="l2">${b.url}</div>
       <div class="bform edit-form" id="edit-${b.id}" style="display:none">
         <input type="text" data-f="url" value="${b.url}" style="flex:2;min-width:200px" placeholder="url">
         <input type="password" data-f="apiKey" value="${b.apiKey}" style="flex:1;min-width:120px" placeholder="api key (empty = none)">
         <input type="text" data-f="defaultModel" value="${b.defaultModel ?? ''}" style="flex:1;min-width:140px" placeholder="default model (empty = auto)">
-        <button class="bbtn bbtn-primary" data-act="save" data-id="${b.id}">save</button>
-        <button class="bbtn" data-act="cancel" data-id="${b.id}">cancel</button>
+        <button class="btn primary" data-act="save" data-id="${b.id}">save</button>
+        <button class="btn" data-act="cancel" data-id="${b.id}">cancel</button>
       </div>
       <details style="margin-top:8px"><summary class="meta" style="cursor:pointer">${ms ? `${ms.length} models` : 'models'}</summary>
-        <ul style="margin:8px 0 0 18px;padding:0;list-style:none">${modelsHtml}</ul>
+        <ul class="bmodels">${modelsHtml}</ul>
       </details>
     </div>`;
   };
@@ -58,56 +57,48 @@ export async function backendsPage() {
   return {
     html: `
     <style>
-    .bbtn{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:var(--radius-sm,6px);padding:3px 10px;cursor:pointer;font-size:12px}
-    .bbtn:hover:not(:disabled){border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}
-    .bbtn:disabled{opacity:.4;cursor:default}
-    .bbtn-danger:hover:not(:disabled){border-color:#d66;color:#f99}
-    .bbtn-primary{background:var(--color-button-primary-background,var(--color-primary,#3a7));border-color:transparent;color:var(--color-button-primary-text,#fff)}
     .bform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
-    .bform input{background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd);padding:7px 10px;font-size:13px}
+    .bform input{background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:var(--radius-sm);color:var(--color-input-text,#ddd);padding:7px 10px;font-size:13px}
     .bform input:focus{outline:none;border-color:var(--color-primary,#7ab)}
-    .bhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    /* small screens: stack the forms, full-width inputs, wrap long urls */
+    .bmodels{margin:8px 0 0 18px;padding:0;list-style:none}
+    .btable{width:100%;margin-top:8px;border-collapse:collapse}
+    .btable th,.btable td{text-align:left;padding:5px 8px;border-top:1px solid var(--color-light-border,#2a2a2a);font-size:13px}
+    /* small screens: stack the forms, full-width inputs */
     @media (max-width:720px){
       .bform{flex-direction:column;align-items:stretch}
       .bform input{width:100%;min-width:0}
-      .bform .bbtn{width:100%}
-      .bhead .meta{flex-basis:100%;order:9;word-break:break-all}
+      .bform .btn{width:100%}
+      .l1 .meta{flex-basis:100%;order:9;word-break:break-all}
     }
-    .badge{border-radius:9px;padding:1px 8px;font-size:11px;background:#333;color:#ddd}
-    .badge-success{background:#0a5;color:#fff}
-    .badge-info{background:#246;color:#fff}
     </style>
-    <div class="card" style="margin-bottom:16px">
-      <div class="bhead">
-        <strong>next task will use</strong>
-        <code>${picked.provider}/${picked.id}</code>
-        <span class="meta">(${picked.source})</span>
-      </div>
-    </div>
-    ${backends.map((b, i) => row(b, models[i], i)).join('')}
+    <h2>selection</h2>
     <div class="card">
-      <div class="bhead">
-        <strong>add a backend</strong>
-        <span class="meta">any OpenAI-compatible /v1 endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …</span>
-      </div>
+      <div class="l1">next task will use <code>${picked.provider}/${picked.id}</code></div>
+      <div class="l2">${picked.source}</div>
+    </div>
+
+    <h2>backends</h2>
+    ${backends.map((b, i) => row(b, models[i], i)).join('')}
+
+    <h2>add a backend</h2>
+    <div class="card">
+      <div class="l2" style="margin-top:0">any OpenAI-compatible /v1 endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …</div>
       <div class="bform" id="add-form">
         <input type="text" data-f="id" placeholder="id (e.g. openrouter)" style="flex:1;min-width:120px">
         <input type="text" data-f="url" placeholder="url (e.g. https://openrouter.ai/api)" style="flex:2;min-width:200px">
         <input type="password" data-f="apiKey" placeholder="api key (empty if none)" style="flex:1;min-width:120px">
         <input type="text" data-f="defaultModel" placeholder="default model (empty = first listed)" style="flex:1;min-width:140px">
-        <button class="bbtn bbtn-primary" data-act="add">add</button>
+        <button class="btn primary" data-act="add">add</button>
       </div>
-      <p class="meta" style="margin:8px 0 0">Changes apply to the <em>next</em> task immediately (00-tea re-reads
-      <code>inference.json</code>). A backend is only usable <em>inside the agents</em> after it is baked into the
-      images — <code>./setup.sh --rebuild</code> — until then it shows a <strong>not baked</strong> badge.</p>
+      <div class="l2">Changes apply to the <em>next</em> task immediately (00-tea re-reads <code>inference.json</code>).
+      A backend is only usable <em>inside the agents</em> after it is baked into the images —
+      <code>./setup.sh --rebuild</code> — until then it shows a <span class="badge badge-warn">not baked</span> badge.</div>
     </div>
+
+    <h2>agents</h2>
     <div class="card">
-      <div class="bhead">
-        <strong>agents</strong>
-        <span class="meta">images: ${CFG.images.pi} · ${CFG.images.opencode}</span>
-      </div>
-      <table style="width:100%;margin-top:8px;border-collapse:collapse">
+      <div class="l2" style="margin-top:0">images: ${CFG.images.pi} · ${CFG.images.opencode} — model lists are baked from <code>inference.json</code> at build time</div>
+      <table class="btable">
         <tr><th style="text-align:left">agent</th><th style="text-align:left">model config</th><th style="text-align:left">default</th></tr>
         <tr><td>pi</td><td>models.json (baked)</td><td>${piDef ? `<code>${piDef.provider}/${piDef.id}</code>` : '—'}</td></tr>
         <tr><td>opencode</td><td>opencode.json (baked)</td><td><code>${first.id}/${firstModels[0]?.id ?? '—'}</code></td></tr>
