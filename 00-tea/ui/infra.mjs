@@ -50,10 +50,12 @@ export function infraPage() {
     // status: true = running (pulse + glow) · false = down (red glow) · null = n/a, parked, unknown
     const dot = (ok, cx, cy) => `<circle class="st${ok === true ? ' ok' : ok === false ? ' bad' : ''}" cx="${cx}" cy="${cy}" r="5"/>`;
     const block = (x, y, w, h, title, lines, ok, href) => {
+      // even padding all sides; dot centered in the top-left corner
+      const pad = Math.round((h - 46) / 2);
       const body = `<g class="blk${ok === true ? ' ok' : ok === false ? ' bad' : ''}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="var(--color-secondary-alpha-10,rgba(255,255,255,.03))" stroke="var(--color-light-border,#2a2a2a)"/>
-${dot(ok, x + 16, y + 20)}
-<text x="${x + 30}" y="${y + 25}" font-size="14" font-weight="700" fill="var(--color-text,#ddd)">${esc(title)}</text>
-${lines.map((l, i) => `<text x="${x + 30}" y="${y + 45 + i * 16}" font-size="12" fill="var(--color-text-light-2,#999)">${l}</text>`).join('')}</g>`;
+${dot(ok, x + Math.round(pad / 2), y + Math.round(pad / 2))}
+<text x="${x + pad}" y="${y + pad + 10}" font-size="14" font-weight="700" fill="var(--color-text,#ddd)">${esc(title)}</text>
+${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-size="12" fill="var(--color-text-light-2,#999)">${l}</text>`).join('')}</g>`;
       return href ? `<a href="${href}" style="text-decoration:none">${body}</a>` : body;
     };
 
@@ -103,7 +105,7 @@ ${label(862, 222, 'llm /v1', 'start')}
 
 <!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140) -->
 ${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 3}" y="140" width="2" height="38" fill="${C_GITEA}" opacity=".7"/><rect x="${x - 1}" y="140" width="2" height="40" fill="${C_00TEA}" opacity=".7"/><rect x="${x + 1}" y="140" width="2" height="42" fill="${C_LLAMA}" opacity=".7"/>`).join('')}
-${label(500, 196, 'runsc one-shot / long-lived (chat)', 'middle')}
+${label(325, 220, 'runsc one-shot / long-lived (chat)', 'middle')}
 
 <!-- gitea → runners + pages (CI bus, y=410) -->
 ${conn('M 150 360 L 150 410', false)}
