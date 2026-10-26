@@ -9,6 +9,8 @@ through an automated review chain: a read-only reviewer agent checks the diff
 
 ![Architecture](docs/architecture.svg)
 
+*Static snapshot of the live `/infra` dashboard diagram (00-tea UI).*
+
 ## Components
 
 | Service | What it is |
