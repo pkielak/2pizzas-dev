@@ -3,7 +3,23 @@ export const CFG = {
   port: +(process.env.PORT || 3001),
   dataDir: process.env.DATA_DIR || '/data',
   secret: process.env.WEBHOOK_SECRET || '',
-  agentToken: process.env.AGENT_TOKEN || '',
+  // Per-agent Gitea identities: each work agent is its OWN user (native
+  // @mention autocomplete + per-agent commit/PR attribution). The review
+  // user carries TWO tokens: a read one (the reviewer container clones
+  // with it — it physically cannot push) and a write one held by 00-tea
+  // ONLY (it posts the review verdicts). The legacy single "bot" user is
+  // dormant on old instances; fresh instances never create it.
+  agents: {
+    pi: { login: 'pi', email: 'pi@localhost', token: process.env.PI_TOKEN || '' },
+    opencode: { login: 'opencode', email: 'opencode@localhost', token: process.env.OPENCODE_TOKEN || '' },
+    infra: { login: 'infra', email: 'infra@localhost', token: process.env.INFRA_TOKEN || '' },
+  },
+  review: {
+    login: 'review',
+    email: 'review@localhost',
+    token: process.env.REVIEW_TOKEN || '',        // read:repository — reviewer clone
+    postToken: process.env.REVIEW_POST_TOKEN || '', // write — 00-tea posts verdicts as review
+  },
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.docker.internal:3000', // reachable from JOB containers
   // seed list of managed repos — self-enrolling (an @agent mention on an
@@ -16,7 +32,6 @@ export const CFG = {
     review: process.env.AGENT_IMAGE_REVIEW || 'agent-sandbox:review',
     infra: process.env.AGENT_IMAGE_INFRA || 'agent-sandbox:infra',
   },
-  reviewToken: process.env.REVIEW_TOKEN || '',        // bot token, READ scope — reviewer clone
   reviewMaxRounds: +(process.env.REVIEW_MAX_ROUNDS || 3),
   // @infra agent: repairs the stack itself. The only agent that runs on runc
   // with the host docker socket + the infra repo bind-mounted (see tasks.mjs).
@@ -25,8 +40,9 @@ export const CFG = {
   infraRepo: process.env.INFRA_REPO || 'owner/gitea-with-agents',
   infraHostRepo: process.env.INFRA_HOST_REPO || '', // host path of the infra repo
   infraCooldownMs: +(process.env.INFRA_COOLDOWN_MINUTES || 15) * 60_000,
-  botLogin: process.env.BOT_LOGIN || 'bot',
-  botEmail: process.env.BOT_EMAIL || 'bot@localhost',
+  // legacy sender — old instances have comments/commits by the dormant
+  // "bot" user; keep it on the no-self-react list (fresh instances: no such user)
+  botLogin: 'bot',
   themeUser: process.env.AGENTD_THEME_USER || 'admin',   // whose Gitea theme the UI mirrors
   giteaContainer: process.env.GITEA_CONTAINER || 'gitea',  // theme asset discovery (docker exec grep on the binary)
   giteaDbContainer: process.env.GITEA_DB_CONTAINER || 'gitea-db-1',

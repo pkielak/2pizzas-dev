@@ -7,10 +7,17 @@ import { liveBroadcast } from './live.mjs';
 
 // ── enqueue ──────────────────────────────────────────────────────────────────
 
+// never react to our own agents: per-agent users, the dormant legacy "bot",
+// and the chat user (all of them also stamp the via:agent marker)
+const AGENT_SENDERS = new Set([
+  CFG.botLogin, CFG.chatLogin, CFG.review.login,
+  ...Object.values(CFG.agents).map((a) => a.login),
+]);
+
 export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) {
   const body = comment?.body ?? '';
   if (!isManaged(repo)) return;                     // global webhook: only act on managed repos
-  if (sender === CFG.botLogin || sender === CFG.chatLogin) return; // never react to our own agents (task bot + chat user)
+  if (AGENT_SENDERS.has(sender)) return;
   if (body.includes(MARKER)) return;                 // loop prevention
   if (!MENTIONS.some((m) => m.agent === agent && m.re.test(body))) return;
 
@@ -33,7 +40,7 @@ export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) 
 // comment_id is NULL, so the (repo, kind, comment_id) webhook dedupe never
 // matches them; the parent_id+kind checks below are their loop guard.
 export function enqueueReview(work, logText) {
-  if (!CFG.reviewToken) {
+  if (!CFG.review.token) {
     console.log(`[review] task ${work.id}: REVIEW_TOKEN not set — review chain skipped`);
     return;
   }
@@ -97,17 +104,18 @@ export async function enqueueInfra(failed, errMsg) {
   }
   const ctx = `Task ${failed.id} (${failed.kind}, @${failed.agent}) on ${failed.repo}#${failed.issue} failed:\n${errMsg}\n\nLog tail:\n\`\`\`\n${readLog(failed.id).slice(-2000)}\n\`\`\``;
   const last = db.prepare(`SELECT id, issue, created_at FROM tasks WHERE kind = 'agent-infra' ORDER BY id DESC LIMIT 1`).get();
+  const tok = { token: CFG.agents.infra.token }; // 00-tea posts as the infra user
   if (last && Date.now() - Date.parse(last.created_at.replace(' ', 'T') + 'Z') < CFG.infraCooldownMs) {
     await apiPost(`/repos/${CFG.infraRepo}/issues/${last.issue}/comments`, {
       body: `Another task failed in the same window:\n\n${ctx}\n\n${MARKER}`,
-    });
+    }, tok);
     console.log(`[infra] task ${failed.id} → appended to incident issue #${last.issue}`);
     return;
   }
   const issue = await apiPost(`/repos/${CFG.infraRepo}/issues`, {
     title: `[00-tea] infra incident: task ${failed.id} failed — ${errMsg.slice(0, 80)}`,
     body: ctx,
-  });
+  }, tok);
   // issue.number, NOT issue.id — the API returns the global db id in .id,
   // but task.issue is the per-repo number (comments/PRs address it)
   db.prepare(`INSERT INTO tasks (repo, issue, agent, kind, body, parent_id)

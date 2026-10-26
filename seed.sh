@@ -19,7 +19,12 @@ set -a; source .env; set +a
 
 GITEA_URL="${GITEA_URL:-http://localhost:3000}"
 ADMIN_USER="${ADMIN_USER:-admin}"
-BOT_USER="bot"
+# per-agent identities: each work agent is its OWN Gitea user (native
+# @mention autocomplete + per-agent commit/PR attribution). The review user
+# carries a read token (reviewer clone) and a write token (00-tea posts the
+# verdicts). The legacy single "bot" user is dormant on old instances —
+# fresh instances never create it.
+AGENT_USERS="pi opencode infra review"
 CHAT_USER="chat"   # separate login for the /chat agents — audit separation from task work
 HOST="${GITEA_URL#http://}"; HOST="${HOST%/}"
 ADMIN_REPO="gitea-with-agents"
@@ -41,6 +46,7 @@ user_exists() { curl -sf "$GITEA_URL/api/v1/users/$1" >/dev/null 2>&1; }
 # a 403 "Forbidden" means the token works, just without that scope.
 token_usable() {
   local body
+  [[ -n ${1:-} ]] || return 1   # empty token: curl gets "token is required", NOT the invalid-token message
   body=$(curl -s -H "Authorization: token $1" "$GITEA_URL/api/v1/user" 2>/dev/null) || true
   [[ -n $body && $body != *"invalid username, password or token"* ]]
 }
@@ -53,14 +59,10 @@ gen_token() {
       --username "$user" --token-name "$name" --scopes "$scopes" --raw 2>/dev/null); then
     printf '%s' "$val"; return
   fi
-  # a valid admin-scope token for the cleanup API (GITEA_TOKEN is minted
-  # first, so it is available even while ADMIN_TOKEN itself is being fixed)
-  if token_usable "${GITEA_TOKEN:-}"; then admin=$GITEA_TOKEN; else admin=$ADMIN_TOKEN; fi
-  id=$(curl -sf -H "Authorization: token $admin" \
-    "$GITEA_URL/api/v1/admin/users/$user/tokens" 2>/dev/null \
-    | jq -r --arg n "$name" '.[] | select(.name == $n) | .id' || true)
-  [[ -n $id ]] && curl -sf -X DELETE -H "Authorization: token $admin" \
-    "$GITEA_URL/api/v1/admin/users/$user/tokens/$id" >/dev/null
+  # Gitea 1.27 has NO admin tokens API (the route 404s) — delete the stale
+  # row directly in the db (seed.sh already talks to the db for the webhook)
+  docker exec gitea-db-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "DELETE FROM access_token WHERE uid = (SELECT id FROM \"user\" WHERE lower_name='$user') AND name='$name'" >/dev/null
   val=$(docker exec -u git gitea gitea admin user generate-access-token \
     --username "$user" --token-name "$name" --scopes "$scopes" --raw)
   printf '%s' "$val"
@@ -86,46 +88,61 @@ curl -sf "$GITEA_URL/api/healthz" >/dev/null || { echo "gitea never came up"; ex
 
 # ── 2. users ───────────────────────────────────────────────────────
 log "Users"
-for u in "$ADMIN_USER" "$BOT_USER" "$CHAT_USER"; do
+for u in "$ADMIN_USER" $AGENT_USERS "$CHAT_USER"; do
   if user_exists "$u"; then echo "user $u: ok"; skip
   else
-    if [[ $u == "$CHAT_USER" ]]; then
-      # machine identity — operated only via CHAT_GITEA_TOKEN. The password is
-      # random and intentionally NOT stored; reset it with:
-      #   docker exec -u git gitea gitea admin user change-password --username chat --password …
-      pw=$(gen_password)
-    else
-      pw_var=ADMIN_PASSWORD; [[ $u == "$BOT_USER" ]] && pw_var=BOT_PASSWORD
-      pw="${!pw_var}"
-      [[ -n $pw ]] || { pw=$(gen_password); set_env "$pw_var" "$pw"; }
-    fi
+    # machine identity — operated only via its API token(s). The password is
+    # random and intentionally NOT stored; reset it with:
+    #   docker exec -u git gitea gitea admin user change-password --username $u --password …
+    pw=$(gen_password)
     docker exec -u git gitea gitea admin user create \
       --username "$u" --email "${u}@localhost" --password "$pw" >/dev/null
     # fresh users carry must_change_password, which blocks their API tokens
     # until a manual password change (change-password via CLI does NOT clear it)
     docker exec gitea-db-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
       -c "UPDATE \"user\" SET must_change_password=false WHERE lower_name='$u'" >/dev/null
-    echo "user $u: created (password stored in .env)"
+    echo "user $u: created (random password, not stored)"
   fi
 done
 
 # ── 3. API tokens ──────────────────────────────────────────────────
 log "API tokens"
-declare -A tok_names=( [GITEA_TOKEN]="$ADMIN_USER" [AGENT_TOKEN]="$BOT_USER" [ADMIN_TOKEN]="$ADMIN_USER" )
-for k in GITEA_TOKEN AGENT_TOKEN ADMIN_TOKEN; do
-  if token_usable "${!k}"; then echo "$k: ok"; skip
+declare -A tok_names=( [GITEA_TOKEN]="$ADMIN_USER" [ADMIN_TOKEN]="$ADMIN_USER" )
+for k in GITEA_TOKEN ADMIN_TOKEN; do
+  if token_usable "${!k:-}"; then echo "$k: ok"; skip
   else
     val=$(gen_token "${tok_names[$k]}" seed all)
     set_env "$k" "$val"; echo "$k: generated → written to .env"
   fi
 done
-# Read-only bot token for the code REVIEWER (00-tea review chain): the review
-# container clones with it and gets nothing else, so a reviewer physically
-# cannot push — it can only review.
+# Per-agent tokens — each work agent clones/pushes/posts AS ITS OWN Gitea
+# user, so history attributes the work to pi/opencode/infra. Scopes:
+# write:repository (clone/push/PR) + read/write:issue (the issue API is
+# scope-gated separately — reading issues/comments and posting replies).
+AGENT_SCOPES="write:repository,read:issue,write:issue"
+declare -A agent_tok_user=( [PI_TOKEN]=pi [OPENCODE_TOKEN]=opencode [INFRA_TOKEN]=infra )
+for k in PI_TOKEN OPENCODE_TOKEN INFRA_TOKEN; do
+  if token_usable "${!k:-}"; then echo "$k: ok"; skip
+  else
+    val=$(gen_token "${agent_tok_user[$k]}" "00-tea-${agent_tok_user[$k]}" "$AGENT_SCOPES")
+    set_env "$k" "$val"; echo "$k: generated ($AGENT_SCOPES, user ${agent_tok_user[$k]}) → written to .env"
+  fi
+done
+# Code REVIEWER (00-tea review chain), user "review", TWO tokens:
+#  - REVIEW_TOKEN: read:repository — the review container clones with it and
+#    gets nothing else, so a reviewer physically cannot push; it can only
+#    review.
+#  - REVIEW_POST_TOKEN: write — held by 00-tea ONLY (never given to the
+#    container) so the review verdicts post under the review user.
 if token_usable "${REVIEW_TOKEN:-}"; then echo "REVIEW_TOKEN: ok"; skip
 else
-  val=$(gen_token "$BOT_USER" review read:repository)
+  val=$(gen_token review 00-tea-review read:repository)
   set_env REVIEW_TOKEN "$val"; echo "REVIEW_TOKEN: generated (read:repository) → written to .env"
+fi
+if token_usable "${REVIEW_POST_TOKEN:-}"; then echo "REVIEW_POST_TOKEN: ok"; skip
+else
+  val=$(gen_token review 00-tea-review-post "read:issue,write:issue")
+  set_env REVIEW_POST_TOKEN "$val"; echo "REVIEW_POST_TOKEN: generated (read:issue,write:issue) → written to .env"
 fi
 # Write token for the /chat agents (user "chat"): chat containers receive it
 # so the agent can clone/push/post AS THE chat user — Gitea history then
@@ -236,15 +253,19 @@ removed=$(psql "DELETE FROM webhook WHERE is_system_webhook=false AND url='$WEBH
 [[ ${removed:-0} -gt 0 ]] && echo "legacy per-repo hooks: removed $removed"
 
 for repo in "${AGENTD_REPOS[@]}"; do
-  # bot must be a write collaborator: it clones, commits and comments as bot
-  if api "$GITEA_URL/api/v1/repos/$repo/collaborators?limit=50" 2>/dev/null \
-      | jq -e '.[] | select(.login == "'$BOT_USER'")' >/dev/null; then
-    echo "collaborator $repo: ok"
-  else
-    api -X PUT -d '{"role":"write"}' \
-      "$GITEA_URL/api/v1/repos/$repo/collaborators/$BOT_USER" >/dev/null
-    echo "collaborator $repo: $BOT_USER (write) added"
-  fi
+  # the agent users must be collaborators: work agents write (clone/push/
+  # comment as themselves), the reviewer reads (clone only)
+  for u in pi opencode infra review; do
+    role=write; [[ $u == review ]] && role=read
+    if api "$GITEA_URL/api/v1/repos/$repo/collaborators?limit=50" 2>/dev/null \
+        | jq -e '.[] | select(.login == "'$u'")' >/dev/null; then
+      echo "collaborator $repo: $u ok"
+    else
+      api -X PUT -d "{\"role\":\"$role\"}" \
+        "$GITEA_URL/api/v1/repos/$repo/collaborators/$u" >/dev/null
+      echo "collaborator $repo: $u ($role) added"
+    fi
+  done
 done
 
 log "Done"

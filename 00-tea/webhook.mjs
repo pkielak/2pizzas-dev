@@ -23,7 +23,7 @@ export async function handleWebhook(event, deliveryId, payload) {
   if ((event === 'issue_comment' || event === 'pull_request_comment') && payload.action === 'created' && payload.issue?.number && payload.comment) {
     body = payload.comment?.body ?? '';
     // self-enroll: a mention on an unmanaged repo opts it in — persist it and
-    // grant the bot write access, then the enqueue gate below passes
+    // grant the agent users access, then the enqueue gate below passes
     if (!isManaged(repo) && MENTIONS.some((m) => m.re.test(body))) {
       try { await enroll(repo); }
       catch (e) { console.error(`[enroll] ${repo}: ${e.message} — mention ignored`); return 0; }

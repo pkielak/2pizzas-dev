@@ -429,7 +429,7 @@ server.listen(CFG.port, () => {
   console.log(`[00-tea] listening on :${CFG.port}`);
   console.log(`[00-tea] repos (poll fallback): ${managedRepos().join(', ') || '(none)'} — new repos self-enroll on @agent mention`);
   console.log(`[00-tea] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode} review=${CFG.images.review}`);
-  console.log(`[00-tea] review chain: ${CFG.reviewToken ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no REVIEW_TOKEN)'}`);
+  console.log(`[00-tea] review chain: ${CFG.review.token ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no REVIEW_TOKEN)'}`);
   console.log(`[00-tea] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
   (async () => {
     try {

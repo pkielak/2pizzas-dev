@@ -10,9 +10,11 @@ async function pollRepo(repo) {
   const st = db.prepare('SELECT since FROM poll_state WHERE repo=?').get(repo);
   const since = st?.since ? new Date(st.since) : new Date(Date.now() - 3600_000);
 
-  const issues = await apiGet(`/repos/${repo}/issues?state=open&limit=50`);
+  // the read-only review token — the poller only reads
+  const tok = { token: CFG.review.token };
+  const issues = await apiGet(`/repos/${repo}/issues?state=open&limit=50`, tok);
   for (const iss of issues) {
-    const cs = await apiGet(`/repos/${repo}/issues/${iss.number}/comments?limit=50`);
+    const cs = await apiGet(`/repos/${repo}/issues/${iss.number}/comments?limit=50`, tok);
     for (const c of cs) {
       if (new Date(c.created_at) < since) continue;
       for (const m of MENTIONS)
@@ -20,9 +22,9 @@ async function pollRepo(repo) {
     }
   }
 
-  const prs = await apiGet(`/repos/${repo}/pulls?state=open&limit=25`);
+  const prs = await apiGet(`/repos/${repo}/pulls?state=open&limit=25`, tok);
   for (const pr of prs) {
-    const cs = (await apiGet(`/repos/${repo}/pulls/${pr.number}/comments?limit=50`, { ok404: true })) ?? []; // 404 = no review comments
+    const cs = (await apiGet(`/repos/${repo}/pulls/${pr.number}/comments?limit=50`, { ...tok, ok404: true })) ?? []; // 404 = no review comments
     for (const c of cs) {
       if (new Date(c.created_at) < since) continue;
       for (const m of MENTIONS)

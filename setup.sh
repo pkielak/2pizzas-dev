@@ -280,7 +280,6 @@ if [[ ! -f .env ]]; then
 GITEA_URL=$GITEA_URL
 ADMIN_USER=$ADMIN_USER
 ADMIN_PASSWORD=
-BOT_PASSWORD=
 POSTGRES_USER=$PG_USER
 POSTGRES_PASSWORD=$PG_PASS
 POSTGRES_DB=$PG_DB
@@ -289,8 +288,11 @@ GITEA_RUNNER_ANDROID_REGISTRATION_TOKEN=
 AGENTD_REPOS=$AGENTD
 WEBHOOK_SECRET=
 GITEA_TOKEN=
-AGENT_TOKEN=
+PI_TOKEN=
+OPENCODE_TOKEN=
+INFRA_TOKEN=
 REVIEW_TOKEN=
+REVIEW_POST_TOKEN=
 ADMIN_TOKEN=
 INFRA_REPO=$ADMIN_USER/gitea-with-agents
 INFRA_HOST_REPO=$INFRA_HOST
@@ -450,8 +452,8 @@ cat <<EOF
   $C_INFO Try it:$C_RST
     1. open $GURL/$(env_get ADMIN_USER)/gitea-with-agents
     2. create an issue and comment:  @pi add a README.md with a project overview
-    3. watch the task appear at http://127.0.0.1:3001 — the bot pushes,
-       a reviewer task runs, and the bot replies with a summary
+    3. watch the task appear at http://127.0.0.1:3001 — the agent pushes
+       as its own user (pi/opencode), a reviewer task runs, and it replies
 
   $C_INFO CPU plan:$C_RST
     llama.cpp: ${LLAMA_CPUS:-?} of $(nproc) cores (run the router with -t ${LLAMA_CPUS:-?})

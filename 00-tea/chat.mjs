@@ -6,6 +6,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
 import { db } from './db.mjs';
 import { pickModel } from './inference.mjs';
+import { redact } from './redact.mjs';
 import { liveBroadcast } from './live.mjs';
 
 // ── chat sessions (long-lived sandboxed agent over RPC) ─────────────────────
@@ -62,7 +63,9 @@ export const chatAuthed = (req, url, res) => {
 // transcript event: log file + replay buffer + all SSE clients
 const chatSay = (c, ev) => {
   c.lastActive = Date.now();
-  const line = typeof ev === 'string' ? ev : JSON.stringify(ev);
+  // redact(): chat agents echo secrets in tool calls too — scrub before the
+  // line hits the log, the replay buffer, or a client
+  const line = redact(typeof ev === 'string' ? ev : JSON.stringify(ev));
   c.lines.push(line);
   if (c.lines.length > 2000) c.lines.shift();
   try { fs.appendFileSync(c.logFile, line + '\n'); } catch { /* non-fatal */ }
@@ -75,7 +78,7 @@ const chatSay = (c, ev) => {
 // transient event: clients only (not logged, not replayed)
 const chatLive = (c, ev) => {
   c.lastActive = Date.now();
-  const line = typeof ev === 'string' ? ev : JSON.stringify(ev);
+  const line = redact(typeof ev === 'string' ? ev : JSON.stringify(ev));
   for (const res of [...c.clients]) {
     try { res.write(`data: ${line}\n\n`); }
     catch { c.clients.delete(res); }

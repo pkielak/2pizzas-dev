@@ -11,6 +11,7 @@ import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPro
 import { enqueueReview, enqueueRework, onTaskFailure } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
 import { liveBroadcast } from './live.mjs';
+import { redact } from './redact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,17 +22,24 @@ export const activeCount = () => active;
 const parseRefs = (text) => [...text.matchAll(/\[00-tea\] ref: (\S+) ([0-9a-f]{40}) ([0-9a-f]{40})/g)]
   .map((m) => ({ ref: m[1], old: m[2], new: m[3] }));
 
+// the task's Gitea identity: work agents act as their own user; review
+// tasks use the review user's READ token (the container can't push/post)
+const identity = (t) => (t.agent === 'review' ? CFG.review : CFG.agents[t.agent]);
+
 async function runTask(t) {
   const logfile = logPath(t.id);
   const log = { text: '', file: logfile };
   running.set(t.id, log);
-  const say = (s) => { log.text += s; fs.appendFileSync(logfile, s); };
+  // redact(): agents echo secrets in their bash tool calls (export
+  // AGENT_TOKEN=…) — scrub every 00-tea-held secret before it hits the log
+  const say = (s) => { const r = redact(s); log.text += r; fs.appendFileSync(logfile, r); };
   let tokens = null; // captured from the filter's end-of-stream marker
   let tail = '';
 
   try {
     // 1. resolve prompt inputs
-    const issueInfo = await apiGet(`/repos/${t.repo}/issues/${t.issue}`);
+    const id = identity(t);
+    const issueInfo = await apiGet(`/repos/${t.repo}/issues/${t.issue}`, { token: id.token });
     const isPull = issueInfo.pull_request != null;
     const parent = t.parent_id ? db.prepare('SELECT * FROM tasks WHERE id = ?').get(t.parent_id) : null;
     const request =
@@ -246,10 +254,10 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         // API): the reviewer physically cannot push or post — 00-tea posts
         // its comment from the task log.
         '-e', `BOOTSTRAP_B64=${b64}`,
-        '-e', `CLONE_URL=http://bot:${t.kind === 'agent-review' ? CFG.reviewToken : CFG.agentToken}@${CFG.giteaHost}/${t.repo}.git`,
-        '-e', `BOT_NAME=${CFG.botLogin}`,
-        '-e', `BOT_EMAIL=${CFG.botEmail}`,
-        '-e', `AGENT_TOKEN=${t.kind === 'agent-review' ? CFG.reviewToken : CFG.agentToken}`,
+        '-e', `CLONE_URL=http://${id.login}:${id.token}@${CFG.giteaHost}/${t.repo}.git`,
+        '-e', `BOT_NAME=${id.login}`,
+        '-e', `BOT_EMAIL=${id.email}`,
+        '-e', `AGENT_TOKEN=${id.token}`,
         '-e', `TASK_ISSUE=${t.issue}`,
         '-e', `GITEA_API=http://${CFG.giteaHost}/api/v1`,
         '-e', `GITEA_REPO=${t.repo}`,
@@ -291,7 +299,8 @@ async function afterTask(t) {
     const m = /\[00-tea\] review-body-begin\n([\s\S]*?)\n\[00-tea\] review-body-end/.exec(readLog(t.id));
     if (!m) { console.log(`[review] task ${t.id}: no review body in log — chain stops`); return; }
     const body = m[1].trim();
-    await apiPost(`/repos/${t.repo}/issues/${t.issue}/comments`, { body: `${body}\n\n${MARKER}` });
+    const postTok = { token: CFG.review.postToken }; // verdicts post AS the review user
+    await apiPost(`/repos/${t.repo}/issues/${t.issue}/comments`, { body: `${body}\n\n${MARKER}` }, postTok);
     console.log(`[review] task ${t.id}: review posted on ${t.repo}#${t.issue}`);
     const v = /<!-- review:(pass|fail) -->/.exec(body);
     if (!v) { console.log(`[review] task ${t.id}: no verdict marker in review — chain stops`); return; }
@@ -300,7 +309,7 @@ async function afterTask(t) {
     if (round >= CFG.reviewMaxRounds) {
       await apiPost(`/repos/${t.repo}/issues/${t.issue}/comments`, {
         body: `[00-tea] Review cycle exhausted: the reviewer still has concerns after ${round} round${round > 1 ? 's' : ''}. A human should take over.\n\n${MARKER}`,
-      });
+      }, postTok);
       console.log(`[review] task ${t.id}: verdict=fail at round cap (${CFG.reviewMaxRounds}) — cycle exhausted`);
       return;
     }

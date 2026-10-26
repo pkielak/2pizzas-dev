@@ -75,10 +75,10 @@ ${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-si
 ${block(30, 40, 160, 100, '@pi', ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
 ${block(225, 40, 160, 100, '@opencode', ['agent-sandbox:opencode', agentBusy('opencode') ? 'task in flight' : 'idle'], agentBusy('opencode') ? true : null)}
 ${block(420, 40, 160, 100, '@review', ['agent-sandbox:review', agentBusy('review') ? 'task in flight' : 'read-only · idle'], agentBusy('review') ? true : null)}
-${block(615, 40, 160, 100, '@ops', ['agent-sandbox:ops', 'parked'], null)}
+${block(615, 40, 160, 100, '@infra', ['agent-sandbox:infra', agentBusy('infra') ? 'task in flight' : 'runc · docker socket'], agentBusy('infra') ? true : null)}
 ${block(810, 40, 160, 100, 'chat containers', ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], chatN === null ? null : chatN > 0)}
 
-${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN} managed repo${managedN === 1 ? '' : 's'} · bot + chat users`], up('gitea') === null ? null : (up('gitea') && up('gitea-db-1')), '#gitea')}
+${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN} managed repo${managedN === 1 ? '' : 's'} · agent + chat users`], up('gitea') === null ? null : (up('gitea') && up('gitea-db-1')), '#gitea')}
 ${block(380, 250, 240, 110, '00-tea', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-00-tea'), '/tasks')}
 ${block(730, 250, 240, 110, esc(first.id) + (backends.length > 1 ? ` +${backends.length - 1}` : ''), [esc(first.url) + (backends.length > 1 ? ` · ${backends.length} backends` : ''), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable') : 'unreachable'], models ? true : false)}
 
@@ -94,7 +94,7 @@ ${label(675, 297, 'model pick')}
 
 <!-- Three colored sources rise from bottom of band (y=184) to middle row (y=250) -->
 ${connC('M 150 184 L 150 250', C_GITEA, 'arr-g')}
-${label(138, 222, 'bot work', 'end')}
+${label(138, 222, 'agent work', 'end')}
 ${connC('M 500 250 L 500 184', C_00TEA, 'arr-b')}
 ${label(512, 222, 'tasks', 'start')}
 ${connC('M 850 250 L 850 184', C_LLAMA, 'arr-p')}

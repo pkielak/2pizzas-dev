@@ -55,6 +55,18 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   issue). Infra tasks never chase themselves. Infra code changes go to a
   branch+PR and are reviewed by the normal chain; ops actions (rebuild,
   `up -d`) it executes directly.
+- **Per-agent Gitea identities.** Each work agent is its OWN Gitea user
+  (`pi`, `opencode`, `infra`) with a write token (`PI_TOKEN` etc.) —
+  native `@` autocomplete in the Gitea UI + per-agent commit/PR/comment
+  attribution. The `review` user carries TWO tokens: `REVIEW_TOKEN`
+  (read:repository — the reviewer container clones with it and physically
+  cannot push) and `REVIEW_POST_TOKEN` (write — held by 00-tea ONLY, posts
+  the review verdicts as `review`). The legacy single `bot` user is dormant
+  on old instances (kept for history attribution); fresh instances never
+  create it. Managed repos get collaborator grants for all four agent users
+  (write: pi/opencode/infra, read: review) — seed.sh for env-listed repos,
+  00-tea at startup + on self-enrollment. `enqueue()` ignores comments by
+  any agent user (plus dormant `bot` + `chat`).
 - **Inference is backend-agnostic.** The backend registry is
   `inference.json` (repo root, gitignored, mounted ro into 00-tea;
   `inference.json.example` committed): every backend is an OpenAI-compatible
@@ -83,14 +95,14 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   any webhook Gitea never delivered.
 - **New managed repo = self-enrolling.** An `@agent` mention on an
   unmanaged repo opts it in: 00-tea persists it in the `managed_repos`
-  sqlite table and grants the bot write collaborator itself (same API call
-  as seed.sh). No `.env`, no reseed, no restart. `AGENTD_REPOS` is an
+  sqlite table and grants the agent users collaborator access itself
+  (write for pi/opencode/infra, read for review — same API calls as seed.sh). No `.env`, no reseed, no restart. `AGENTD_REPOS` is an
   optional seed/pin list (env repos can't be removed from the UI; the ✕ on
   `/repos` only removes self-enrolled ones — `DELETE /api/repos/:owner/:name`).
   The global webhook covers new repos automatically.
 - **Loop prevention**: replies are stamped `<!-- via:agent -->` by
   `00-tea/assets/post-comment.sh`; comments carrying that marker (or authored
-  by the bot) are never enqueued.
+  by an agent user) are never enqueued.
 - **No-action rule**: agents sometimes finish cleanly without pushing
   anything or replying. The bootstrap therefore verifies after the agent run
   that a visible action happened — remote refs changed (pushed commits, and
@@ -99,7 +111,8 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   every task a false positive "pushed commits"; the timestamp `>` comparisons
   must keep the operator QUOTED — an unquoted `>` inside `[ ... ]` is an
   output redirection, so `[ A > B ]` is always true for non-empty A), a
-  PR by the bot created since task start, or a bot comment since task start —
+  PR by the agent user created since task start, or an agent comment since
+  task start —
   and posts `/tmp/reply.md` if it exists (post-comment.sh deletes the file
   after posting, so a surviving file means "not yet posted"). If nothing was
   done, the bootstrap posts a fallback error comment itself and the task is
@@ -161,7 +174,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   and is reached by container name — never publish host ports for this (a 127.0.0.1 publish
   is invisible to the 00-tea container, which is itself a container). Chat containers
   act as the separate **`chat` Gitea user** (`CHAT_GITEA_TOKEN`,
-  write:repository, seeded like the bot): they can read any repo and
+  write:repository, seeded like the agent users): they can read any repo and
   push/post ONLY where granted — per-repo write grants are
   collaborator permissions managed from the `/chat` UI
   (`POST /api/chat/grant`, tracked in `chat_grants`). This keeps
@@ -239,13 +252,13 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | File | Controls |
 |---|---|
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
-| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `inference.mjs` (backend registry + model pick + bake-sync check), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
+| `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `inference.mjs` (backend registry + model pick + bake-sync check), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `redact.mjs` (scrubs all 00-tea-held secrets from task/chat log lines — applied at the two log choke points, don't remove it), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
 | `inference.json` | inference backend registry (gitignored; `inference.json.example` committed) — see the backend-agnostic bullet above; also editable from the `/backends` UI |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
 | `00-tea/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
-| `seed.sh` | idempotent bootstrap: users, tokens, repos, template, my-runner, **global webhook**, bot collaborators — safe to re-run |
+| `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
 | `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
@@ -337,13 +350,14 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
   container. Don't "simplify" this back to `-e`.
 - **00-tea talks to the host docker daemon**, so a container path like
   `/data/work/N` is NOT a host path — you cannot bind-mount it into the job
-  container. The job container clones the repo itself (as `bot`, authenticated
-  remote → commits/PRs attribute to the bot user).
+  container. The job container clones the repo itself (as the task's agent
+  user, authenticated remote → commits/PRs attribute to that user).
 - **Loop prevention** is the `<!-- via:agent -->` marker (posted by
   `00-tea/assets/post-comment.sh`, checked by `enqueue()`). Don't remove it
   from either side.
-- **Bot posts as `bot`**, but older comments may be from the admin user — don't
-  write actor-based logic; use the marker.
+- **Agents post as their own users** (`pi`/`opencode`/`infra`/`review`; old
+  instances also have the dormant `bot`), and older comments may be from the
+  admin user — don't write actor-based logic; use the marker.
 - **opencode non-interactive runs auto-REJECT permission prompts** (writing
   outside the workspace, e.g. `/tmp/reply.md`, silently fails and the agent
   stops). The bootstrap therefore runs `opencode run --auto` — safe because
@@ -429,4 +443,4 @@ revived it should run through 00-tea, not a dedicated runner.
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
 | infra agent | `@infra` on an issue in `INFRA_REPO` → task runs (runc, `docker ps` works inside); a task killed with 143/137 → retry task + `agent-infra` task on a new incident issue within the cooldown |
 | `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
-| end-to-end | full loop: `@pi` comment → task `success` → `bot` reply with `<!-- via:agent -->` on the issue |
+| end-to-end | full loop: `@pi` comment → task `success` → `pi` reply with `<!-- via:agent -->` on the issue |
