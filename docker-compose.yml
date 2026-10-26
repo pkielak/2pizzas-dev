@@ -84,7 +84,7 @@ services:
       - gitea
     ports:
       - "3004:8080"
-      - "3444:8443"   # same TAILNET_HOST cert as :3443 (port is not in TLS names)
+      - "3444:8443"   # same tailnet cert as :3443 (port is not in TLS names)
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
