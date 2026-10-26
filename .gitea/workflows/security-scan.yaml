@@ -1,0 +1,42 @@
+name: Security scan
+
+# Deterministic security gate on every PR (agent-created included):
+# gitleaks over the full history + semgrep (secrets + code rules).
+# Runs on my-runner (runc, normal egress — semgrep fetches its free
+# registry packs from semgrep.dev on first use). The LLM judgment layer
+# is the 00-tea review chain; this is the fact layer.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history — gitleaks needs it)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (pinned)
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz" \
+            | tar xz -C /usr/local/bin gitleaks
+
+      - name: Install semgrep
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl python3-pip
+          python3 -m pip install --break-system-packages semgrep
+
+      - name: gitleaks (committed history)
+        run: gitleaks detect --source . --log-opts="--all" -v
+
+      - name: semgrep (secrets + code, blocking)
+        run: semgrep scan --config p/secrets --config auto --error

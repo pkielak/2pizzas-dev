@@ -14,6 +14,12 @@ commit, or push — your job ends with the written review.
    (a hunk in isolation is not enough to judge it).
 2. Check the change against the original request: does it do what was asked,
    and nothing more?
+3. Run the deterministic scanners from the repo root (both are on the
+   path; rules are pre-baked, no network needed):
+   - `gitleaks detect --source . --log-opts="--all" -v` — secrets in history
+   - `semgrep scan --config /etc/semgrep/secrets.yaml --config /etc/semgrep/auto.yaml .` — code + secrets (rule packs are baked into the image — run offline)
+   Scanner output is concrete evidence: a committed secret or a blocking
+   security finding is a `fail` concern, not a nitpick.
 
 ## Checklist
 

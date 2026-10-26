@@ -18,6 +18,24 @@ RUN curl -fsSL -o /usr/local/bin/tea \
       https://dl.gitea.com/tea/0.15.1/tea-0.15.1-linux-amd64 \
     && chmod +x /usr/local/bin/tea
 
+# gitleaks (static binary) — deterministic secret scan over git history
+RUN curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz" \
+    | tar xz -C /usr/local/bin gitleaks
+
+# semgrep — deterministic code/security scanner for agents and the reviewer.
+# The registry rule packs (p/secrets + auto) are downloaded at build time and
+# baked as LOCAL configs in /etc/semgrep — the gVisor sandbox then needs NO
+# runtime egress to the semgrep registry. A build failure here is deliberate:
+# missing rules mean the sandboxed scan silently finds nothing.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip curl \
+    && python3 -m pip install --break-system-packages semgrep \
+    && mkdir -p /etc/semgrep /tmp/sgwarm \
+    && curl -fsSL -o /etc/semgrep/secrets.yaml https://semgrep.dev/c/p/secrets \
+    && curl -fsSL -o /etc/semgrep/auto.yaml https://semgrep.dev/c/auto \
+    && echo 'x = 1' > /tmp/sgwarm/x.py \
+    && semgrep scan --config /etc/semgrep/secrets.yaml --config /etc/semgrep/auto.yaml /tmp/sgwarm \
+    && rm -rf /tmp/sgwarm /var/lib/apt/lists/*
+
 # Pre-configure tea (Gitea CLI)
 # Token is injected via env at runtime (see 00-tea bootstrap)
 # This just sets the endpoint so tea doesn't prompt

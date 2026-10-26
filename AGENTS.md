@@ -28,6 +28,14 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   former, so a PR-only mention would never be delivered), dedupes + queues
   tasks in sqlite, and runs each task as
   an ephemeral `docker run --rm --runtime=runsc agent-sandbox:<agent>` container.
+- **Deterministic security scanners** (`gitleaks`, `semgrep`) are baked
+  into `agent-sandbox:base` (semgrep rule packs baked as local configs in
+  `/etc/semgrep` at build time, so the gVisor sandbox needs no egress to the
+  registry) and run in two places: the
+  `security-scan.yaml` CI workflow (every PR on my-runner: gitleaks over
+  history + semgrep `p/secrets`+`auto` blocking) and the reviewer's
+  `code-review` skill (scanners first, LLM judgment on top). A committed
+  secret / blocking finding is a `fail` concern in the review, not a nitpick.
 - **Review chain** (after any work task that pushed commits): 00-tea
   enqueues an `agent-review` task (internal — never via the webhook) that runs
   `agent-sandbox:review` (opencode + a baked `code-review` skill) on a
@@ -273,7 +281,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model providers (baked from `inference.json`, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
-| `.gitea/workflows/` | ordinary CI workflows (e.g. `mirror-to-github.yaml`) — run on my-runner |
+| `.gitea/workflows/` | ordinary CI workflows — `mirror-to-github.yaml`, `security-scan.yaml` (gitleaks + semgrep gate on every PR) — run on my-runner |
 | `pages/` | static pages server (`Dockerfile`, `nginx.conf`, `entrypoint.sh`): syncs a repo's `gh-pages` branch and serves it on `:3002` (stand-in for Gitea Pages, which 1.27 lacks) |
 
 ## Useful commands
