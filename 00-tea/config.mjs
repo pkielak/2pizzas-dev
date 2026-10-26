@@ -51,6 +51,7 @@ export const CFG = {
   adminToken: process.env.ADMIN_TOKEN || '', // admin-scope token — actions runs API
   pagesSites: (process.env.PAGES_SITES || '').split(',').map((s) => s.trim()).filter(Boolean),
   chatToken: process.env.CHAT_TOKEN || '',   // optional gate for /chat + /api/chat* (UI is tailnet-reachable)
+  uiToken: process.env.UI_TOKEN || '',       // gate for the WHOLE 00-tea UI (falls back to CHAT_TOKEN)
   // /chat agents act as the separate "chat" Gitea user (audit separation from
   // task work): the token goes into the chat containers; per-repo WRITE
   // access is still gated by collaborator grants (managed from the /chat UI)

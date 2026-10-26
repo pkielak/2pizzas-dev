@@ -50,13 +50,21 @@ let chatSeq = 0;
 // which EventSource/fetch/send all do automatically). HttpOnly keeps page
 // JS from reading it; SameSite=Lax keeps it off cross-site requests.
 export const CHAT_COOKIE = 'tea_chat_token';
+// Accepts EITHER token (UI_TOKEN or CHAT_TOKEN) and BOTH session cookies —
+// the whole-UI gate runs first, so a browser unlocked via the UI cookie
+// passes the chat gate without re-entering anything.
 export const chatAuthed = (req, url, res) => {
-  if (!CFG.chatToken) return true;
-  const cookie = (req.headers.cookie || '').split('; ').find((c) => c.startsWith(`${CHAT_COOKIE}=`));
-  if (cookie && cookie.slice(CHAT_COOKIE.length + 1) === CFG.chatToken) return true;
-  const ok = url.searchParams.get('token') === CFG.chatToken || req.headers['x-chat-token'] === CFG.chatToken;
+  const toks = [CFG.chatToken, CFG.uiToken].filter(Boolean);
+  if (!toks.length) return true;
+  const cookies = (req.headers.cookie || '').split('; ');
+  const c = cookies.find((x) => x.startsWith(`${CHAT_COOKIE}=`));
+  if (c && toks.includes(c.slice(CHAT_COOKIE.length + 1))) return true;
+  const u = cookies.find((x) => x.startsWith('tea_ui_token='));
+  if (u && toks.includes(u.slice('tea_ui_token='.length))) return true;
+  const v = url.searchParams.get('token') || req.headers['x-chat-token'] || req.headers['x-ui-token'];
+  const ok = toks.includes(v);
   if (ok && res)
-    res.setHeader('set-cookie', `${CHAT_COOKIE}=${CFG.chatToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
+    res.setHeader('set-cookie', `${CHAT_COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
   return ok;
 };
 

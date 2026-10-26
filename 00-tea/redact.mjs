@@ -15,6 +15,7 @@ const collect = () => {
     CFG.secret,          // webhook secret
     CFG.adminToken,      // admin token (actions API, UI)
     CFG.chatToken,       // /chat UI gate
+    CFG.uiToken,         // whole-UI gate
     CFG.chatGiteaToken,  // chat user's Gitea token
     ...Object.values(CFG.agents).map((a) => a.token),   // per-agent write tokens
     CFG.review.token,    // review user read token (reviewer clone)

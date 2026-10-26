@@ -20,6 +20,10 @@ services:
       - GITEA__database__PASSWD=${POSTGRES_PASSWORD}
       # webhooks may only call these hosts (Gitea security default blocks LAN IPs)
       - GITEA__security__ALLOWED_HOST_LIST=00-tea
+      # no open self-registration — accounts are created by seed.sh only
+      - GITEA__service__DISABLE_REGISTRATION=TRUE
+      # git-over-SSH unused (all remotes are http + token) — no sshd on :222
+      - GITEA__server__DISABLE_SSH=TRUE
     restart: always
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -30,8 +34,11 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - "3000:3000"
-      - "222:22"
+      # bound to the tailnet + LAN IPs (set in .env) + loopback for host-side
+      # tooling (seed.sh, setup.sh) — never 0.0.0.0
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3000:3000"
+      - "${HOST_LAN:?set HOST_LAN in .env}:3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - db
 
@@ -61,8 +68,10 @@ services:
     networks:
       - gitea
     ports:
-      - "3002:8080"
-      - "3443:8443"
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3002:8080"
+      - "${HOST_LAN:?set HOST_LAN in .env}:3002:8080"
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3443:8443"
+      - "${HOST_LAN:?set HOST_LAN in .env}:3443:8443"
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
@@ -83,8 +92,10 @@ services:
     networks:
       - gitea
     ports:
-      - "3004:8080"
-      - "3444:8443"   # same tailnet cert as :3443 (port is not in TLS names)
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3004:8080"
+      - "${HOST_LAN:?set HOST_LAN in .env}:3004:8080"
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3444:8443"   # same tailnet cert as :3443 (port is not in TLS names)
+      - "${HOST_LAN:?set HOST_LAN in .env}:3444:8443"
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
@@ -163,6 +174,7 @@ services:
       - PAGES_SITES=${PAGES_SITES:-}
       # optional gate for the /chat pages+API (the UI is tailnet-reachable)
       - CHAT_TOKEN=${CHAT_TOKEN:-}
+      - UI_TOKEN=${UI_TOKEN:-}         # whole-UI gate (falls back to CHAT_TOKEN)
       # /chat agents act as the separate "chat" Gitea user (audit separation
       # from task work); per-repo write access is granted from the /chat UI
       - CHAT_GITEA_TOKEN=${CHAT_GITEA_TOKEN:-}
@@ -192,6 +204,8 @@ services:
       - ./inference.json:/app/inference.json
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001
+      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001
+      - "${HOST_LAN:?set HOST_LAN in .env}:3001:3001"
+      - "127.0.0.1:3001:3001"   # loopback for host-side checks (setup.sh healthz)
     depends_on:
       - server

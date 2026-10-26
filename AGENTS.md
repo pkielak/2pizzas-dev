@@ -205,15 +205,18 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   input comes from pi's `get_session_stats` (`contextUsage` — pi's own
   window estimate), queried after every `agent_settled`; last value persists
   in `chat_sessions.tokens`. A 00-tea restart backfills `ended_at` on
-  orphaned rows (`00-tea restart`). Optional `CHAT_TOKEN` gates
-  `/chat` + `/api/chat*` (the UI is tailnet-reachable). Token UX: the 401 is
-  an UNLOCK form (first chat use prompts for the token; a just-rejected
-  token shows the form instead of auto-redirecting — that would loop), the
-  token is stored in browser localStorage, and a request authenticated via
-  `?token=`/`x-chat-token` sets a 30-day HttpOnly `tea_chat_token` cookie —
-  after the first unlock the bare /chat works (cookie checked first, then
-  param/header). `/settings` manages the saved token (save/clear) and
-  `POST /api/chat/logout` clears the session cookie. Killing the
+  orphaned rows (`00-tea restart`). Optional `UI_TOKEN` gates the WHOLE
+  00-tea UI (every page + API; `/webhook`, `/healthz` and the theme asset
+  bypass; `CHAT_TOKEN` is accepted as the value and as a fallback when
+  `UI_TOKEN` is unset — the UI is tailnet-reachable). Token UX: the 401 is
+  an UNLOCK form (a just-rejected token shows the form instead of
+  auto-redirecting — that would loop), the token is stored in browser
+  localStorage, and a request authenticated via `?token=`/`x-ui-token`
+  sets a 30-day HttpOnly `tea_ui_token` cookie — after the first unlock
+  every page works bare (cookie checked first, then param/header). The
+  chat gate additionally accepts the UI cookie/token, so one unlock covers
+  both. `/settings` manages the saved token (save/clear) and
+  `POST /api/chat/logout` clears the session cookies. Killing the
   `docker run` client does NOT remove the container — `chatKill()` does
   `docker rm -f` by name (docker 29 no longer prints the container id).
   The compose `name: gitea` pin keeps the network `gitea_gitea`.

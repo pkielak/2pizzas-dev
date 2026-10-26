@@ -150,6 +150,66 @@ const server = http.createServer(async (req, res) => {
     </body></html>`);
   };
 
+  // Whole-UI gate (UI_TOKEN, CHAT_TOKEN accepted as the value / fallback):
+  // cookie first, then ?token= / x-ui-token. A request that authenticates
+  // via param/header gets the 30-day HttpOnly cookie, so the token is typed
+  // ONCE and every page afterwards works bare.
+  const UI_COOKIE = 'tea_ui_token';
+  const uiTokenSet = () => !!(CFG.uiToken || CFG.chatToken);
+  const uiAuthed = (req, url, res) => {
+    const toks = [CFG.uiToken, CFG.chatToken].filter(Boolean);
+    if (!toks.length) return true;
+    const cookies = (req.headers.cookie || '').split('; ');
+    const c = cookies.find((x) => x.startsWith(`${UI_COOKIE}=`));
+    if (c && toks.includes(c.slice(UI_COOKIE.length + 1))) return true;
+    const v = url.searchParams.get('token') || req.headers['x-ui-token'];
+    const ok = toks.includes(v);
+    if (ok && res)
+      res.setHeader('set-cookie', `${UI_COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
+    return ok;
+  };
+  const ui401 = () => {
+    // same unlock-form UX as chat401: a just-rejected token (in the URL)
+    // shows the form for correction — no auto-redirect, that would 401-loop
+    const th = giteaTheme();
+    return send(401, 'text/html',
+    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>token required — 00-tea</title>
+    <link rel="stylesheet" href="/assets/gitea-theme.css">
+    <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
+    h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
+    a{color:var(--color-primary-light-2,#7ab)}
+    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd)}
+    input[type=password]::placeholder{color:var(--color-text-light-4,#777)}
+    input[type=password]:focus{outline:none;border-color:var(--color-primary,#7ab)}
+    button{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:7px;padding:9px 18px;cursor:pointer;font-size:14px}
+    button:hover{border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}</style></head>
+    <body>
+    <h2>00-tea is token-protected</h2>
+    <p id="hint">Enter your <code>UI_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
+    this browser and sets a 30-day session cookie — you won't be asked again.
+    You can also manage it from the <a href="/settings">settings page</a>.</p>
+    <form id="f"><input type="password" id="tk" placeholder="ui token" autocomplete="off" autofocus>
+    <button type="submit">unlock</button></form>
+    <script>
+    const params = new URLSearchParams(location.search);
+    const saved = localStorage.getItem('tea_ui_token');
+    if (params.get('token') !== null) {
+      document.getElementById('hint').textContent = 'The token in the URL was rejected.' + (saved ? ' Edit the saved token below and unlock again.' : '');
+      document.getElementById('tk').value = saved || '';
+    } else if (saved) {
+      const u = new URL(location.href); u.searchParams.set('token', saved); location.replace(u);
+    }
+    document.getElementById('f').onsubmit = (e) => {
+      e.preventDefault();
+      const v = document.getElementById('tk').value.trim();
+      if (!v) return;
+      localStorage.setItem('tea_ui_token', v);
+      const u = new URL(location.href); u.searchParams.set('token', v); location.replace(u);
+    };
+    </script>
+    </body></html>`);
+  };
+
   const send = (code, type, body) => {
     const headers = { 'content-type': type };
     if (type === 'text/html' || type === 'text/css') headers['cache-control'] = 'no-store'; // never serve stale UI/theme
@@ -173,6 +233,11 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+
+  // whole-UI gate: everything except the HMAC-signed webhook, healthz, and
+  // the theme asset (loaded by the 401 page itself)
+  if (uiTokenSet() && !['/healthz', '/assets/gitea-theme.css'].includes(url.pathname) && !uiAuthed(req, url, res))
+    return ui401();
 
   // ── chat ──
   if (url.pathname === '/api/chat' && req.method === 'POST') {
@@ -297,6 +362,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/chat/logout' && req.method === 'POST') {
     if (!chatAuthed(req, url, res)) return chat401();
     res.setHeader('set-cookie', `${CHAT_COOKIE}=; Path=/; Max-Age=0`);
+    res.setHeader('set-cookie', `${UI_COOKIE}=; Path=/; Max-Age=0`);
     return send(200, 'application/json', '{"ok":true}');
   }
 
