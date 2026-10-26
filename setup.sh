@@ -169,7 +169,7 @@ if [[ -n $AVAIL_GB ]] && [[ $AVAIL_GB -lt 10 ]]; then
   warn "only ${AVAIL_GB}GB free on / — image builds may need more"
 else ok "disk space (${AVAIL_GB:-?}GB free)"; fi
 
-for p in 3000 3001 3002 222; do
+for p in 3000 3001 3002; do
   if port_in_use $p; then
     # ours? a container of this stack may already be listening (re-run)
     holder=$(docker ps --filter publish=$p --format '{{.Names}}' | head -1)
@@ -299,12 +299,15 @@ INFRA_HOST_REPO=$INFRA_HOST
 INFRA_COOLDOWN_MINUTES=15
 LLAMA_CPP_URL=$LLLAMA
 CHAT_TOKEN=
+UI_TOKEN=
 CHAT_GITEA_TOKEN=
 CHAT_MEMORY=4g
 CHAT_CPUS=2
 # cap for one-shot agent job containers (1 concurrent) — protects llama.cpp's cores
 AGENT_CPUS=2
 PAGES_SITES=
+HOST_TAILNET=
+HOST_LAN=
 EOF
   ok ".env created"
 fi
@@ -325,6 +328,25 @@ for k in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB GITEA_URL ADMIN_USER LLAMA_
   fi
 done
 ok ".env complete"
+
+# Port binding: compose binds service ports to these interface IPs only
+# (never 0.0.0.0) — auto-detect the tailnet + LAN addresses as defaults
+TAIL_IP=$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+LAN_IP=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $4}' | cut -d/ -f1 | head -1)
+for k in HOST_TAILNET HOST_LAN; do
+  v=$(env_get "$k")
+  if [[ -z $v ]]; then
+    d=$([[ $k == HOST_TAILNET ]] && echo "$TAIL_IP" || echo "$LAN_IP")
+    ask "$k (interface IP for port binding; empty = compose up fails)" "$d" v
+    set_env "$k" "$v"
+    [[ -n $v ]] && ok "$k: $v" || warn "$k empty — docker compose up will fail until it is set"
+  fi
+done
+v=$(env_get UI_TOKEN)
+if [[ -z $v ]]; then
+  v=$(gen_password); set_env UI_TOKEN "$v"
+  ok "UI_TOKEN: auto-generated (00-tea UI gate — needed to open the dashboard)"
+fi
 
 # CPU allocation — only relevant when a backend runs ON THIS HOST (the
 # agents share its cores). External backends: nothing to reserve.
@@ -446,8 +468,8 @@ cat <<EOF
 
   $C_INFO What's running:$C_RST
     Gitea        $GURL          (admin: $(env_get ADMIN_USER) — password in .env)
-    00-tea UI    http://127.0.0.1:3001  (task dashboard, /chat, /android, /pages)
-    SSH          port 222
+    00-tea UI    http://127.0.0.1:3001  (dashboard — unlock with UI_TOKEN from .env)
+    ports        bound to $(env_get HOST_TAILNET) (tailnet) + $(env_get HOST_LAN) (LAN) only
 
   $C_INFO Try it:$C_RST
     1. open $GURL/$(env_get ADMIN_USER)/gitea-with-agents
