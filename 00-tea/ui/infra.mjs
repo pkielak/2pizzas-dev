@@ -74,7 +74,7 @@ ${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-si
 
 ${block(30, 40, 160, 100, '@pi', ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
 ${block(225, 40, 160, 100, '@opencode', ['agent-sandbox:opencode', agentBusy('opencode') ? 'task in flight' : 'idle'], agentBusy('opencode') ? true : null)}
-${block(420, 40, 160, 100, '@review', ['agent-sandbox:review', agentBusy('review') ? 'task in flight' : 'read-only · idle'], agentBusy('review') ? true : null)}
+${block(420, 40, 160, 100, '@review', ['agent-sandbox:review', agentBusy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], agentBusy('review') ? true : null)}
 ${block(615, 40, 160, 100, '@infra', ['agent-sandbox:infra', agentBusy('infra') ? 'task in flight' : 'runc · docker socket'], agentBusy('infra') ? true : null)}
 ${block(810, 40, 160, 100, 'chat containers', ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], chatN === null ? null : chatN > 0)}
 
@@ -82,7 +82,7 @@ ${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN}
 ${block(380, 250, 240, 110, '00-tea', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-00-tea'), '/tasks')}
 ${block(730, 250, 240, 110, esc(first.id) + (backends.length > 1 ? ` +${backends.length - 1}` : ''), [esc(first.url) + (backends.length > 1 ? ` · ${backends.length} backends` : ''), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable') : 'unreachable'], models ? true : false)}
 
-${block(150, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · ordinary CI'], up('gitea-runner'))}
+${block(150, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · CI+security gate'], up('gitea-runner'))}
 ${block(400, 460, 200, 100, 'android-runner', ['label: android', 'gitea-android:latest image'], up('gitea-android-runner'))}
 ${block(650, 460, 200, 100, 'pages', [CFG.pagesSites.length ? CFG.pagesSites.map((s) => `${esc(s.split(':')[0])} :${esc(s.split(':')[1])}`).join(' · ') : 'no sites (PAGES_SITES)', 'serves gh-pages branches'], pagesUp)}
 
@@ -165,7 +165,8 @@ ${svg}
 </ul>
 <ul id="notes">
 <li>every agent job runs one-shot in a gVisor (runsc) sandbox; 00-tea, the runners and Gitea itself run on the host</li>
-<li>gVisor egress policy: <code>gitea-policy.yaml</code></li>
+<li>agent images bake gitleaks + semgrep (rule packs in <code>/etc/semgrep</code> — scan offline); the reviewer runs them before the verdict</li>
+<li>every PR is gated by the <code>security-scan</code> CI workflow on my-runner (secrets block, code rules advisory)</li>
 <li>scroll to zoom, drag to pan — on touch: one finger pans, pinch zooms</li>
 </ul>
 </div>`,
