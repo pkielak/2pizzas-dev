@@ -1,52 +1,91 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" font-family="system-ui,-apple-system,'Segoe UI',sans-serif">
-  <rect x="1" y="1" width="758" height="298" rx="12" fill="#ffffff" stroke="#d0d7de"/>
-  <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/>
-    </marker>
-  </defs>
+<svg id="diag" viewBox="0 0 1000 570" style="width:100%;display:block;cursor:grab;touch-action:none" xmlns="http://www.w3.org/2000/svg">
+<style>.st{fill:#8b949e}.st.ok{fill:#3fb950}.st.bad{fill:#f85149}</style>
+<rect x="0.5" y="0.5" width="999" height="569" rx="12" fill="#ffffff" stroke="#d0d7de"/>
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7ab"/></marker>
+<marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3fb950"/></marker>
+<marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
+<marker id="arr-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
 
-  <g stroke-width="1.5" fill="none">
-    <rect x="30"  y="70"  width="150" height="80"  rx="10" stroke="#3fb950"/>
-    <rect x="300" y="70"  width="170" height="80"  rx="10" stroke="#58a6ff"/>
-    <rect x="570" y="50"  width="160" height="120" rx="10" stroke="#bc8cff"/>
-    <rect x="570" y="220" width="160" height="60"  rx="10" stroke="#bc8cff"/>
-    <rect x="30"  y="220" width="150" height="60"  rx="10" stroke="#3fb950"/>
-  </g>
+</defs>
 
-  <g font-size="14" font-weight="700" fill="#24292f">
-    <text x="45"  y="95">Gitea</text>
-    <text x="315" y="95">00-tea</text>
-    <text x="585" y="75">agent-sandbox (runsc)</text>
-    <text x="585" y="245">llama.cpp router</text>
-    <text x="45"  y="245">my-runner (runc)</text>
-  </g>
+<g class="blk"><rect x="30" y="40" width="160" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st" cx="44" cy="54" r="5"/>
+<text x="57" y="77" font-size="14" font-weight="700" fill="#24292f">@pi</text>
+<text x="57" y="95" font-size="12" fill="#999">agent-sandbox:pi</text><text x="57" y="111" font-size="12" fill="#999">idle</text></g>
+<g class="blk"><rect x="225" y="40" width="160" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st" cx="239" cy="54" r="5"/>
+<text x="252" y="77" font-size="14" font-weight="700" fill="#24292f">@opencode</text>
+<text x="252" y="95" font-size="12" fill="#999">agent-sandbox:opencode</text><text x="252" y="111" font-size="12" fill="#999">idle</text></g>
+<g class="blk"><rect x="420" y="40" width="160" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st" cx="434" cy="54" r="5"/>
+<text x="447" y="77" font-size="14" font-weight="700" fill="#24292f">@review</text>
+<text x="447" y="95" font-size="12" fill="#999">agent-sandbox:review</text><text x="447" y="111" font-size="12" fill="#999">read-only · idle</text><text x="447" y="127" font-size="12" fill="#999">gitleaks + semgrep</text></g>
+<g class="blk"><rect x="615" y="40" width="160" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st" cx="629" cy="54" r="5"/>
+<text x="642" y="77" font-size="14" font-weight="700" fill="#24292f">@infra</text>
+<text x="642" y="95" font-size="12" fill="#999">agent-sandbox:infra</text><text x="642" y="111" font-size="12" fill="#999">runc · docker socket</text></g>
+<g class="blk bad"><rect x="810" y="40" width="160" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st bad" cx="824" cy="54" r="5"/>
+<text x="837" y="77" font-size="14" font-weight="700" fill="#24292f">chat containers</text>
+<text x="837" y="95" font-size="12" fill="#999">long-lived runsc</text><text x="837" y="111" font-size="12" fill="#999">chat user · 0 active</text></g>
 
-  <g font-size="11" fill="#57606a">
-    <text x="45"  y="115">server :3000 · postgres</text>
-    <text x="45"  y="131">agent + chat users</text>
-    <text x="315" y="115">dispatcher :3001</text>
-    <text x="315" y="131">sqlite queue · dashboard</text>
-    <text x="585" y="95">pi · opencode · infra</text>
-    <text x="585" y="111">review (read-only) · chat</text>
-    <text x="585" y="127">gitleaks + semgrep baked in</text>
-    <text x="585" y="261">OpenAI-compatible /v1</text>
-    <text x="45"  y="261">CI: security-scan gate</text>
-  </g>
+<a href="#gitea" style="text-decoration:none"><g class="blk ok"><rect x="30" y="250" width="240" height="110" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="46" cy="266" r="5"/>
+<text x="62" y="292" font-size="14" font-weight="700" fill="#24292f">Gitea</text>
+<text x="62" y="310" font-size="12" fill="#999">server :3000 · postgres db</text><text x="62" y="326" font-size="12" fill="#999">5 managed repos · agent + chat users</text></g></a>
+<a href="/tasks" style="text-decoration:none"><g class="blk ok"><rect x="380" y="250" width="240" height="110" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="396" cy="266" r="5"/>
+<text x="412" y="292" font-size="14" font-weight="700" fill="#24292f">00-tea</text>
+<text x="412" y="310" font-size="12" fill="#999">dispatcher :3001 · sqlite queue</text><text x="412" y="326" font-size="12" fill="#999">webhook · task runner · chat</text></g></a>
+<g class="blk ok"><rect x="730" y="250" width="240" height="110" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="746" cy="266" r="5"/>
+<text x="762" y="292" font-size="14" font-weight="700" fill="#24292f">llama.cpp</text>
+<text x="762" y="310" font-size="12" fill="#999">http://100.110.41.89:8080</text><text x="762" y="326" font-size="12" fill="#999">loaded: Swift-1.5-27B-GSQ-RCO</text></g>
 
-  <g stroke="#57606a" stroke-width="1.5" fill="none" opacity=".8">
-    <path d="M 180 100 L 300 100" marker-end="url(#arr)"/>
-    <path d="M 570 145 L 180 145" marker-end="url(#arr)"/>
-    <path d="M 470 90 L 570 90"  marker-end="url(#arr)"/>
-    <path d="M 385 150 L 385 250 L 570 250" marker-end="url(#arr)"/>
-    <path d="M 105 150 L 105 220" marker-end="url(#arr)"/>
-  </g>
+<g class="blk ok"><rect x="150" y="460" width="200" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="164" cy="474" r="5"/>
+<text x="177" y="497" font-size="14" font-weight="700" fill="#24292f">my-runner</text>
+<text x="177" y="515" font-size="12" fill="#999">label: ubuntu-latest</text><text x="177" y="531" font-size="12" fill="#999">runc · CI+security gate</text></g>
+<g class="blk ok"><rect x="400" y="460" width="200" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="414" cy="474" r="5"/>
+<text x="427" y="497" font-size="14" font-weight="700" fill="#24292f">android-runner</text>
+<text x="427" y="515" font-size="12" fill="#999">label: android</text><text x="427" y="531" font-size="12" fill="#999">gitea-android:latest image</text></g>
+<g class="blk ok"><rect x="650" y="460" width="200" height="100" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<circle class="st ok" cx="664" cy="474" r="5"/>
+<text x="677" y="497" font-size="14" font-weight="700" fill="#24292f">pages</text>
+<text x="677" y="515" font-size="12" fill="#999">pkielak/Pancratius :3002 · pkielak/browser-llm-bench :3004</text><text x="677" y="531" font-size="12" fill="#999">serves gh-pages branches</text></g>
 
-  <g font-size="11" fill="#57606a">
-    <text x="240" y="92"  text-anchor="middle">webhook: @agent mention</text>
-    <text x="375" y="137" text-anchor="middle">clone · push commits/PR · reply · review chain</text>
-    <text x="520" y="82"  text-anchor="middle">docker run --runtime=runsc</text>
-    <text x="470" y="242" text-anchor="middle">model pick (failover)</text>
-    <text x="113" y="188">Gitea Actions</text>
-  </g>
+<!-- gitea → 00-tea · 00-tea → llama -->
+<path d="M 270 305 L 380 305" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75" marker-end="url(#arr)"/>
+<text x="325" y="297" font-size="11.5" fill="#57606a" text-anchor="middle">webhook</text>
+<path d="M 620 305 L 730 305" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75" marker-end="url(#arr)"/>
+<text x="675" y="297" font-size="11.5" fill="#57606a" text-anchor="middle">model pick</text>
+
+<!-- Three colored sources rise from bottom of band (y=184) to middle row (y=250) -->
+<path d="M 150 184 L 150 250" stroke="#3fb950" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
+<text x="138" y="222" font-size="11.5" fill="#57606a" text-anchor="end">agent work</text>
+<path d="M 500 250 L 500 184" stroke="#58a6ff" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-b)"/>
+<text x="512" y="222" font-size="11.5" fill="#57606a" text-anchor="start">tasks</text>
+<path d="M 850 250 L 850 184" stroke="#bc8cff" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-p)"/>
+<text x="862" y="222" font-size="11.5" fill="#57606a" text-anchor="start">llm /v1</text>
+
+<!-- convergence band: solid 6px block (y 178–184), three 2px rects touching -->
+<rect x="107" y="178" width="786" height="2" fill="#3fb950" opacity=".8"/>
+<rect x="107" y="180" width="786" height="2" fill="#58a6ff" opacity=".8"/>
+<rect x="107" y="182" width="786" height="2" fill="#bc8cff" opacity=".8"/>
+
+<!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140) -->
+<rect x="107" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="109" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="111" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="302" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="304" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="306" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="497" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="499" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="501" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="692" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="694" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="696" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="887" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="889" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="891" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/>
+<text x="325" y="220" font-size="11.5" fill="#57606a" text-anchor="middle">runsc one-shot / long-lived (chat)</text>
+
+<!-- gitea → runners + pages (CI bus, y=410) -->
+<path d="M 150 360 L 150 410" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75"/>
+<path d="M 150 410 L 750 410" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75"/>
+<path d="M 250 410 L 250 460" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75" marker-end="url(#arr)"/>
+<path d="M 500 410 L 500 460" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75" marker-end="url(#arr)"/>
+<path d="M 750 410 L 750 460" style="stroke:#7ab;stroke-width:1.5;fill:none;opacity:.75" marker-end="url(#arr)"/>
+<text x="375" y="402" font-size="11.5" fill="#57606a" text-anchor="middle">Gitea Actions (CI)</text>
+<text x="625" y="402" font-size="11.5" fill="#57606a" text-anchor="middle">syncs gh-pages branch (60s)</text>
+
 </svg>
