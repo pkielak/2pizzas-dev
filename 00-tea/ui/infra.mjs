@@ -63,7 +63,7 @@ ${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-si
 
     const loaded = models ? models.filter((m) => m.loaded).map((m) => m.id) : [];
 
-    const svg = `<svg id="diag" viewBox="0 0 1000 570" style="width:100%;display:block;cursor:grab;touch-action:none" xmlns="http://www.w3.org/2000/svg">
+    const svg = `<svg id="diag" viewBox="0 0 1000 570" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" style="width:100%;display:block;cursor:grab;touch-action:none" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary,#7ab)"/></marker>
 <marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_GITEA}"/></marker>
