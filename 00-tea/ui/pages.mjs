@@ -3,7 +3,7 @@ import { execFileP } from '../util.mjs';
 import { esc } from './layout.mjs';
 
 // ── gh-pages sites (pages/ service instances) ─────────────────────────────
-// PAGES_SITES entries: repo:port:container (e.g. owner/Pancratius:3002:gitea-pages)
+// PAGES_SITES entries: repo:port:container (e.g. owner/my-repo:3002:gitea-pages)
 export async function pagesStatus() {
   return Promise.all(CFG.pagesSites.map(async (s) => {
     const [repo, port, container] = s.split(':');

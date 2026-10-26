@@ -69,7 +69,7 @@ services:
       - server
 
   # ── browser-llm-bench pages (same server, second repo) ──
-  # Serves owner/browser-llm-bench's `gh-pages` branch (pushed by the
+  # Serves the browser-llm-bench repo's `gh-pages` branch (pushed by the
   # repo's pages CI workflow) on :3004. The stock `pages` service above is
   # single-repo, so this is a second instance of the same image.
   browser-llm-bench-pages:
@@ -77,7 +77,7 @@ services:
     container_name: browser-llm-bench-pages
     restart: always
     environment:
-      - PAGES_REPO=http://gitea:3000/owner/browser-llm-bench.git
+      - PAGES_REPO=${PAGES_BENCH_REPO}
       - PAGES_BRANCH=gh-pages
       - PAGES_TOKEN=${REVIEW_TOKEN}   # read-only review token — pages only pulls
     networks:
@@ -151,7 +151,7 @@ services:
       # repo bind-mounted read-only; see 00-tea/tasks.mjs). Auto-enqueued on
       # infra-class failures; @infra on the infra repo works it manually.
       - AGENT_IMAGE_INFRA=${AGENT_IMAGE_INFRA:-agent-sandbox:infra}
-      - INFRA_REPO=${INFRA_REPO:-owner/gitea-with-agents}
+      - INFRA_REPO=${INFRA_REPO}
       - INFRA_HOST_REPO=${INFRA_HOST_REPO:-}
       - INFRA_COOLDOWN_MINUTES=${INFRA_COOLDOWN_MINUTES:-15}
       - GITEA_API=http://gitea:3000/api/v1
