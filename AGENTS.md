@@ -33,7 +33,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   `/etc/semgrep` at build time, so the gVisor sandbox needs no egress to the
   registry) and run in two places: the
   `security-scan.yaml` CI workflow (every PR on my-runner: gitleaks over
-  history + semgrep `p/secrets`+`auto` blocking) and the reviewer's
+  history + semgrep `p/secrets` blocking, `auto` advisory) and the reviewer's
   `code-review` skill (scanners first, LLM judgment on top). A committed
   secret / blocking finding is a `fail` concern in the review, not a nitpick.
 - **Review chain** (after any work task that pushed commits): 00-tea
