@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" font-family="system-ui,-apple-system,'Segoe UI',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <g stroke-width="1.5" fill="none">
+    <rect x="30"  y="70"  width="150" height="80"  rx="10" stroke="#3fb950"/>
+    <rect x="300" y="70"  width="170" height="80"  rx="10" stroke="#58a6ff"/>
+    <rect x="570" y="50"  width="160" height="120" rx="10" stroke="#bc8cff"/>
+    <rect x="570" y="220" width="160" height="60"  rx="10" stroke="#bc8cff"/>
+    <rect x="30"  y="220" width="150" height="60"  rx="10" stroke="#3fb950"/>
+  </g>
+
+  <g font-size="14" font-weight="700" fill="#555">
+    <text x="45"  y="95">Gitea</text>
+    <text x="315" y="95">00-tea</text>
+    <text x="585" y="75">agent-sandbox (runsc)</text>
+    <text x="585" y="245">llama.cpp router</text>
+    <text x="45"  y="245">my-runner (runc)</text>
+  </g>
+
+  <g font-size="11" fill="#777">
+    <text x="45"  y="115">server :3000 · postgres</text>
+    <text x="45"  y="131">agent + chat users</text>
+    <text x="315" y="115">dispatcher :3001</text>
+    <text x="315" y="131">sqlite queue · dashboard</text>
+    <text x="585" y="95">pi · opencode · infra</text>
+    <text x="585" y="111">review (read-only) · chat</text>
+    <text x="585" y="127">gitleaks + semgrep baked in</text>
+    <text x="585" y="261">OpenAI-compatible /v1</text>
+    <text x="45"  y="261">CI: security-scan gate</text>
+  </g>
+
+  <g stroke="#666" stroke-width="1.5" fill="none" opacity=".8">
+    <path d="M 180 100 L 300 100" marker-end="url(#arr)"/>
+    <path d="M 570 145 L 180 145" marker-end="url(#arr)"/>
+    <path d="M 470 90 L 570 90"  marker-end="url(#arr)"/>
+    <path d="M 385 150 L 385 250 L 570 250" marker-end="url(#arr)"/>
+    <path d="M 105 150 L 105 220" marker-end="url(#arr)"/>
+  </g>
+
+  <g font-size="11" fill="#777">
+    <text x="240" y="92"  text-anchor="middle">webhook: @agent mention</text>
+    <text x="375" y="137" text-anchor="middle">clone · push commits/PR · reply · review chain</text>
+    <text x="520" y="82"  text-anchor="middle">docker run --runtime=runsc</text>
+    <text x="470" y="242" text-anchor="middle">model pick (failover)</text>
+    <text x="113" y="188">Gitea Actions</text>
+  </g>
+</svg>

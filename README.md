@@ -3,7 +3,11 @@
 A local [Gitea](https://gitea.com) instance with **AI agent runners**: post a
 comment on an issue or PR mentioning `@pi` or `@opencode` and the corresponding
 coding agent implements the request — pushes commits, opens PRs, and replies
-with a summary, all under a reviewable `bot` user.
+with a summary. Each agent acts as its own Gitea user, and every push goes
+through an automated review chain: a read-only reviewer agent checks the diff
+(pass/fail) and failed reviews loop back to the original agent for rework.
+
+![Architecture](docs/architecture.svg)
 
 ## Components
 
@@ -11,9 +15,10 @@ with a summary, all under a reviewable `bot` user.
 |---|---|
 | `server` (gitea) | Gitea 1.27.2, web UI on `:3000`, SSH on `:222`, postgres backend |
 | `db` | Postgres 14 |
-| `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — for ordinary CI |
+| `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — ordinary CI, incl. the `security-scan` gate (gitleaks + semgrep on every PR) |
+| `android-runner` | Dedicated runner for native Android builds, label `android`, job image `gitea-android:latest` (JDK 21 + Android SDK + warm Gradle cache) |
 | `00-tea` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
-| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image + one variant per agent (pi, opencode, ops=pi+docker CLI), each preconfigured with the inference backends from `inference.json` |
+| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image (git, node, gitleaks, semgrep with baked rule packs) + one variant per agent (pi, opencode, infra=pi+docker CLI, review=opencode+code-review skill), each preconfigured with the inference backends from `inference.json` |
 | `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 00-tea walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
 
 The **template repo `owner/agents-actions`** is a thin README (the old agent
