@@ -241,7 +241,7 @@ else
     ask "backend $i api key (empty if none)" "" B_KEY
     ask "backend $i default model (empty = first in its list)" "" B_DEF
     b=$(jq -n --arg id "$B_ID" --arg url "$B_URL" --arg key "$B_KEY" --arg def "$B_DEF" --argjson p "$i" \
-      '{id:$id, url:$url, apiKey:$key, priority:$p, defaultModel:(if $def=="" then null else $def)}')
+      '{id:$id, url:$url, apiKey:$key, priority:$p, defaultModel:(if $def=="" then null else $def end)}')
     backends=$(jq --argjson b "$b" '.backends += [$b]' <<<"$backends")
     yesno "add another backend?" n || break
   done
