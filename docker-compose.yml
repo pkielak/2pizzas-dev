@@ -158,7 +158,11 @@ services:
   00-tea:
     build: ./00-tea
     container_name: gitea-00-tea
-    dns: [127.0.0.11]
+    # 127.0.0.11 (embedded) resolves the internal names 00-tea uses (gitea);
+    # 1.1.1.1 is a fallback for EXTERNAL hostnames — inference backends may be
+    # host-based (OpenRouter, a vLLM/Ollama hostname), which embedded DNS alone
+    # cannot resolve. IP-based backends need no DNS at all.
+    dns: [127.0.0.11, 1.1.1.1]
     restart: always
     environment:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
