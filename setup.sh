@@ -175,7 +175,9 @@ ok "docker daemon reachable"
 # timeout: systemctl can block on non-systemd/dbus-less hosts (would wedge
 # preflight) — the check is advisory, a timeout just means "unknown"
 if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
-  BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null)
+  # || true: a failed inspect (network absent/renamed) must NOT trip set -e
+  # and kill the wizard — the subnet is only a cosmetic hint in the warning
+  BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null) || true
   warn "ufw is active — Docker needs FORWARD to the compose bridge${BRIDGE_SUBNET:+ ($BRIDGE_SUBNET)} for published ports + embedded DNS:"
   warn "  sudo ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
 else ok "no active ufw firewall"; fi
