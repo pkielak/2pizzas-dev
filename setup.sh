@@ -180,9 +180,22 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
   # || true: a failed inspect (network absent/renamed) must NOT trip set -e
   # and kill the wizard — the subnet is only a cosmetic hint in the warning
   BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null) || true
-  warn "ufw is active — Docker needs FORWARD for published ports, embedded DNS, and the job containers' host-gateway reach:"
-  warn "  compose bridge (gitea/00-tea/chat):    sudo ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
-  warn "  default bridge (agent job containers): sudo ufw route allow in on any to 172.17.0.0/16"
+  warn "ufw is active — without FORWARD to the Docker bridges the stack is silently broken (containers can't reach the host: published ports, embedded DNS, and job-container git clones all fail)"
+  if yesno "apply the two ufw route-allow rules now? (needs $SUDO)" y; then
+    # both must succeed; a failure here is NOT fatal (operator can run manually)
+    if $SUDO ufw route allow in on any to "${BRIDGE_SUBNET:-172.18.0.0/16}" \
+        && $SUDO ufw route allow in on any to 172.17.0.0/16; then
+      ok "ufw route rules applied: ${BRIDGE_SUBNET:-172.18.0.0/16} + 172.17.0.0/16"
+    else
+      err "ufw rules not applied ($SUDO failed / not authorized) — run manually:"
+      warn "  $SUDO ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
+      warn "  $SUDO ufw route allow in on any to 172.17.0.0/16"
+    fi
+  else
+    warn "run manually:"
+    warn "  $SUDO ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
+    warn "  $SUDO ufw route allow in on any to 172.17.0.0/16"
+  fi
 else ok "no active ufw firewall"; fi
 
 # disk space — image builds + models need room
