@@ -302,12 +302,15 @@ jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$I
    }}) | from_entries)}' > "$OC_CONFIG"
 ok "baked $OC_CONFIG (default model $FIRST_ID/$FIRST_MODEL)"
 
-# pi's default lives in the COMMITTED settings.json — setup.sh generates
-# models.json + opencode.json but never touched settings.json, so its
-# defaultProvider/defaultModel stayed a hardcoded snapshot from whichever
-# machine last built the image (the "wrong model baked in" trap). Sync it to
-# the top-priority backend's first (live-detected) model.
+# pi's default lives in settings.json (gitignored, machine-specific — the
+# committed .example carries a placeholder defaultModel). setup.sh generates
+# models.json + opencode.json; for settings.json it bootstraps from the
+# .example if absent, then syncs defaultProvider/defaultModel to the
+# top-priority backend's first (live-detected) model — so a fresh machine's
+# single non-router model becomes pi's default, not a stale value.
 PI_SETTINGS=agent-sandbox/pi/pi-settings/settings.json
+PI_SETTINGS_EX=agent-sandbox/pi/pi-settings/settings.json.example
+[[ -f $PI_SETTINGS ]] || { [[ -f $PI_SETTINGS_EX ]] && cp "$PI_SETTINGS_EX" "$PI_SETTINGS"; }
 if [[ -f $PI_SETTINGS && -n $FIRST_MODEL && $FIRST_MODEL != "unknown" ]]; then
   jq --arg p "$FIRST_ID" --arg m "$FIRST_MODEL" '.defaultProvider = $p | .defaultModel = $m' "$PI_SETTINGS" > "$PI_SETTINGS.tmp" && mv "$PI_SETTINGS.tmp" "$PI_SETTINGS"
   ok "baked $PI_SETTINGS (pi default $FIRST_ID/$FIRST_MODEL)"

@@ -2,7 +2,7 @@
   "defaultProjectTrust": "always",
   "theme": "dark",
   "defaultProvider": "llama.cpp",
-  "defaultModel": "Swift-1.5-27B-GSQ-RCO",
+  "defaultModel": "<your-model-id>",
   "compaction": { "enabled": false },
   "packages": []
 }
