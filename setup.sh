@@ -168,6 +168,16 @@ if ! docker info >/dev/null 2>&1; then
 fi
 ok "docker daemon reachable"
 
+# firewall — ufw/nftables that drop FORWARD breaks Docker's published
+# ports AND embedded DNS (silent: ports unreachable, containers
+# crash-loop on "lookup gitea: server misbehaving"). Can't verify the
+# ruleset without root, so this is an advisory warning.
+if systemctl is-active ufw >/dev/null 2>&1; then
+  BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null)
+  warn "ufw is active — Docker needs FORWARD to the compose bridge${BRIDGE_SUBNET:+ ($BRIDGE_SUBNET)} for published ports + embedded DNS:"
+  warn "  sudo ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
+else ok "no active ufw firewall"; fi
+
 # disk space — image builds + models need room
 AVAIL_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -d 'BG ')
 if [[ -n $AVAIL_GB ]] && [[ $AVAIL_GB -lt 10 ]]; then
@@ -455,6 +465,13 @@ step "Verification"
 ADMIN_TOKEN=$(env_get ADMIN_TOKEN)
 GURL=$(env_get GITEA_URL)
 curl -sf "$GURL/api/healthz" >/dev/null && ok "Gitea API" || warn "Gitea API not answering"
+
+# container DNS — /etc/resolv.conf is generated from the host's at
+# container CREATION time; if the host resolver was broken then (e.g.
+# systemd-resolved stub 127.0.0.53), the container can never resolve
+# names. Detect + hint the recreate.
+if docker exec gitea getent hosts db >/dev/null 2>&1; then ok "container DNS (gitea → db)"
+else warn "gitea container cannot resolve 'db' — stale /etc/resolv.conf (host DNS was broken at container creation). Fix: docker compose up -d --force-recreate"; fi
 curl -sf http://127.0.0.1:3001/healthz >/dev/null && ok "00-tea dispatcher (:3001)" || warn "00-tea not answering on :3001 yet (give it a moment)"
 
 runners=$(curl -sf -H "Authorization: token $ADMIN_TOKEN" \

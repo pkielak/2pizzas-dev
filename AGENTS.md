@@ -335,6 +335,22 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
 - **00-tea env changes need `docker compose up -d 00-tea`** (recreate), not
   `docker restart`. Edit `00-tea/server.mjs` → also `docker compose build
   00-tea` first (the file is COPY'd into the image).
+- **A host firewall that drops FORWARD kills the stack silently.** Docker
+  published ports (DNAT→bridge) AND embedded DNS (127.0.0.11) both traverse
+  the FORWARD chain to the compose bridge `gitea_gitea` (172.18.0.0/16).
+  `ufw default incoming deny` with no route rule: ports 3000/3001 go
+  unreachable AND containers crash-loop on `lookup gitea: server
+  misbehaving` (runners) / `lookup db` (gitea). Fix:
+  `sudo ufw route allow in on any to 172.18.0.0/16` (+ `ufw allow` for ssh
+  from the tailnet, or you lock yourself out). setup.sh preflight warns
+  when ufw is active.
+- **Container `/etc/resolv.conf` is baked at creation time** from the
+  host's resolver. If the host DNS was broken at that moment (e.g.
+  `/etc/resolv.conf` pointing at the systemd-resolved stub `127.0.0.53`),
+  the container gets `nameserver 127.0.0.53` — unreachable from inside —
+  and can never resolve names until recreated:
+  `docker compose up -d --force-recreate <svc>`. setup.sh verification
+  checks `docker exec gitea getent hosts db` for exactly this.
 - **Gitea webhooks are host-restricted.** By default Gitea refuses to call
   webhook URLs on private/LAN hosts. `docker-compose.yml` sets
   `GITEA__security__ALLOWED_HOST_LIST=00-tea`; a new dispatcher hostname must
