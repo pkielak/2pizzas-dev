@@ -75,11 +75,20 @@ export function enqueueRework(review, concerns) {
 // SIGTERM 143, OOM/host kill → 137, SIGINT 130, docker/host errors) — not the
 // agent's fault. Agent-class failures (bad model run, no-action, review
 // issues) are NOT retried and do NOT wake the infra agent.
-const INFRA_ERR = /(exited with code (130|137|143)\b|docker: |no such host|ECONNREFUSED|connection refused)/i;
+// Infra-class: the stack died UNDER the agent (dockerd restart → SIGTERM 143,
+// OOM/host kill → 137, SIGINT 130, docker/host errors) OR a host-unreachable
+// git clone (exit 128 + a connection/resolve failure in the LOG). A bare
+// "exited with code 128" is NOT infra-class on its own — that can be a legit
+// auth/repo failure; the connection signature is what makes it a stack issue.
+const INFRA_ERR = /(exited with code (130|137|143)\b|docker: |no such host|ECONNREFUSED|connection (refused|timed out)|couldn't connect to server|could not resolve host|failed to connect to)/i;
 
 export function onTaskFailure(t, msg) {
   if (t.kind === 'agent-infra') return; // never auto-chase the infra agent
-  if (!INFRA_ERR.test(msg)) return;
+  // a host-unreachable git clone surfaces as "agent exited with code 128" in
+  // e.message, but the connection detail ("Couldn't connect to server") is in
+  // the LOG — scan the tail too, so the infra agent gets woken for it
+  const logTail = readLog(t.id).slice(-4000);
+  if (!INFRA_ERR.test(msg) && !INFRA_ERR.test(logTail)) return;
   // 1. retry the victim once (a killed review was 90% done — don't lose it).
   //    Same fields, so the review chain links off the retry as usual; the
   //    retried_of guard makes this idempotent.

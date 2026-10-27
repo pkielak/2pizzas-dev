@@ -180,8 +180,9 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
   # || true: a failed inspect (network absent/renamed) must NOT trip set -e
   # and kill the wizard — the subnet is only a cosmetic hint in the warning
   BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null) || true
-  warn "ufw is active — Docker needs FORWARD to the compose bridge${BRIDGE_SUBNET:+ ($BRIDGE_SUBNET)} for published ports + embedded DNS:"
-  warn "  sudo ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
+  warn "ufw is active — Docker needs FORWARD for published ports, embedded DNS, and the job containers' host-gateway reach:"
+  warn "  compose bridge (gitea/00-tea/chat):    sudo ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
+  warn "  default bridge (agent job containers): sudo ufw route allow in on any to 172.17.0.0/16"
 else ok "no active ufw firewall"; fi
 
 # disk space — image builds + models need room
@@ -250,6 +251,17 @@ else
 fi
 # keep the legacy env var in sync with the top-priority backend
 LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
+
+# a bare localhost/127.* backend is reachable from setup.sh (on the host) but
+# NOT from the 00-tea CONTAINER (its localhost is itself) → 00-tea logs "no
+# backend reachable" even though setup.sh saw the model. host.docker.internal
+# (→ host-gateway), host-gateway, or a LAN/tailnet IP are container-reachable.
+_topurl=$(jq -r '.backends[0].url' inference.json)
+_thost=$(printf '%s' "$_topurl" | sed -E 's|^[a-z]+://||; s|/.*||; s|:.*||')
+case $_thost in localhost|127.*)
+  warn "backend $(jq -r '.backends[0].id' inference.json) url is $_topurl — bare localhost is NOT reachable from the 00-tea container"
+  warn "  use http://host.docker.internal:8080 (llama.cpp on this host) or the host's LAN/tailnet IP" ;;
+esac
 
 # bake the registry into the agent configs — live model list per backend,
 # falling back to its defaultModel when the backend is unreachable
