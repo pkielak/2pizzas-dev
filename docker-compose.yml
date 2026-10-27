@@ -189,6 +189,9 @@ services:
       # would be refused (nothing listens on the gateway IP). Use the tailnet
       # IP: self-consistent with the binding, stable, container-reachable.
       - GITEA_HOST=${HOST_TAILNET:?set HOST_TAILNET in .env}:3000
+      # chat containers (runsc, no DNS) reach Gitea/00-tea via this tailnet IP
+      # (both services are bound to it) — not the host-gateway
+      - HOST_TAILNET=${HOST_TAILNET:?set HOST_TAILNET in .env}
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
       - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 00-tea runs pi on a loadable model
       - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)

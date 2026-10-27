@@ -22,6 +22,9 @@ export const CFG = {
   },
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.docker.internal:3000', // reachable from JOB containers
+  // the host's tailnet IP. Chat containers (runsc, no DNS) reach Gitea +
+  // 00-tea via this — NOT the host-gateway, which neither service is bound to.
+  hostTailnet: process.env.HOST_TAILNET || '',
   // seed list of managed repos — self-enrolling (an @agent mention on an
   // unmanaged repo persists it in managed_repos and grants the bot write
   // access) makes this a convenience, not a gate

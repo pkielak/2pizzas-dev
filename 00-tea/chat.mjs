@@ -218,10 +218,10 @@ export const chatHistory = (row) => {
 // with it, the agent acts as the separate "chat" user (see createChat env)
 const CHAT_SYSTEM = `You are an interactive assistant inside a disposable sandbox (bash + file tools, empty workspace /work).
 You can read the 00-tea dispatcher state (which runs the Gitea coding agents) via its read-only API:
-  curl -s http://host.docker.internal:3001/api/tasks | jq '.[0:5]'
+  curl -s http://${CFG.hostTailnet}:3001/api/tasks | jq '.[0:5]'
 Use it when asked about tasks, agents, models, or token usage.${CFG.chatGiteaToken ? `
 You have Gitea access as user "${CFG.chatLogin}" (token: $GITEA_TOKEN, API: $GITEA_URL):
-  clone:  git clone http://${CFG.chatLogin}:$GITEA_TOKEN@host.docker.internal:3000/OWNER/REPO
+  clone:  git clone http://${CFG.chatLogin}:$GITEA_TOKEN@${CFG.giteaHost}/OWNER/REPO
   api:    curl -s -H "Authorization: token $GITEA_TOKEN" $GITEA_URL/api/v1/...
 You can READ any repo you can see. You can only WRITE (push, comment, PR) in repos where you have been granted collaborator access — if a push fails with 403 "permission denied", say so and stop trying other write paths.` : ' You have no write access to Gitea.'}`;
 
@@ -257,11 +257,11 @@ export async function createChat(agent) {
 
   // Gitea access for the chat agent: separate "chat" user (audit separation
   // from task work). Write still requires a per-repo collaborator grant.
-  // host.docker.internal (not the compose service name): the runsc sandbox
-  // can't reach Docker's built-in DNS, so name resolution must come from
-  // /etc/hosts — same pattern the task containers use for GITEA_HOST
+  // the tailnet IP (not the compose service name — the runsc sandbox can't
+  // use Docker's built-in DNS — and NOT host.docker.internal: neither Gitea
+  // nor 00-tea is bound to the host-gateway, both are bound to the tailnet IP)
   const giteaEnv = CFG.chatGiteaToken
-    ? ['-e', `GITEA_TOKEN=${CFG.chatGiteaToken}`, '-e', 'GITEA_URL=http://host.docker.internal:3000']
+    ? ['-e', `GITEA_TOKEN=${CFG.chatGiteaToken}`, '-e', `GITEA_URL=http://${CFG.giteaHost}`]
     : [];
 
   c.child = spawn('docker', [
