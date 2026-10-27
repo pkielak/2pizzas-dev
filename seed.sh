@@ -158,14 +158,19 @@ fi
 log "Repositories"
 api() { curl -sf -H "Authorization: token $ADMIN_TOKEN" -H "Content-Type: application/json" "$@"; }
 
+# --max-time: a wedged Gitea API must time out, not hang seed forever
+# explicit if/else on the create: a bare `api -X POST` would die under
+# set -e with no message on failure (the `echo ... created` never runs)
 for repo in "$ADMIN_REPO" "$TEMPLATE_REPO"; do
-  if curl -sf -H "Authorization: token $ADMIN_TOKEN" \
+  if curl -sf --max-time 15 -H "Authorization: token $ADMIN_TOKEN" \
       "$GITEA_URL/api/v1/repos/$ADMIN_USER/$repo" >/dev/null 2>&1; then
     echo "repo $repo: ok"; skip
-  else
-    api -X POST -d "{\"name\":\"$repo\",\"auto_init\":false}" \
-      "$GITEA_URL/api/v1/user/repos" >/dev/null
+  elif api -X POST --max-time 15 -d "{\"name\":\"$repo\",\"auto_init\":false}" \
+      "$GITEA_URL/api/v1/user/repos" >/dev/null; then
     echo "repo $repo: created"
+  else
+    echo "repo $repo: CREATE FAILED — Gitea API did not create it (check: docker logs gitea)" >&2
+    exit 1
   fi
 done
 
