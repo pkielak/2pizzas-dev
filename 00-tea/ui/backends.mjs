@@ -38,9 +38,11 @@ export async function backendsPage() {
         <button class="btn" data-act="up" data-id="${b.id}" ${i === 0 ? 'disabled' : ''}>↑</button>
         <button class="btn" data-act="down" data-id="${b.id}" ${i === backends.length - 1 ? 'disabled' : ''}>↓</button>
         <button class="btn" data-act="edit" data-id="${b.id}">edit</button>
+        <button class="btn" data-act="test" data-id="${b.id}" title="test reachability from 00-tea (the container that calls it)">test</button>
         <button class="btn danger" data-act="del" data-id="${b.id}" ${backends.length <= 1 ? 'disabled' : ''} title="remove">✕</button>
       </div>
       <div class="l2">${b.url}</div>
+      <div class="btest" id="test-${b.id}"></div>
       <div class="bform edit-form" id="edit-${b.id}" style="display:none">
         <input type="text" data-f="url" value="${b.url}" style="flex:2;min-width:200px" placeholder="url">
         <input type="password" data-f="apiKey" value="${b.apiKey}" style="flex:1;min-width:120px" placeholder="api key (empty = none)">
@@ -61,6 +63,9 @@ export async function backendsPage() {
     .bform input{background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:var(--radius-sm);color:var(--color-input-text,#ddd);padding:7px 10px;font-size:13px}
     .bform input:focus{outline:none;border-color:var(--color-primary,#7ab)}
     .bmodels{margin:8px 0 0 18px;padding:0;list-style:none}
+    .btest{margin-top:8px;font-size:12.5px;line-height:1.5;word-break:break-word}
+    .btest:empty{display:none}
+    .btest .badge{margin-right:4px}
     .btable{width:100%;margin-top:8px;border-collapse:collapse}
     .btable th,.btable td{text-align:left;padding:5px 8px;border-top:1px solid var(--color-light-border,#2a2a2a);font-size:13px}
     /* small screens: stack the forms, full-width inputs */
@@ -88,8 +93,10 @@ export async function backendsPage() {
         <input type="text" data-f="url" placeholder="url (e.g. https://openrouter.ai/api)" style="flex:2;min-width:200px">
         <input type="password" data-f="apiKey" placeholder="api key (empty if none)" style="flex:1;min-width:120px">
         <input type="text" data-f="defaultModel" placeholder="default model (empty = first listed)" style="flex:1;min-width:140px">
+        <button class="btn" data-act="probe" title="test this url from 00-tea before adding">test url</button>
         <button class="btn primary" data-act="add">add</button>
       </div>
+      <div class="btest" id="probe-result"></div>
       <div class="l2">Changes apply to the <em>next</em> task immediately (00-tea re-reads <code>inference.json</code>).
       A backend is only usable <em>inside the agents</em> after it is baked into the images —
       <code>./setup.sh --rebuild</code> — until then it shows a <span class="badge badge-warn">not baked</span> badge.</div>
@@ -113,6 +120,20 @@ export async function backendsPage() {
       if (!r.ok) { alert(j.error || ('request failed: ' + r.status)); return false; }
       return true;
     };
+    const renderProbe = (el, j) => {
+      if (!el) return;
+      el.innerHTML = j.ok
+        ? '<span class="badge badge-success">reachable</span> ' + (j.count||0) + ' model(s) in ' + j.ms + 'ms: ' + (j.models||[]).map(m => '<code>'+m+'</code>').join(' ')
+        : '<span class="badge badge-warn">NOT reachable</span> ' + (j.error||'') + (j.hint ? '<br><em>💡 ' + j.hint + '</em>' : '');
+    };
+    const doProbe = async (el, path, body) => {
+      if (!el) return;
+      el.innerHTML = '<span class="meta">testing from 00-tea…</span>';
+      try {
+        const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: body ? {'content-type':'application/json'} : {}, body: body ? JSON.stringify(body) : undefined });
+        renderProbe(el, await r.json().catch(() => ({})));
+      } catch (e) { el.innerHTML = '<span class="badge badge-warn">test failed</span> ' + e.message; }
+    };
     document.addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
@@ -132,6 +153,11 @@ export async function backendsPage() {
       } else if (act === 'save') {
         const f = document.getElementById('edit-' + id);
         if (await post('/api/backends/' + encodeURIComponent(id), { method: 'PATCH', body: { url: val(f,'url'), apiKey: val(f,'apiKey'), defaultModel: val(f,'defaultModel') } })) location.reload();
+      } else if (act === 'test') {
+        doProbe(document.getElementById('test-' + id), '/api/backends/' + encodeURIComponent(id) + '/test');
+      } else if (act === 'probe') {
+        const f = document.getElementById('add-form');
+        doProbe(document.getElementById('probe-result'), '/api/backends/test', { url: val(f,'url'), apiKey: val(f,'apiKey') });
       }
     });
     </script>`,

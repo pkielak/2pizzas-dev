@@ -137,7 +137,10 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
   per `pages/` service; last deployed commit read via `docker exec git log`),
   plus `/stats` for token/model usage aggregates and `/backends` for the
   inference backends — read AND admin: add/edit/move/delete
-  (`POST|PATCH|DELETE /api/backends`, `POST /api/backends/:id/up|down`) edits
+  (`POST|PATCH|DELETE /api/backends`, `POST /api/backends/:id/up|down`), plus
+  "test"/"test url" buttons that probe reachability FROM 00-tea's own vantage
+  (`GET /api/backends/:id/test`, `POST /api/backends/test` → ok/models/error/
+  hint) — the loopback gotcha is the #1 misconfig this catches — edits
   `inference.json` IN PLACE (it is a bind-mounted host file — a rename would
   swap the inode; `writeRegistry()` in inference.mjs must stay
   truncate+write), applies to the next task without a restart; a "not baked"
@@ -265,6 +268,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `docker-compose.yml` | gitea server, postgres, my-runner, **00-tea** (env injection: `${VAR}` from `.env`) |
 | `00-tea/server.mjs` | thin HTTP router only — logic is in sibling modules: `config.mjs`, `db.mjs` (sqlite), `gitea.mjs` (API), `repos.mjs` (managed repos/enroll), `inference.mjs` (backend registry + model pick + bake-sync check), `theme.mjs` (Gitea theme mirror), `prompts.mjs`, `queue.mjs` (enqueue + review chain), `tasks.mjs` (runsc job runner + pump + afterTask), `redact.mjs` (scrubs all 00-tea-held secrets from task/chat log lines — applied at the two log choke points, don't remove it), `webhook.mjs`, `poll.mjs` (60s fallback), `chat.mjs` (pi RPC bridge), `ui/*.mjs` (dashboard pages). Import graph is acyclic; side-effect imports (pump/poll intervals, theme discovery, chat reaper) run at module load |
 | `inference.json` | inference backend registry (gitignored; `inference.json.example` committed) — see the backend-agnostic bullet above; also editable from the `/backends` UI |
+| `00-tea/probe.sh` | CLI to probe a backend FROM 00-tea's container vantage (the `POST /api/backends/test` endpoint) — `./00-tea/probe.sh [url] [key]`; the diagnostic for a loopback-bound backend |
 | `00-tea/Dockerfile` | 00-tea image (node + docker-cli) |
 | `00-tea/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `00-tea/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
@@ -347,8 +351,19 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
   unreachable AND containers crash-loop on `lookup gitea: server
   misbehaving` (runners) / `lookup db` (gitea). Fix:
   `sudo ufw route allow in on any to 172.18.0.0/16` (+ `ufw allow` for ssh
-  from the tailnet, or you lock yourself out). setup.sh preflight warns
-  when ufw is active.
+  from the tailnet, or you lock yourself out). setup.sh preflight now OFFERS to
+  apply both route rules (compose bridge + the default bridge job containers
+  run on).
+- **A backend bound to the host's `127.0.0.1`/localhost is invisible to every
+  container.** Inside a container, `127.0.0.1` is that container's OWN
+  loopback — 00-tea and the job containers can never reach the host's
+  loopback, so a llama.cpp/vLLM/Ollama bound to `127.0.0.1:8080` is
+  unreachable from the stack (a routable host IP — tailscale/LAN — works).
+  It's silent: `pickModel()` skips the backend and the task fails with
+  "no backend reachable". Diagnose from the container's vantage, not the
+  host's: `./00-tea/probe.sh <url>` (or the "test"/"test url" buttons on the
+  `/backends` page → `GET /api/backends/:id/test` / `POST /api/backends/test`)
+  — a loopback url returns the exact hint.
 - **Container `/etc/resolv.conf` is baked at creation time** from the
   host's resolver. If the host DNS was broken at that moment (e.g.
   `/etc/resolv.conf` pointing at the systemd-resolved stub `127.0.0.53`),
@@ -470,7 +485,7 @@ revived it should run through 00-tea, not a dedicated runner.
 | `00-tea/server.mjs` | `node --check`, then `docker compose build 00-tea && up -d`, `curl :3001/healthz` |
 | webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-00-tea` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
 | chat | `curl -X POST :3001/api/chat -d '{"agent":"pi"}'` → `POST /api/chat/<id>/message` → SSE `/chat/<id>/stream` shows `text_delta`…`agent_settled`; `DELETE /api/chat/<id>` removes the container |
-| backends | `curl -X POST :3001/api/backends -d '{"id":"x","url":"https://…"}'` → row appears in `inference.json` (in place) + the `/backends` page (with a "not baked" badge until `./setup.sh --rebuild`); `DELETE /api/backends/:id` removes it (the last one is protected) |
+| backends | `curl -X POST :3001/api/backends -d '{"id":"x","url":"https://…"}'` → row appears in `inference.json` (in place) + the `/backends` page (with a "not baked" badge until `./setup.sh --rebuild`); `DELETE /api/backends/:id` removes it (the last one is protected). Reachability: `./00-tea/probe.sh <url>` (or the "test" buttons) → `ok` + model list, or `NOT reachable` + the loopback hint |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
 | infra agent | `@infra` on an issue in `INFRA_REPO` → task runs (runc, `docker ps` works inside); a task killed with 143/137 → retry task + `agent-infra` task on a new incident issue within the cooldown |

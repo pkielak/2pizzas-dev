@@ -70,7 +70,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { CFG } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { managedRepos } from './repos.mjs';
-import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend } from './inference.mjs';
+import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
@@ -399,6 +399,21 @@ const server = http.createServer(async (req, res) => {
     return send(200, 'application/json', JSON.stringify({ providers: await bakedProviderIds() }));
   if (url.pathname === '/api/backends' && req.method === 'POST')
     return backendApi(async () => { await addBackend(await readJson(req)); });
+  // reachability probe — tests from 00-tea's OWN vantage (the container that
+  // calls the backend), not the host. POST = an arbitrary url (add-form, before
+  // saving); GET :id/test = a saved backend. Always 200; the body carries
+  // ok/models/error/hint so the UI can render the diagnostic.
+  if (url.pathname === '/api/backends/test' && req.method === 'POST') {
+    const f = await readJson(req);
+    return send(200, 'application/json', JSON.stringify(await probeBackend({ url: String(f.url || ''), apiKey: String(f.apiKey || '') })));
+  }
+  const backendTestMatch = url.pathname.match(/^\/api\/backends\/([^/]+)\/test$/);
+  if (backendTestMatch && req.method === 'GET') {
+    const id = decodeURIComponent(backendTestMatch[1]);
+    const b = readRegistry().find((x) => x.id === id);
+    if (!b) return send(404, 'application/json', JSON.stringify({ error: `no backend ${id}` }));
+    return send(200, 'application/json', JSON.stringify(await probeBackend(b)));
+  }
   const backendItemMatch = url.pathname.match(/^\/api\/backends\/([^/]+)(?:\/(up|down))?$/);
   if (backendItemMatch && url.pathname !== '/api/backends/baked') {
     const id = decodeURIComponent(backendItemMatch[1]);

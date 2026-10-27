@@ -58,6 +58,43 @@ export async function backendModels(b) {
   });
 }
 
+// Reachability probe FROM 00-tea's own network vantage — the container that
+// actually calls the backend, NOT the host. This is the diagnostic for the
+// #1 inference misconfiguration: a backend bound to the host's
+// 127.0.0.1/localhost is INVISIBLE to every container (127.0.0.1 inside a
+// container is that container's own loopback, not the host's). A backend must
+// be bound to a ROUTABLE host IP (tailscale/LAN) to be reachable from 00-tea
+// and the job containers. Used by the /backends UI "test" buttons and
+// POST /api/backends/test. Always resolves (never throws): the result object
+// carries ok/error/hint so the caller can render the diagnostic.
+export async function probeBackend(b) {
+  const url = String(b.url ?? '').replace(/\/+$/, '');
+  let host = url;
+  try { host = new URL(url).host; } catch { /* not a URL — keep raw */ }
+  const started = Date.now();
+  const res = { ok: false, url, host, ms: 0 };
+  try {
+    const r = await fetch(`${url}/v1/models`, {
+      headers: b.apiKey ? { authorization: `Bearer ${b.apiKey}` } : {},
+      signal: AbortSignal.timeout(8000),
+    });
+    res.ms = Date.now() - started;
+    res.status = r.status;
+    if (!r.ok) { res.error = `GET /v1/models → ${r.status}`; return res; }
+    const j = await r.json();
+    const models = (j.data ?? []).map((m) => m.id);
+    res.ok = true; res.models = models; res.count = models.length;
+    return res;
+  } catch (e) {
+    res.ms = Date.now() - started;
+    res.error = e.cause?.message || e.message;
+    if (/(^|\.)localhost$|^127\./.test(host)) {
+      res.hint = `host '${host}' is the HOST's loopback — a container (00-tea, job containers) CANNOT reach 127.0.0.1/localhost; inside a container that address is the container's own loopback. Bind the server to a routable host IP (tailscale/LAN, e.g. 100.110.41.89 or 192.168.x.x) and point the backend at THAT url.`;
+    }
+    return res;
+  }
+}
+
 // pi's baked default (single source of truth: the settings.json in the image)
 let piDefCache = { at: 0, value: null };
 export async function piDefaultModel() {
