@@ -286,6 +286,17 @@ jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$I
    }}) | from_entries)}' > "$OC_CONFIG"
 ok "baked $OC_CONFIG (default model $FIRST_ID/$FIRST_MODEL)"
 
+# pi's default lives in the COMMITTED settings.json — setup.sh generates
+# models.json + opencode.json but never touched settings.json, so its
+# defaultProvider/defaultModel stayed a hardcoded snapshot from whichever
+# machine last built the image (the "wrong model baked in" trap). Sync it to
+# the top-priority backend's first (live-detected) model.
+PI_SETTINGS=agent-sandbox/pi/pi-settings/settings.json
+if [[ -f $PI_SETTINGS && -n $FIRST_MODEL && $FIRST_MODEL != "unknown" ]]; then
+  jq --arg p "$FIRST_ID" --arg m "$FIRST_MODEL" '.defaultProvider = $p | .defaultModel = $m' "$PI_SETTINGS" > "$PI_SETTINGS.tmp" && mv "$PI_SETTINGS.tmp" "$PI_SETTINGS"
+  ok "baked $PI_SETTINGS (pi default $FIRST_ID/$FIRST_MODEL)"
+fi
+
 # ── 3. .env ─────────────────────────────────────────────────────────
 step ".env"
 if [[ ! -f .env ]]; then
