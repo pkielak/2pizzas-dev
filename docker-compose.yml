@@ -10,6 +10,13 @@ services:
   server:
     image: docker.gitea.com/gitea:1.27.2
     container_name: gitea
+    # always use Docker's embedded DNS. The host's /etc/resolv.conf is baked
+    # into the container at creation; if the host resolver is the
+    # systemd-resolved stub (127.0.0.53) the container can't resolve ANY name
+    # (gitea crash-loops on "lookup db"). 127.0.0.11 is immune to that. These
+    # services only resolve internal names (gitea/db/00-tea), so embedded DNS
+    # is sufficient.
+    dns: [127.0.0.11]
     environment:
       - USER_UID=1000
       - USER_GID=1000
@@ -44,6 +51,7 @@ services:
 
   db:
     image: docker.io/library/postgres:14
+    dns: [127.0.0.11]
     restart: always
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
@@ -60,6 +68,7 @@ services:
   pages:
     build: ./pages
     container_name: gitea-pages
+    dns: [127.0.0.11]
     restart: always
     environment:
       - PAGES_REPO=${PAGES_REPO:-http://gitea:3000/admin/my-repo.git}
@@ -84,6 +93,7 @@ services:
   browser-llm-bench-pages:
     build: ./pages
     container_name: browser-llm-bench-pages
+    dns: [127.0.0.11]
     restart: always
     environment:
       - PAGES_REPO=${PAGES_BENCH_REPO}
@@ -105,6 +115,7 @@ services:
   runner:
     image: docker.io/gitea/runner:3
     container_name: gitea-runner
+    dns: [127.0.0.11]
     restart: always
     environment:
       - CONFIG_FILE=/config.yaml
@@ -126,6 +137,7 @@ services:
   android-runner:
     image: docker.io/gitea/runner:3
     container_name: gitea-android-runner
+    dns: [127.0.0.11]
     restart: always
     environment:
       - CONFIG_FILE=/config.yaml
@@ -146,6 +158,7 @@ services:
   00-tea:
     build: ./00-tea
     container_name: gitea-00-tea
+    dns: [127.0.0.11]
     restart: always
     environment:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
@@ -166,7 +179,12 @@ services:
       - INFRA_HOST_REPO=${INFRA_HOST_REPO:-}
       - INFRA_COOLDOWN_MINUTES=${INFRA_COOLDOWN_MINUTES:-15}
       - GITEA_API=http://gitea:3000/api/v1
-      - GITEA_HOST=host.docker.internal:3000
+      # job containers reach Gitea via this (clone + API). It MUST be an IP
+      # Gitea is actually BOUND to — the port map above binds Gitea to
+      # ${HOST_TAILNET} (not the host-gateway), so host.docker.internal:3000
+      # would be refused (nothing listens on the gateway IP). Use the tailnet
+      # IP: self-consistent with the binding, stable, container-reachable.
+      - GITEA_HOST=${HOST_TAILNET:?set HOST_TAILNET in .env}:3000
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
       - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 00-tea runs pi on a loadable model
       - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)
