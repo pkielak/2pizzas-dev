@@ -271,6 +271,7 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 | `00-tea/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
 | `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
+| `uninstall.sh` | inverse of setup.sh — tears down the stack behind a confirm: `docker compose down` (project `gitea` + `gitea_gitea` net), leftover `tea-chat-*` containers, built images (`agent-sandbox:*`, `gitea-android`, `gitea-pages`, 00-tea); host data dirs only with `--purge`. Flags `--yes` / `--purge` / `--keep-images`. Never touches the git checkout or the host `ufw` rule |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) — shared by android-runner |
@@ -287,6 +288,10 @@ Gitea webhook ──► 00-tea (sqlite queue) ──► docker run --runtime=run
 ## Useful commands
 
 ```bash
+# One-command setup + its inverse (teardown, confirm-gated)
+./setup.sh            # wizard: preflight → configs → .env → images → up → seed → verify
+./uninstall.sh        # down the stack + remove built images; --purge also deletes data dirs
+
 # Bootstrap (idempotent — users/tokens/repos/runner/webhooks; re-runnable)
 ./seed.sh
 
