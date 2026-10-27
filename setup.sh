@@ -115,7 +115,9 @@ set_env() { # KEY VALUE — upsert a line in .env
   if [[ -f .env ]] && grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env
   else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
-env_get() { grep -m1 "^$1=" .env 2>/dev/null | cut -d= -f2-; }
+# return 0: a missing key must NOT trip set -e at a `v=$(env_get ...)` call
+# site — an empty value is a normal, expected result
+env_get() { grep -m1 "^$1=" .env 2>/dev/null | cut -d= -f2-; return 0; }
 
 # ── 1. preflight ───────────────────────────────────────────────────
 step "Preflight checks"
@@ -204,7 +206,9 @@ else
 fi
 
 # inference backends — needed for the agents, not for the stack itself
-INFER_PREFLIGHT=$( [[ -f inference.json ]] && jq -r '.backends[0].url' inference.json 2>/dev/null )
+# || true: no inference.json → the `&&` short-circuits non-zero, which would
+# kill the script under set -e; empty is a normal "not configured yet" result
+INFER_PREFLIGHT=$( [[ -f inference.json ]] && jq -r '.backends[0].url' inference.json 2>/dev/null ) || true
 [[ -n $INFER_PREFLIGHT ]] || INFER_PREFLIGHT=$(env_get LLAMA_CPP_URL)
 if [[ -n $INFER_PREFLIGHT ]] && curl -sf --max-time 3 "$INFER_PREFLIGHT/v1/models" >/dev/null 2>&1; then
   ok "inference backend reachable at $INFER_PREFLIGHT"
@@ -350,8 +354,10 @@ ok ".env complete"
 
 # Port binding: compose binds service ports to these interface IPs only
 # (never 0.0.0.0) — auto-detect the tailnet + LAN addresses as defaults
-TAIL_IP=$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
-LAN_IP=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $4}' | cut -d/ -f1 | head -1)
+# || true: no such interface / no global address → the pipe fails, which would
+# kill the script under set -e; an empty IP just means "no detected default"
+TAIL_IP=$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1) || true
+LAN_IP=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $4}' | cut -d/ -f1 | head -1) || true
 for k in HOST_TAILNET HOST_LAN; do
   v=$(env_get "$k")
   if [[ -z $v ]]; then
@@ -479,7 +485,7 @@ else warn "gitea container cannot resolve 'db' — stale /etc/resolv.conf (host 
 curl -sf http://127.0.0.1:3001/healthz >/dev/null && ok "00-tea dispatcher (:3001)" || warn "00-tea not answering on :3001 yet (give it a moment)"
 
 runners=$(curl -sf -H "Authorization: token $ADMIN_TOKEN" \
-  "$GURL/api/v1/admin/actions/runners?limit=50" 2>/dev/null | jq -r '.runners[].name' 2>/dev/null | tr '\n' ' ')
+  "$GURL/api/v1/admin/actions/runners?limit=50" 2>/dev/null | jq -r '.runners[].name' 2>/dev/null | tr '\n' ' ') || true
 [[ -n $runners ]] && ok "runners registered: $runners" || warn "no runners registered yet (they self-register on container start — check: docker logs gitea-runner)"
 
 hook=$(docker exec gitea-db-1 psql -U "$(env_get POSTGRES_USER)" -d "$(env_get POSTGRES_DB)" \
