@@ -92,11 +92,47 @@ the model set: `./setup.sh --rebuild`). Flags:
 ### Prerequisites
 
 - Docker + compose plugin
-- A llama.cpp server (OpenAI-compatible, `:8080`) reachable from the host —
-  the agents talk to it through `host.docker.internal` (mapped to
-  `host-gateway` in compose)
+- A llama.cpp server (OpenAI-compatible, `:8080`) reachable from the
+  **containers** (00-tea + the agent job containers), not just the host — see
+  [Inference backend networking](#inference-backend-networking)
 - Ports 3000 (web) and 222 (SSH) free
 - gVisor (`runsc`) — agent task sandboxes
+
+### Inference backend networking
+
+The inference backend must be reachable from the **containers** that call it
+(00-tea and the ephemeral agent job containers), not just from the host. This
+is the #1 setup gotcha:
+
+- **A container can never reach the host's `127.0.0.1`.** Inside a container,
+  `127.0.0.1` is *that container's own* loopback — the host's loopback is
+  invisible to it. So a llama.cpp/vLLM/Ollama bound to `127.0.0.1:8080`
+  (or `localhost:8080`) is unreachable from the whole stack, even though
+  `curl http://localhost:8080` works on the host. The failure is silent: 00-tea
+  skips the unreachable backend and the task fails with "no backend reachable".
+
+| Bind the server to | url in `inference.json` | reachable from containers? |
+|---|---|---|
+| `0.0.0.0` (all interfaces) | `http://host.docker.internal:8080` | ✅ best — no IP churn |
+| tailscale IP | `http://<tailscale-ip>:8080` | ✅ stable |
+| LAN IP | `http://<lan-ip>:8080` | ✅ (but DHCP can change it) |
+| `127.0.0.1` / `localhost` | `http://127.0.0.1:8080` | ❌ never |
+
+`host.docker.internal` is wired into both 00-tea (compose `extra_hosts`) and
+the job containers (runTask `--add-host`); it resolves to each container's
+host-gateway, so it only works when the server listens on that interface —
+i.e. is bound to `0.0.0.0`, **not** loopback. It also needs the host firewall
+to allow FORWARD to the docker bridges (setup.sh offers to add the ufw rules).
+
+Verify from the **container's** vantage, not the host's:
+
+```bash
+./00-tea/probe.sh http://host.docker.internal:8080   # → "OK · N models" when good
+```
+
+or the "test"/"test url" buttons on the 00-tea `/backends` page. `setup.sh`
+runs this probe for every backend during step 2 and warns if one isn't
+container-reachable.
 
 ### Manual setup (what the wizard does, step by step)
 

@@ -265,16 +265,30 @@ fi
 # keep the legacy env var in sync with the top-priority backend
 LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
 
-# a bare localhost/127.* backend is reachable from setup.sh (on the host) but
-# NOT from the 00-tea CONTAINER (its localhost is itself) → 00-tea logs "no
-# backend reachable" even though setup.sh saw the model. host.docker.internal
-# (→ host-gateway), host-gateway, or a LAN/tailnet IP are container-reachable.
-_topurl=$(jq -r '.backends[0].url' inference.json)
-_thost=$(printf '%s' "$_topurl" | sed -E 's|^[a-z]+://||; s|/.*||; s|:.*||')
-case $_thost in localhost|127.*)
-  warn "backend $(jq -r '.backends[0].id' inference.json) url is $_topurl — bare localhost is NOT reachable from the 00-tea container"
-  warn "  use http://host.docker.internal:8080 (llama.cpp on this host) or the host's LAN/tailnet IP" ;;
-esac
+# a backend reachable from setup.sh (on the HOST) is not necessarily reachable
+# from the 00-tea / job CONTAINERS — a url bound to the host's 127.0.0.1/
+# localhost is invisible to every container (127.0.0.1 inside a container is
+# that container's own loopback). Test each backend from a throwaway
+# container — the exact vantage of the code that calls it — and warn with a
+# concrete fix when one isn't reachable.
+probe_container() { # URL → "OK n" | "FAIL <why>" (from a default-bridge container)
+  docker run --rm --add-host=host.docker.internal:host-gateway node:22 -e \
+    "fetch(process.argv[1]+'/v1/models',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).then(j=>{console.log('OK '+(j.data||[]).length)}).catch(e=>{console.log('FAIL '+(e.cause?.message||e.message))})" \
+    "$1" 2>/dev/null || echo "FAIL (probe container failed to run)"
+}
+while IFS= read -r b; do
+  burl=$(jq -r .url <<<"$b"); bid=$(jq -r .id <<<"$b")
+  res=$(probe_container "$burl")
+  if [[ $res == OK* ]]; then
+    ok "backend $bid container-reachable — ${res#OK } model(s)"
+  else
+    warn "backend $bid ($burl) NOT reachable from a container — 00-tea/job containers will skip it ($res)"
+    case "${burl#*://}" in
+      127.*|localhost*) warn "  → bind the server to 0.0.0.0 and use http://host.docker.internal:8080, or a routable host IP (tailscale/LAN)" ;;
+      *)                warn "  → check the host firewall (ufw FORWARD to the docker bridges) + that the server is bound to a routable IP" ;;
+    esac
+  fi
+done < <(jq -c '.backends[]' inference.json)
 
 # bake the registry into the agent configs — live model list per backend,
 # falling back to its defaultModel when the backend is unreachable
