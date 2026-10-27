@@ -48,6 +48,9 @@ token_usable() {
   local body
   [[ -n ${1:-} ]] || return 1   # empty token: curl gets "token is required", NOT the invalid-token message
   body=$(curl -s -H "Authorization: token $1" "$GITEA_URL/api/v1/user" 2>/dev/null) || true
+  # lowercase: Gitea's 401 body is "Invalid username, password or token"
+  # (capital I) — a case-sensitive match would misread a dead token as usable
+  body=${body,,}
   [[ -n $body && $body != *"invalid username, password or token"* ]]
 }
 # gen_token USER NAME SCOPES — mints a token; if the name is already in use
@@ -107,12 +110,16 @@ done
 
 # ── 3. API tokens ──────────────────────────────────────────────────
 log "API tokens"
-declare -A tok_names=( [GITEA_TOKEN]="$ADMIN_USER" [ADMIN_TOKEN]="$ADMIN_USER" )
+# distinct token NAMES per key: gen_token deletes any existing token with the
+# same name before creating one, so two keys sharing a name would delete each
+# other's token (GITEA_TOKEN clobbered ADMIN_TOKEN when both were "seed")
+declare -A tok_user=( [GITEA_TOKEN]="$ADMIN_USER" [ADMIN_TOKEN]="$ADMIN_USER" )
+declare -A tok_name=( [GITEA_TOKEN]="gitea-seed" [ADMIN_TOKEN]="admin-seed" )
 for k in GITEA_TOKEN ADMIN_TOKEN; do
   if token_usable "${!k:-}"; then echo "$k: ok"; skip
   else
-    val=$(gen_token "${tok_names[$k]}" seed all)
-    set_env "$k" "$val"; echo "$k: generated → written to .env"
+    val=$(gen_token "${tok_user[$k]}" "${tok_name[$k]}" all)
+    set_env "$k" "$val"; echo "$k: generated (${tok_name[$k]}, user ${tok_user[$k]}) → written to .env"
   fi
 done
 # Per-agent tokens — each work agent clones/pushes/posts AS ITS OWN Gitea
