@@ -63,7 +63,11 @@ ask() {
     printf '  %s%s%s: %s%s\n' "$C_DIM" "$prompt" "$C_RST" "${def:-<empty>}" "$C_RST"
     printf -v "$3" '%s' "$def"
   else
-    read -r -p "  ${prompt}${def:+ [$def]}: " val </dev/tty || val=$def
+    # print the prompt to STDOUT (the same stream as the ✓ lines) so it is
+    # visible in captured/redirected output, not just on /dev/tty; read from
+    # the tty so it works even when stdout is a pipe
+    printf '  %s%s%s%s: ' "$C_DIM" "$prompt" "${def:+ [$def]}" "$C_RST"
+    read -r val </dev/tty || val=$def
     printf -v "$3" '%s' "${val:-$def}"
   fi
 }
@@ -74,7 +78,8 @@ yesno() {
   if [[ $NONINTERACTIVE == 1 ]]; then
     [[ $def == y ]]; return
   fi
-  read -r -p "  ${prompt} [${def}]: " val </dev/tty || val=$def
+  printf '  %s%s%s%s: ' "$C_DIM" "$prompt" " [$def]" "$C_RST"
+  read -r val </dev/tty || val=$def
   [[ ${val:-$def} =~ ^[Yy] ]]
 }
 
