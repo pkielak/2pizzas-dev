@@ -245,6 +245,23 @@ LLAMA_URL=$(env_get LLAMA_CPP_URL)
 
 if [[ -f inference.json ]]; then
   ok "registry: $(jq -r '[.backends[] | .id + " (" + .url + ")"] | join(", ")' inference.json)"
+  # re-run / --rebuild: allow editing the existing backends — the #1 change is
+  # fixing a loopback url to a routable one. Each prompt defaults to the
+  # current value, so a bare Enter keeps it. (Skipped in --yes mode.)
+  if yesno "edit these backends?" n; then
+    while IFS= read -r b; do
+      cur_id=$(jq -r .id <<<"$b"); cur_url=$(jq -r .url <<<"$b")
+      cur_key=$(jq -r '.apiKey // ""' <<<"$b"); cur_def=$(jq -r '.defaultModel // ""' <<<"$b")
+      ask "backend id (was: $cur_id)"              "$cur_id"  E_ID
+      ask "backend url (was: $cur_url)"             "$cur_url" E_URL
+      ask "backend api key (was: ${cur_key:-<none>})"    "$cur_key" E_KEY
+      ask "backend default model (was: ${cur_def:-<auto>})" "$cur_def" E_DEF
+      jq --arg id "$cur_id" --arg nid "$E_ID" --arg url "$E_URL" --arg key "$E_KEY" --arg def "$E_DEF" \
+        '(.backends[] | select(.id == $id)) |= (.id = $nid | .url = $url | .apiKey = $key | .defaultModel = (if $def == "" then null else $def end))' \
+        inference.json > inference.json.tmp && mv inference.json.tmp inference.json
+      ok "backend $E_ID → $E_URL"
+    done < <(jq -c '.backends[]' inference.json)
+  fi
 else
   backends='{"backends":[]}'
   i=0
@@ -265,30 +282,12 @@ fi
 # keep the legacy env var in sync with the top-priority backend
 LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
 
-# a backend reachable from setup.sh (on the HOST) is not necessarily reachable
-# from the 00-tea / job CONTAINERS — a url bound to the host's 127.0.0.1/
-# localhost is invisible to every container (127.0.0.1 inside a container is
-# that container's own loopback). Test each backend from a throwaway
-# container — the exact vantage of the code that calls it — and warn with a
-# concrete fix when one isn't reachable.
-probe_container() { # URL → "OK n" | "FAIL <why>" (from a default-bridge container)
-  docker run --rm --add-host=host.docker.internal:host-gateway node:22 -e \
-    "fetch(process.argv[1]+'/v1/models',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).then(j=>{console.log('OK '+(j.data||[]).length)}).catch(e=>{console.log('FAIL '+(e.cause?.message||e.message))})" \
-    "$1" 2>/dev/null || echo "FAIL (probe container failed to run)"
-}
-while IFS= read -r b; do
-  burl=$(jq -r .url <<<"$b"); bid=$(jq -r .id <<<"$b")
-  res=$(probe_container "$burl")
-  if [[ $res == OK* ]]; then
-    ok "backend $bid container-reachable — ${res#OK } model(s)"
-  else
-    warn "backend $bid ($burl) NOT reachable from a container — 00-tea/job containers will skip it ($res)"
-    case "${burl#*://}" in
-      127.*|localhost*) warn "  → bind the server to 0.0.0.0 and use http://host.docker.internal:8080, or a routable host IP (tailscale/LAN)" ;;
-      *)                warn "  → check the host firewall (ufw FORWARD to the docker bridges) + that the server is bound to a routable IP" ;;
-    esac
-  fi
-done < <(jq -c '.backends[]' inference.json)
+# NOTE: container-vantage reachability is verified in step 8 (verify) via
+# 00-tea's own /api/backends/test — NOT here. A throwaway-container probe in
+# this step would need to pull an EXTERNAL node image (node:22), which hangs
+# the wizard on a restricted network; by step 8, 00-tea's own node is up and
+# it IS the container that calls the backend, so its probe is the real test
+# and can't hang on an image pull.
 
 # bake the registry into the agent configs — live model list per backend,
 # falling back to its defaultModel when the backend is unreachable
@@ -543,6 +542,7 @@ docker compose ps || true
 step "Verification"
 ADMIN_TOKEN=$(env_get ADMIN_TOKEN)
 GURL=$(env_get GITEA_URL)
+UI_TOKEN=$(env_get UI_TOKEN)
 curl -sf "$GURL/api/healthz" >/dev/null && ok "Gitea API" || warn "Gitea API not answering"
 
 # container DNS — /etc/resolv.conf is generated from the host's at
@@ -552,6 +552,30 @@ curl -sf "$GURL/api/healthz" >/dev/null && ok "Gitea API" || warn "Gitea API not
 if docker exec gitea getent hosts db >/dev/null 2>&1; then ok "container DNS (gitea → db)"
 else warn "gitea container cannot resolve 'db' — stale /etc/resolv.conf (host DNS was broken at container creation). Fix: docker compose up -d --force-recreate"; fi
 curl -sf http://127.0.0.1:3001/healthz >/dev/null && ok "00-tea dispatcher (:3001)" || warn "00-tea not answering on :3001 yet (give it a moment)"
+
+# backend reachability FROM 00-tea's own vantage (the container that calls it)
+# — the definitive test for the #1 gotcha (a backend bound to the host's
+# 127.0.0.1/localhost is invisible to every container). Uses 00-tea's
+# /api/backends/test (its own node — no external image pull, so it can't hang
+# the wizard the way a throwaway node:22 container would). Skipped if 00-tea
+# isn't up yet; each probe is bounded by --max-time.
+if curl -sf http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
+  while IFS= read -r b; do
+    bid=$(jq -r .id <<<"$b"); burl=$(jq -r .url <<<"$b"); bkey=$(jq -r '.apiKey // ""' <<<"$b")
+    probe=$(curl -sf --max-time 12 -X POST http://127.0.0.1:3001/api/backends/test \
+      ${UI_TOKEN:+-H "x-ui-token: $UI_TOKEN"} -H 'content-type: application/json' \
+      -d "$(jq -n --arg u "$burl" --arg k "$bkey" '{url:$u, apiKey:$k}')" 2>/dev/null) || probe='{}'
+    if [[ $(jq -r '.ok' <<<"$probe" 2>/dev/null) == true ]]; then
+      ok "backend $bid reachable from 00-tea — $(jq -r '.count' <<<"$probe") model(s)"
+    else
+      warn "backend $bid ($burl) NOT reachable from 00-tea — $(jq -r '.error // "unknown"' <<<"$probe")"
+      case "${burl#*://}" in
+        127.*|localhost*) warn "  → bind the server to 0.0.0.0 and use http://host.docker.internal:8080, or a routable host IP (tailscale/LAN)" ;;
+        *)                warn "  → check the host firewall (ufw FORWARD to the docker bridges) + routable IP binding" ;;
+      esac
+    fi
+  done < <(jq -c '.backends[]' inference.json)
+fi
 
 runners=$(curl -sf -H "Authorization: token $ADMIN_TOKEN" \
   "$GURL/api/v1/admin/actions/runners?limit=50" 2>/dev/null | jq -r '.runners[].name' 2>/dev/null | tr '\n' ' ') || true

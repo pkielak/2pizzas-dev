@@ -66,9 +66,10 @@ seeded stack:
    inference backend reachability
 2. **inference backends** — builds/edits `inference.json` (the backend
    registry: any OpenAI-compatible endpoint — local llama.cpp router,
-   vLLM, Ollama, OpenRouter, …) and bakes the same list into the gitignored
-   `agent-sandbox/{pi,opencode}` model configs, using each backend's live
-   model list
+   vLLM, Ollama, OpenRouter, …); offers to edit existing backends (e.g. fix a
+   loopback url to a routable one) and bakes the same list into the
+   gitignored `agent-sandbox/{pi,opencode}` model configs, using each
+   backend's live model list
 3. **`.env`** — generated (or finished) interactively: Gitea URL, admin user,
    postgres creds (auto-generated password), managed repos, CPU plan
 4. **images** — builds `00-tea`, `gitea-pages`, `agent-sandbox:{base,pi,
@@ -76,8 +77,9 @@ seeded stack:
 5. **Gitea + Postgres** — `compose up -d db server`, waits for health
 6. **seed** — runs `seed.sh` (users, tokens, repos, runners, global webhook)
 7. **full stack** — `compose up -d` for everything
-8. **verify + summary** — API/dispatcher/runner/webhook/router checks, links,
-   and a "try it" prompt
+8. **verify + summary** — API/dispatcher/runner/webhook checks, backend
+   container-reachability (via 00-tea's own probe), links, and a "try it"
+   prompt
 
 Every step is idempotent — re-run `./setup.sh` anytime (e.g. after changing
 the model set: `./setup.sh --rebuild`). Flags:
@@ -131,8 +133,9 @@ Verify from the **container's** vantage, not the host's:
 ```
 
 or the "test"/"test url" buttons on the 00-tea `/backends` page. `setup.sh`
-runs this probe for every backend during step 2 and warns if one isn't
-container-reachable.
+offers to edit the backends in step 2 and verifies container-reachability for
+each in step 8 (via 00-tea's own probe — no external image pull, so it can't
+hang) and warns if one isn't reachable.
 
 ### Manual setup (what the wizard does, step by step)
 
