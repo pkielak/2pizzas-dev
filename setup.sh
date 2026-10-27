@@ -255,6 +255,22 @@ LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
 # falling back to its defaultModel when the backend is unreachable
 PI_MODELS=agent-sandbox/pi/pi-settings/models.json
 OC_CONFIG=agent-sandbox/opencode/opencode-config/opencode.json
+# staleness guard: inference.json + the baked configs are gitignored, so a
+# checkout copied from another machine drags its config along. If the existing
+# baked models.json points at a DIFFERENT backend than inference.json, the
+# baked configs + images are stale and won't match what this host serves (the
+# "production model baked in" trap) — say so loudly instead of failing later.
+if [[ -f $PI_MODELS ]]; then
+  baked_url=$(jq -r '.providers | to_entries[0].value.baseUrl // empty' "$PI_MODELS" 2>/dev/null) || true
+  reg_url=$(jq -r '.backends[0].url' inference.json 2>/dev/null) || true
+  # setup.sh bakes baseUrl as <url>/v1 — strip the suffix before comparing
+  baked_base=${baked_url%/v1}
+  if [[ -n $baked_base && -n $reg_url && "$baked_base" != "$reg_url" ]]; then
+    warn "baked $PI_MODELS points at $baked_base but inference.json uses $reg_url"
+    warn "  → this checkout's gitignored config was likely copied from another machine"
+    warn "    re-run with ./setup.sh --rebuild, or rm inference.json to reconfigure from scratch"
+  fi
+fi
 IDS_JSON='{}'
 while IFS= read -r b; do
   burl=$(jq -r '.url' <<<"$b"); bkey=$(jq -r '.apiKey' <<<"$b"); bdef=$(jq -r '.defaultModel // empty' <<<"$b")
