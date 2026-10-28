@@ -73,7 +73,7 @@ services:
     environment:
       - PAGES_REPO=${PAGES_REPO:-http://gitea:3000/admin/my-repo.git}
       - PAGES_BRANCH=gh-pages
-      - PAGES_TOKEN=${REVIEW_TOKEN}   # read-only review token — pages only pulls
+      - PAGES_TOKEN=${AGENT_REVIEW_TOKEN}   # read-only review token — pages only pulls
     networks:
       - gitea
     ports:
@@ -98,7 +98,7 @@ services:
     environment:
       - PAGES_REPO=${PAGES_BENCH_REPO}
       - PAGES_BRANCH=gh-pages
-      - PAGES_TOKEN=${REVIEW_TOKEN}   # read-only review token — pages only pulls
+      - PAGES_TOKEN=${AGENT_REVIEW_TOKEN}   # read-only review token — pages only pulls
     networks:
       - gitea
     ports:
@@ -168,11 +168,19 @@ services:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       # per-agent Gitea identities — each work agent acts as its own user
       # (native @mention autocomplete + per-agent attribution)
-      - PI_TOKEN=${PI_TOKEN}
-      - OPENCODE_TOKEN=${OPENCODE_TOKEN}
-      - INFRA_TOKEN=${INFRA_TOKEN}
-      - REVIEW_TOKEN=${REVIEW_TOKEN}       # review user, READ — reviewer clone (can't push)
-      - REVIEW_POST_TOKEN=${REVIEW_POST_TOKEN}  # review user, WRITE — 2pizzas posts verdicts
+      # names are configurable (setup.sh agent identities section)
+      - AGENT_WORK1_NAME=${AGENT_WORK1_NAME:-pi}
+      - AGENT_WORK1_TOKEN=${AGENT_WORK1_TOKEN:-}
+      - AGENT_WORK2_NAME=${AGENT_WORK2_NAME:-opencode}
+      - AGENT_WORK2_TOKEN=${AGENT_WORK2_TOKEN:-}
+      - AGENT_INFRA_NAME=${AGENT_INFRA_NAME:-infra}
+      - AGENT_INFRA_TOKEN=${AGENT_INFRA_TOKEN:-}
+      - AGENT_REVIEW_NAME=${AGENT_REVIEW_NAME:-review}
+      - AGENT_REVIEW_TOKEN=${AGENT_REVIEW_TOKEN:-}       # READ — reviewer clone (can't push)
+      - AGENT_REVIEW_POST_TOKEN=${AGENT_REVIEW_POST_TOKEN:-}  # WRITE — 2pizzas posts verdicts
+      - AGENT_CHAT_NAME=${AGENT_CHAT_NAME:-chat}
+      - AGENT_CHAT_TOKEN=${AGENT_CHAT_TOKEN:-}
+      - AGENT_DORMANT_LOGINS=${AGENT_DORMANT_LOGINS:-}
       - AGENT_IMAGE_REVIEW=${AGENT_IMAGE_REVIEW:-agent-sandbox:review}
       - REVIEW_MAX_ROUNDS=${REVIEW_MAX_ROUNDS:-3}
       # @infra agent: repairs the stack (runc + host docker socket + the infra
@@ -202,8 +210,7 @@ services:
       - UI_TOKEN=${UI_TOKEN:-}         # whole-UI gate (falls back to CHAT_TOKEN)
       # /chat agents act as the separate "chat" Gitea user (audit separation
       # from task work); per-repo write access is granted from the /chat UI
-      - CHAT_GITEA_TOKEN=${CHAT_GITEA_TOKEN:-}
-      - CHAT_LOGIN=chat
+      # (chat name + token are in AGENT_CHAT_NAME / AGENT_CHAT_TOKEN above)
       # network the chat containers join (reached by container name, no port publish)
       - CHAT_NETWORK=${CHAT_NETWORK:-gitea_gitea}
       # resource caps for the long-lived chat containers (inference is on the

@@ -12,6 +12,7 @@ import { liveBroadcast } from './live.mjs';
 const AGENT_SENDERS = new Set([
   CFG.botLogin, CFG.chatLogin, CFG.review.login,
   ...Object.values(CFG.agents).map((a) => a.login),
+  ...CFG.dormantLogins,
 ]);
 
 export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) {
@@ -41,7 +42,7 @@ export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) 
 // matches them; the parent_id+kind checks below are their loop guard.
 export function enqueueReview(work, logText) {
   if (!CFG.review.token) {
-    console.log(`[review] task ${work.id}: REVIEW_TOKEN not set — review chain skipped`);
+    console.log(`[review] task ${work.id}: AGENT_REVIEW_TOKEN not set — review chain skipped`);
     return;
   }
   const dup = db.prepare("SELECT 1 FROM tasks WHERE parent_id = ? AND kind = 'agent-review'").get(work.id);

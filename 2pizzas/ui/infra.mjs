@@ -72,10 +72,10 @@ ${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-si
 
 </defs>
 
-${block(30, 40, 160, 100, '@pi', ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
-${block(225, 40, 160, 100, '@opencode', ['agent-sandbox:opencode', agentBusy('opencode') ? 'task in flight' : 'idle'], agentBusy('opencode') ? true : null)}
-${block(420, 40, 160, 100, '@review', ['agent-sandbox:review', agentBusy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], agentBusy('review') ? true : null)}
-${block(615, 40, 160, 100, '@infra', ['agent-sandbox:infra', agentBusy('infra') ? 'task in flight' : 'runc · docker socket'], agentBusy('infra') ? true : null)}
+${block(30, 40, 160, 100, '@' + CFG.agents.pi.login, ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
+${block(225, 40, 160, 100, '@' + CFG.agents.opencode.login, ['agent-sandbox:opencode', agentBusy('opencode') ? 'task in flight' : 'idle'], agentBusy('opencode') ? true : null)}
+${block(420, 40, 160, 100, '@' + CFG.review.login, ['agent-sandbox:review', agentBusy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], agentBusy('review') ? true : null)}
+${block(615, 40, 160, 100, '@' + CFG.agents.infra.login, ['agent-sandbox:infra', agentBusy('infra') ? 'task in flight' : 'runc · docker socket'], agentBusy('infra') ? true : null)}
 ${block(810, 40, 160, 100, 'chat containers', ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], chatN === null ? null : chatN > 0)}
 
 ${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN} managed repo${managedN === 1 ? '' : 's'} · agent + chat users`], up('gitea') === null ? null : (up('gitea') && up('gitea-db-1')), '#gitea')}

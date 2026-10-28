@@ -24,8 +24,14 @@ ADMIN_USER="${ADMIN_USER:-admin}"
 # carries a read token (reviewer clone) and a write token (2pizzas posts the
 # verdicts). The legacy single "bot" user is dormant on old instances —
 # fresh instances never create it.
-AGENT_USERS="pi opencode infra review"
-CHAT_USER="chat"   # separate login for the /chat agents — audit separation from task work
+# Agent names are read from .env (set by setup.sh agent identities section).
+AGENT_WORK1_NAME="${AGENT_WORK1_NAME:-pi}"
+AGENT_WORK2_NAME="${AGENT_WORK2_NAME:-opencode}"
+AGENT_INFRA_NAME="${AGENT_INFRA_NAME:-infra}"
+AGENT_REVIEW_NAME="${AGENT_REVIEW_NAME:-review}"
+AGENT_CHAT_NAME="${AGENT_CHAT_NAME:-chat}"
+AGENT_USERS="$AGENT_WORK1_NAME $AGENT_WORK2_NAME $AGENT_INFRA_NAME $AGENT_REVIEW_NAME"
+CHAT_USER="$AGENT_CHAT_NAME"   # separate login for the /chat agents — audit separation from task work
 HOST="${GITEA_URL#http://}"; HOST="${HOST%/}"
 ADMIN_REPO="2pizzas-dev"
 TEMPLATE_REPO="agents-actions"
@@ -127,38 +133,34 @@ done
 # write:repository (clone/push/PR) + read/write:issue (the issue API is
 # scope-gated separately — reading issues/comments and posting replies).
 AGENT_SCOPES="write:repository,read:issue,write:issue"
-declare -A agent_tok_user=( [PI_TOKEN]=pi [OPENCODE_TOKEN]=opencode [INFRA_TOKEN]=infra )
-for k in PI_TOKEN OPENCODE_TOKEN INFRA_TOKEN; do
+declare -A agent_tok_user=( [AGENT_WORK1_TOKEN]="$AGENT_WORK1_NAME" [AGENT_WORK2_TOKEN]="$AGENT_WORK2_NAME" [AGENT_INFRA_TOKEN]="$AGENT_INFRA_NAME" )
+for k in AGENT_WORK1_TOKEN AGENT_WORK2_TOKEN AGENT_INFRA_TOKEN; do
   if token_usable "${!k:-}"; then echo "$k: ok"; skip
   else
     val=$(gen_token "${agent_tok_user[$k]}" "2pizzas-${agent_tok_user[$k]}" "$AGENT_SCOPES")
     set_env "$k" "$val"; echo "$k: generated ($AGENT_SCOPES, user ${agent_tok_user[$k]}) → written to .env"
   fi
 done
-# Code REVIEWER (2pizzas review chain), user "review", TWO tokens:
-#  - REVIEW_TOKEN: read:repository — the review container clones with it and
-#    gets nothing else, so a reviewer physically cannot push; it can only
-#    review.
-#  - REVIEW_POST_TOKEN: write — held by 2pizzas ONLY (never given to the
-#    container) so the review verdicts post under the review user.
-if token_usable "${REVIEW_TOKEN:-}"; then echo "REVIEW_TOKEN: ok"; skip
+# Code REVIEWER (2pizzas review chain), user "$AGENT_REVIEW_NAME", TWO tokens:
+#  - AGENT_REVIEW_TOKEN: read:repository — the review container clones with it
+#  - AGENT_REVIEW_POST_TOKEN: write — held by 2pizzas ONLY
+if token_usable "${AGENT_REVIEW_TOKEN:-}"; then echo "AGENT_REVIEW_TOKEN: ok"; skip
 else
-  val=$(gen_token review 2pizzas-review read:repository)
-  set_env REVIEW_TOKEN "$val"; echo "REVIEW_TOKEN: generated (read:repository) → written to .env"
+  val=$(gen_token "$AGENT_REVIEW_NAME" "2pizzas-$AGENT_REVIEW_NAME" read:repository)
+  set_env AGENT_REVIEW_TOKEN "$val"; echo "AGENT_REVIEW_TOKEN: generated (read:repository) → written to .env"
 fi
-if token_usable "${REVIEW_POST_TOKEN:-}"; then echo "REVIEW_POST_TOKEN: ok"; skip
+if token_usable "${AGENT_REVIEW_POST_TOKEN:-}"; then echo "AGENT_REVIEW_POST_TOKEN: ok"; skip
 else
-  val=$(gen_token review 2pizzas-review-post "read:issue,write:issue")
-  set_env REVIEW_POST_TOKEN "$val"; echo "REVIEW_POST_TOKEN: generated (read:issue,write:issue) → written to .env"
+  val=$(gen_token "$AGENT_REVIEW_NAME" "2pizzas-$AGENT_REVIEW_NAME-post" "read:issue,write:issue")
+  set_env AGENT_REVIEW_POST_TOKEN "$val"; echo "AGENT_REVIEW_POST_TOKEN: generated (read:issue,write:issue) → written to .env"
 fi
-# Write token for the /chat agents (user "chat"): chat containers receive it
-# so the agent can clone/push/post AS THE chat user — Gitea history then
-# shows chat-driven work under a separate login, not under bot or the admin.
+# Write token for the /chat agents (user "$AGENT_CHAT_NAME"): chat containers
+# receive it so the agent can clone/push/post AS THE chat user.
 # Write access per repo is still gated by collaborator grants (/chat UI).
-if token_usable "${CHAT_GITEA_TOKEN:-}"; then echo "CHAT_GITEA_TOKEN: ok"; skip
+if token_usable "${AGENT_CHAT_TOKEN:-}"; then echo "AGENT_CHAT_TOKEN: ok"; skip
 else
-  val=$(gen_token "$CHAT_USER" 2pizzas-chat write:repository)
-  set_env CHAT_GITEA_TOKEN "$val"; echo "CHAT_GITEA_TOKEN: generated (write:repository) → written to .env"
+  val=$(gen_token "$CHAT_USER" "2pizzas-$CHAT_USER" write:repository)
+  set_env AGENT_CHAT_TOKEN "$val"; echo "AGENT_CHAT_TOKEN: generated (write:repository) → written to .env"
 fi
 
 # ── 4. repos ───────────────────────────────────────────────────────
@@ -267,8 +269,8 @@ removed=$(psql "DELETE FROM webhook WHERE is_system_webhook=false AND url='$WEBH
 for repo in "${AGENTD_REPOS[@]}"; do
   # the agent users must be collaborators: work agents write (clone/push/
   # comment as themselves), the reviewer reads (clone only)
-  for u in pi opencode infra review; do
-    role=write; [[ $u == review ]] && role=read
+  for u in $AGENT_USERS; do
+    role=write; [[ $u == "$AGENT_REVIEW_NAME" ]] && role=read
     if api "$GITEA_URL/api/v1/repos/$repo/collaborators?limit=50" 2>/dev/null \
         | jq -e '.[] | select(.login == "'$u'")' >/dev/null; then
       echo "collaborator $repo: $u ok"

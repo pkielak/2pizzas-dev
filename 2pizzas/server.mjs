@@ -282,7 +282,7 @@ const server = http.createServer(async (req, res) => {
   // grant/revoke the "chat" user write access to a repo (collaborator API)
   if (url.pathname === '/api/chat/grant' && req.method === 'POST') {
     if (!chatAuthed(req, url, res)) return chat401();
-    if (!CFG.chatGiteaToken) return send(502, 'application/json', JSON.stringify({ error: 'CHAT_GITEA_TOKEN not configured' }));
+    if (!CFG.chatGiteaToken) return send(502, 'application/json', JSON.stringify({ error: 'AGENT_CHAT_TOKEN not configured' }));
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
@@ -510,7 +510,7 @@ server.listen(CFG.port, () => {
   console.log(`[2pizzas] listening on :${CFG.port}`);
   console.log(`[2pizzas] repos (poll fallback): ${managedRepos().join(', ') || '(none)'} — new repos self-enroll on @agent mention`);
   console.log(`[2pizzas] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode} review=${CFG.images.review}`);
-  console.log(`[2pizzas] review chain: ${CFG.review.token ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no REVIEW_TOKEN)'}`);
+  console.log(`[2pizzas] review chain: ${CFG.review.token ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no AGENT_REVIEW_TOKEN)'}`);
   console.log(`[2pizzas] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
   (async () => {
     try {

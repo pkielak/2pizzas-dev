@@ -9,16 +9,19 @@ export const CFG = {
   // with it — it physically cannot push) and a write one held by 2pizzas
   // ONLY (it posts the review verdicts). The legacy single "bot" user is
   // dormant on old instances; fresh instances never create it.
+  // Agent names are configurable (setup.sh agent identities section) — the
+  // internal keys (pi, opencode, infra) map to docker images and stay stable;
+  // the login is the Gitea username (lore name or technical name).
   agents: {
-    pi: { login: 'pi', email: 'pi@localhost', token: process.env.PI_TOKEN || '' },
-    opencode: { login: 'opencode', email: 'opencode@localhost', token: process.env.OPENCODE_TOKEN || '' },
-    infra: { login: 'infra', email: 'infra@localhost', token: process.env.INFRA_TOKEN || '' },
+    pi: { login: process.env.AGENT_WORK1_NAME || 'pi', email: `${process.env.AGENT_WORK1_NAME || 'pi'}@localhost`, token: process.env.AGENT_WORK1_TOKEN || '' },
+    opencode: { login: process.env.AGENT_WORK2_NAME || 'opencode', email: `${process.env.AGENT_WORK2_NAME || 'opencode'}@localhost`, token: process.env.AGENT_WORK2_TOKEN || '' },
+    infra: { login: process.env.AGENT_INFRA_NAME || 'infra', email: `${process.env.AGENT_INFRA_NAME || 'infra'}@localhost`, token: process.env.AGENT_INFRA_TOKEN || '' },
   },
   review: {
-    login: 'review',
-    email: 'review@localhost',
-    token: process.env.REVIEW_TOKEN || '',        // read:repository — reviewer clone
-    postToken: process.env.REVIEW_POST_TOKEN || '', // write — 2pizzas posts verdicts as review
+    login: process.env.AGENT_REVIEW_NAME || 'review',
+    email: `${process.env.AGENT_REVIEW_NAME || 'review'}@localhost`,
+    token: process.env.AGENT_REVIEW_TOKEN || '',        // read:repository — reviewer clone
+    postToken: process.env.AGENT_REVIEW_POST_TOKEN || '', // write — 2pizzas posts verdicts as review
   },
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.docker.internal:3000', // reachable from JOB containers
@@ -58,8 +61,11 @@ export const CFG = {
   // /chat agents act as the separate "chat" Gitea user (audit separation from
   // task work): the token goes into the chat containers; per-repo WRITE
   // access is still gated by collaborator grants (managed from the /chat UI)
-  chatGiteaToken: process.env.CHAT_GITEA_TOKEN || '',
-  chatLogin: process.env.CHAT_LOGIN || 'chat',
+  chatGiteaToken: process.env.AGENT_CHAT_TOKEN || '',
+  chatLogin: process.env.AGENT_CHAT_NAME || 'chat',
+  // dormant agent logins — old usernames kept for history attribution
+  // (existing commits/comments reference them; they never act again)
+  dormantLogins: (process.env.AGENT_DORMANT_LOGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   chatIdleMs: +(process.env.CHAT_IDLE_MINUTES || 30) * 60_000,  // kill idle chat containers
   chatNetwork: process.env.CHAT_NETWORK || 'gitea_gitea',  // chat containers join it (reached by name)
   // resource caps for the long-lived, user-spawned chat containers — inference
@@ -80,7 +86,7 @@ export const CFG = {
 
 export const MARKER = '<!-- via:agent -->';
 export const MENTIONS = [
-  { agent: 'pi', re: /@pi\b/ },
-  { agent: 'opencode', re: /@opencode\b/ },
-  { agent: 'infra', re: /@infra\b/ },
+  { agent: 'pi', re: new RegExp(`@${CFG.agents.pi.login}\\b`) },
+  { agent: 'opencode', re: new RegExp(`@${CFG.agents.opencode.login}\\b`) },
+  { agent: 'infra', re: new RegExp(`@${CFG.agents.infra.login}\\b`) },
 ];
