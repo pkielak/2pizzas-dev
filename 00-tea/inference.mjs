@@ -89,7 +89,7 @@ export async function probeBackend(b) {
     res.ms = Date.now() - started;
     res.error = e.cause?.message || e.message;
     if (/(^|\.)localhost$|^127\./.test(host)) {
-      res.hint = `host '${host}' is the HOST's loopback — a container (00-tea, job containers) CANNOT reach 127.0.0.1/localhost; inside a container that address is the container's own loopback. Bind the server to a routable host IP (tailscale/LAN, e.g. 100.110.41.89 or 192.168.x.x) and point the backend at THAT url.`;
+      res.hint = `host '${host}' is the HOST's loopback — a container (00-tea, job containers) CANNOT reach 127.0.0.1/localhost; inside a container that address is the container's own loopback. Bind the server to a routable host IP (tailscale/LAN, e.g. <tailscale-ip> or 192.168.x.x) and point the backend at THAT url.`;
     }
     return res;
   }
