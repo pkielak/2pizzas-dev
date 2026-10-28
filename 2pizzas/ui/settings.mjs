@@ -5,7 +5,7 @@
 // keeps the bare pages working afterwards.
 export function settingsPage() {
   return `<h2>ui token</h2>
-<p class="meta">the 00-tea UI is gated by <code>UI_TOKEN</code> (from <code>.env</code>; <code>CHAT_TOKEN</code> is
+<p class="meta">the 2pizzas UI is gated by <code>UI_TOKEN</code> (from <code>.env</code>; <code>CHAT_TOKEN</code> is
 accepted as the value and as a fallback when <code>UI_TOKEN</code> is unset). the token is
 stored only in <b>this browser</b> (localStorage) — it is sent to the server only as the gate
 check. unlocking sets a 30-day <code>HttpOnly</code> session cookie, so after the first unlock
@@ -23,7 +23,7 @@ every page works with no token in the URL.</p>
 <p class="meta"><b>save &amp; unlock</b> stores the token in this browser and opens the home page with it
 (sets the session cookie). <b>clear saved</b> removes it from localStorage only. <b>sign out</b> clears
 the session cookies (the saved token stays). rotating <code>UI_TOKEN</code> in <code>.env</code> +
-<code>docker compose up -d 00-tea</code> revokes everything immediately.</p>
+<code>docker compose up -d 2pizzas</code> revokes everything immediately.</p>
 <script>
 const tk = document.getElementById('tk');
 const state = document.getElementById('tkstate');

@@ -1,4 +1,4 @@
-// 00-tea configuration — everything is env-injected by docker-compose (.env).
+// 2pizzas configuration — everything is env-injected by docker-compose (.env).
 export const CFG = {
   port: +(process.env.PORT || 3001),
   dataDir: process.env.DATA_DIR || '/data',
@@ -6,7 +6,7 @@ export const CFG = {
   // Per-agent Gitea identities: each work agent is its OWN user (native
   // @mention autocomplete + per-agent commit/PR attribution). The review
   // user carries TWO tokens: a read one (the reviewer container clones
-  // with it — it physically cannot push) and a write one held by 00-tea
+  // with it — it physically cannot push) and a write one held by 2pizzas
   // ONLY (it posts the review verdicts). The legacy single "bot" user is
   // dormant on old instances; fresh instances never create it.
   agents: {
@@ -18,12 +18,12 @@ export const CFG = {
     login: 'review',
     email: 'review@localhost',
     token: process.env.REVIEW_TOKEN || '',        // read:repository — reviewer clone
-    postToken: process.env.REVIEW_POST_TOKEN || '', // write — 00-tea posts verdicts as review
+    postToken: process.env.REVIEW_POST_TOKEN || '', // write — 2pizzas posts verdicts as review
   },
   giteaApi: process.env.GITEA_API || 'http://gitea:3000/api/v1', // reachable from THIS container
   giteaHost: process.env.GITEA_HOST || 'host.docker.internal:3000', // reachable from JOB containers
   // the host's tailnet IP. Chat containers (runsc, no DNS) reach Gitea +
-  // 00-tea via this — NOT the host-gateway, which neither service is bound to.
+  // 2pizzas via this — NOT the host-gateway, which neither service is bound to.
   hostTailnet: process.env.HOST_TAILNET || '',
   // seed list of managed repos — self-enrolling (an @agent mention on an
   // unmanaged repo persists it in managed_repos and grants the bot write
@@ -40,7 +40,7 @@ export const CFG = {
   // with the host docker socket + the infra repo bind-mounted (see tasks.mjs).
   // Auto-enqueued on infra-class failures (cooldown: one incident per window);
   // @infra on the infra repo works it manually.
-  infraRepo: process.env.INFRA_REPO || 'owner/gitea-with-agents',
+  infraRepo: process.env.INFRA_REPO || 'owner/2pizzas-dev',
   infraHostRepo: process.env.INFRA_HOST_REPO || '', // host path of the infra repo
   infraCooldownMs: +(process.env.INFRA_COOLDOWN_MINUTES || 15) * 60_000,
   // legacy sender — old instances have comments/commits by the dormant
@@ -54,7 +54,7 @@ export const CFG = {
   adminToken: process.env.ADMIN_TOKEN || '', // admin-scope token — actions runs API
   pagesSites: (process.env.PAGES_SITES || '').split(',').map((s) => s.trim()).filter(Boolean),
   chatToken: process.env.CHAT_TOKEN || '',   // optional gate for /chat + /api/chat* (UI is tailnet-reachable)
-  uiToken: process.env.UI_TOKEN || '',       // gate for the WHOLE 00-tea UI (falls back to CHAT_TOKEN)
+  uiToken: process.env.UI_TOKEN || '',       // gate for the WHOLE 2pizzas UI (falls back to CHAT_TOKEN)
   // /chat agents act as the separate "chat" Gitea user (audit separation from
   // task work): the token goes into the chat containers; per-repo WRITE
   // access is still gated by collaborator grants (managed from the /chat UI)

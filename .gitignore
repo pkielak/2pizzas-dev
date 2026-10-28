@@ -8,7 +8,7 @@ agent-sandbox/opencode/opencode-config/opencode.json
 # Container runtime data (auto-populated)
 data/
 data-agent/
-data-00-tea/
+data-2pizzas/
 data-android/
 gitea/
 postgres/

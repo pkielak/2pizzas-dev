@@ -9,7 +9,7 @@ function sidebar(active) {
   // mobile: off-canvas drawer toggled by #navToggle (in the top bar),
   // closed by backdrop or nav click
   return `<div id="backdrop"></div>
-<aside class="sidebar" id="sidebar"><span class="brand">00-tea</span>
+<aside class="sidebar" id="sidebar"><span class="brand">2pizzas</span>
 <a class="navl${active === 'home' ? ' on' : ''}" href="/">home</a>
 <a class="navl${active === 'infra' ? ' on' : ''}" href="/infra">infra</a>
 <a class="navl${active === 'tasks' ? ' on' : ''}" href="/tasks">tasks</a>
@@ -63,10 +63,10 @@ export function page(title, bodyHtml, { auto = true, nav = null, app = false, sc
   const live = auto ? LIVE_SCRIPT : '';
   const side = nav ? sidebar(nav) : '';
   // title bar: brand + current page, fixed top on mobile AND desktop
-  const top = nav ? `<header id="topbar"><button id="navToggle" aria-label="menu">☰</button><a class="tbrand" href="/">00-tea</a><span class="pgtitle">${esc(title)}</span></header>` : '';
+  const top = nav ? `<header id="topbar"><button id="navToggle" aria-label="menu">☰</button><a class="tbrand" href="/">2pizzas</a><span class="pgtitle">${esc(title)}</span></header>` : '';
   // Colors come from Gitea's theme CSS (served same-origin, see giteaTheme());
   // every var() has a hardcoded dark fallback so the UI works if Gitea is down.
-  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} — 00-tea</title>
+  return `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} — 2pizzas</title>
 <link rel="stylesheet" href="/assets/gitea-theme.css">
 <script>function glinkFix(){document.querySelectorAll('a.glink').forEach(function(a){a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo+'/actions/runs/'+a.dataset.run;});}</script>
 <style>

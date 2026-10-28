@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS poll_state (
   since TEXT
 );
 CREATE TABLE IF NOT EXISTS chat_sessions (
-  id         INTEGER NOT NULL,      -- chatSeq id (restarts at 1 per 00-tea run — rows are unique with created_at, the implicit rowid is the PK)
+  id         INTEGER NOT NULL,      -- chatSeq id (restarts at 1 per 2pizzas run — rows are unique with created_at, the implicit rowid is the PK)
   agent      TEXT NOT NULL,
   model      TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

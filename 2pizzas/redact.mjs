@@ -1,6 +1,6 @@
 // Secret redaction for logs. Agents echo env vars in their bash tool calls
 // (e.g. `export AGENT_TOKEN=…`), and the task/chat log pipelines write raw
-// lines — this scrubs every secret 00-tea itself holds before any line hits
+// lines — this scrubs every secret 2pizzas itself holds before any line hits
 // a log file, the replay buffer, or an SSE client. Applied at the two
 // choke points: say() in tasks.mjs and chatSay/chatLive in chat.mjs.
 import { CFG } from './config.mjs';
@@ -19,7 +19,7 @@ const collect = () => {
     CFG.chatGiteaToken,  // chat user's Gitea token
     ...Object.values(CFG.agents).map((a) => a.token),   // per-agent write tokens
     CFG.review.token,    // review user read token (reviewer clone)
-    CFG.review.postToken,// review user write token (00-tea posts verdicts)
+    CFG.review.postToken,// review user write token (2pizzas posts verdicts)
   ]);
   for (const b of readRegistry()) if (b.apiKey) vals.add(b.apiKey);
   // longest first so a value that is a prefix of another is scrubbed whole

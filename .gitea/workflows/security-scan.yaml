@@ -5,7 +5,7 @@ name: Security scan
 # advisory — this repo's Dockerfiles run root by design).
 # Runs on my-runner (runc, normal egress — semgrep fetches its free
 # registry packs from semgrep.dev on first use). The LLM judgment layer
-# is the 00-tea review chain; this is the fact layer.
+# is the 2pizzas review chain; this is the fact layer.
 
 on:
   pull_request:

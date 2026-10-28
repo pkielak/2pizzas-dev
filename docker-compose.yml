@@ -1,5 +1,5 @@
 # pins the compose project name → the network is always `gitea_gitea`
-# (00-tea's chat containers join it via CHAT_NETWORK)
+# (2pizzas's chat containers join it via CHAT_NETWORK)
 name: gitea
 
 networks:
@@ -14,7 +14,7 @@ services:
     # into the container at creation; if the host resolver is the
     # systemd-resolved stub (127.0.0.53) the container can't resolve ANY name
     # (gitea crash-loops on "lookup db"). 127.0.0.11 is immune to that. These
-    # services only resolve internal names (gitea/db/00-tea), so embedded DNS
+    # services only resolve internal names (gitea/db/2pizzas), so embedded DNS
     # is sufficient.
     dns: [127.0.0.11]
     environment:
@@ -26,7 +26,7 @@ services:
       - GITEA__database__USER=${POSTGRES_USER}
       - GITEA__database__PASSWD=${POSTGRES_PASSWORD}
       # webhooks may only call these hosts (Gitea security default blocks LAN IPs)
-      - GITEA__security__ALLOWED_HOST_LIST=00-tea
+      - GITEA__security__ALLOWED_HOST_LIST=2pizzas
       # no open self-registration — accounts are created by seed.sh only
       - GITEA__service__DISABLE_REGISTRATION=TRUE
       # git-over-SSH unused (all remotes are http + token) — no sshd on :222
@@ -155,10 +155,10 @@ services:
   # ── Agent dispatcher (replaces agent-runner + agent workflows) ──
   # Gitea webhooks → sqlite queue → `docker run --runtime=runsc
   # agent-sandbox:<agent>` per task. UI: http://127.0.0.1:3001
-  00-tea:
-    build: ./00-tea
-    container_name: gitea-00-tea
-    # 127.0.0.11 (embedded) resolves the internal names 00-tea uses (gitea);
+  2pizzas:
+    build: ./2pizzas
+    container_name: gitea-2pizzas
+    # 127.0.0.11 (embedded) resolves the internal names 2pizzas uses (gitea);
     # 1.1.1.1 is a fallback for EXTERNAL hostnames — inference backends may be
     # host-based (OpenRouter, a vLLM/Ollama hostname), which embedded DNS alone
     # cannot resolve. IP-based backends need no DNS at all.
@@ -172,11 +172,11 @@ services:
       - OPENCODE_TOKEN=${OPENCODE_TOKEN}
       - INFRA_TOKEN=${INFRA_TOKEN}
       - REVIEW_TOKEN=${REVIEW_TOKEN}       # review user, READ — reviewer clone (can't push)
-      - REVIEW_POST_TOKEN=${REVIEW_POST_TOKEN}  # review user, WRITE — 00-tea posts verdicts
+      - REVIEW_POST_TOKEN=${REVIEW_POST_TOKEN}  # review user, WRITE — 2pizzas posts verdicts
       - AGENT_IMAGE_REVIEW=${AGENT_IMAGE_REVIEW:-agent-sandbox:review}
       - REVIEW_MAX_ROUNDS=${REVIEW_MAX_ROUNDS:-3}
       # @infra agent: repairs the stack (runc + host docker socket + the infra
-      # repo bind-mounted read-only; see 00-tea/tasks.mjs). Auto-enqueued on
+      # repo bind-mounted read-only; see 2pizzas/tasks.mjs). Auto-enqueued on
       # infra-class failures; @infra on the infra repo works it manually.
       - AGENT_IMAGE_INFRA=${AGENT_IMAGE_INFRA:-agent-sandbox:infra}
       - INFRA_REPO=${INFRA_REPO}
@@ -189,11 +189,11 @@ services:
       # would be refused (nothing listens on the gateway IP). Use the tailnet
       # IP: self-consistent with the binding, stable, container-reachable.
       - GITEA_HOST=${HOST_TAILNET:?set HOST_TAILNET in .env}:3000
-      # chat containers (runsc, no DNS) reach Gitea/00-tea via this tailnet IP
+      # chat containers (runsc, no DNS) reach Gitea/2pizzas via this tailnet IP
       # (both services are bound to it) — not the host-gateway
       - HOST_TAILNET=${HOST_TAILNET:?set HOST_TAILNET in .env}
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
-      - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 00-tea runs pi on a loadable model
+      - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 2pizzas runs pi on a loadable model
       - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)
       # /pages sidebar: repo:port:container per pages/ service instance
       - PAGES_SITES=${PAGES_SITES:-}
@@ -221,8 +221,8 @@ services:
     networks:
       - gitea
     volumes:
-      - ./data-00-tea:/data
-      # inference backend registry (gitignored — carries API keys); 00-tea
+      - ./data-2pizzas:/data
+      # inference backend registry (gitignored — carries API keys); 2pizzas
       # re-reads it on change, no restart needed. NO :ro — the /backends UI
       # edits it IN PLACE (a rename would swap the bind inode and the
       # container would keep seeing the old file)

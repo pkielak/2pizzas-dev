@@ -6,7 +6,7 @@
 #   1. preflight       — tooling, ports, runsc, llama.cpp router
 #   2. agent configs   — pi/opencode model files (from .example + router)
 #   3. .env            — generated/finished interactively
-#   4. images          — 00-tea, pages, agent-sandbox:*, gitea-android
+#   4. images          — 2pizzas, pages, agent-sandbox:*, gitea-android
 #   5. gitea + db      — compose up + health wait
 #   6. seed            — users, tokens, repos, runners, webhook (seed.sh)
 #   7. full stack      — compose up -d (everything)
@@ -235,11 +235,11 @@ fi
 # ── 2. inference backends (inference.json → baked into agent images) ───────────────────────
 step "Inference backends (inference.json)"
 # Single source of truth: every backend is an OpenAI-compatible /v1 endpoint
-# (local llama.cpp router, vLLM, Ollama, OpenRouter, ...). 00-tea reads the
+# (local llama.cpp router, vLLM, Ollama, OpenRouter, ...). 2pizzas reads the
 # file at runtime (re-read on change, no restart); this step bakes the SAME
 # list into the pi/opencode configs (gitignored, COPY'd into the images — a
 # backend added after the last --rebuild won't work inside the agents, and
-# 00-tea logs a warning pointing here).
+# 2pizzas logs a warning pointing here).
 LLAMA_URL=$(env_get LLAMA_CPP_URL)
 [[ -n $LLAMA_URL ]] || LLAMA_URL="http://localhost:8080"
 
@@ -283,9 +283,9 @@ fi
 LLAMA_URL=$(jq -r '.backends[0].url' inference.json)
 
 # NOTE: container-vantage reachability is verified in step 8 (verify) via
-# 00-tea's own /api/backends/test — NOT here. A throwaway-container probe in
+# 2pizzas's own /api/backends/test — NOT here. A throwaway-container probe in
 # this step would need to pull an EXTERNAL node image (node:22), which hangs
-# the wizard on a restricted network; by step 8, 00-tea's own node is up and
+# the wizard on a restricted network; by step 8, 2pizzas's own node is up and
 # it IS the container that calls the backend, so its probe is the real test
 # and can't hang on an image pull.
 
@@ -385,7 +385,7 @@ INFRA_TOKEN=
 REVIEW_TOKEN=
 REVIEW_POST_TOKEN=
 ADMIN_TOKEN=
-INFRA_REPO=$ADMIN_USER/gitea-with-agents
+INFRA_REPO=$ADMIN_USER/2pizzas-dev
 INFRA_HOST_REPO=$INFRA_HOST
 INFRA_COOLDOWN_MINUTES=15
 LLAMA_CPP_URL=$LLLAMA
@@ -438,13 +438,13 @@ done
 v=$(env_get UI_TOKEN)
 if [[ -z $v ]]; then
   v=$(gen_password); set_env UI_TOKEN "$v"
-  ok "UI_TOKEN: auto-generated (00-tea UI gate — needed to open the dashboard)"
+  ok "UI_TOKEN: auto-generated (2pizzas UI gate — needed to open the dashboard)"
 fi
 
 # CPU allocation — only relevant when a backend runs ON THIS HOST (the
 # agents share its cores). External backends: nothing to reserve.
 # The task pump runs ONE agent job at a time (concurrency=1); chat
-# containers are capped at CHAT_CPUS each; the rest is gitea/00-tea/runner.
+# containers are capped at CHAT_CPUS each; the rest is gitea/2pizzas/runner.
 # Inference dominates, so it gets the bulk of the cores.
 LOCAL_BACKEND=0
 while IFS= read -r h; do
@@ -483,7 +483,7 @@ else
     ok "built $tag"
   }
 
-  build_img 00-tea           ./00-tea
+  build_img 2pizzas           ./2pizzas
   build_img gitea-pages:latest ./pages
   build_img agent-sandbox:base  agent-sandbox
   # LLAMA_BASE_URL is only used by pi's bundled llama.cpp extension provider
@@ -551,13 +551,13 @@ curl -sf "$GURL/api/healthz" >/dev/null && ok "Gitea API" || warn "Gitea API not
 # names. Detect + hint the recreate.
 if docker exec gitea getent hosts db >/dev/null 2>&1; then ok "container DNS (gitea → db)"
 else warn "gitea container cannot resolve 'db' — stale /etc/resolv.conf (host DNS was broken at container creation). Fix: docker compose up -d --force-recreate"; fi
-curl -sf http://127.0.0.1:3001/healthz >/dev/null && ok "00-tea dispatcher (:3001)" || warn "00-tea not answering on :3001 yet (give it a moment)"
+curl -sf http://127.0.0.1:3001/healthz >/dev/null && ok "2pizzas dispatcher (:3001)" || warn "2pizzas not answering on :3001 yet (give it a moment)"
 
-# backend reachability FROM 00-tea's own vantage (the container that calls it)
+# backend reachability FROM 2pizzas's own vantage (the container that calls it)
 # — the definitive test for the #1 gotcha (a backend bound to the host's
-# 127.0.0.1/localhost is invisible to every container). Uses 00-tea's
+# 127.0.0.1/localhost is invisible to every container). Uses 2pizzas's
 # /api/backends/test (its own node — no external image pull, so it can't hang
-# the wizard the way a throwaway node:22 container would). Skipped if 00-tea
+# the wizard the way a throwaway node:22 container would). Skipped if 2pizzas
 # isn't up yet; each probe is bounded by --max-time.
 if curl -sf http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
   while IFS= read -r b; do
@@ -566,9 +566,9 @@ if curl -sf http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
       ${UI_TOKEN:+-H "x-ui-token: $UI_TOKEN"} -H 'content-type: application/json' \
       -d "$(jq -n --arg u "$burl" --arg k "$bkey" '{url:$u, apiKey:$k}')" 2>/dev/null) || probe='{}'
     if [[ $(jq -r '.ok' <<<"$probe" 2>/dev/null) == true ]]; then
-      ok "backend $bid reachable from 00-tea — $(jq -r '.count' <<<"$probe") model(s)"
+      ok "backend $bid reachable from 2pizzas — $(jq -r '.count' <<<"$probe") model(s)"
     else
-      warn "backend $bid ($burl) NOT reachable from 00-tea — $(jq -r '.error // "unknown"' <<<"$probe")"
+      warn "backend $bid ($burl) NOT reachable from 2pizzas — $(jq -r '.error // "unknown"' <<<"$probe")"
       case "${burl#*://}" in
         127.*|localhost*) warn "  → bind the server to 0.0.0.0 and use http://host.docker.internal:8080, or a routable host IP (tailscale/LAN)" ;;
         *)                warn "  → check the host firewall (ufw FORWARD to the docker bridges) + routable IP binding" ;;
@@ -583,7 +583,7 @@ runners=$(curl -sf -H "Authorization: token $ADMIN_TOKEN" \
 
 hook=$(docker exec gitea-db-1 psql -U "$(env_get POSTGRES_USER)" -d "$(env_get POSTGRES_DB)" \
   -tAc "SELECT id FROM webhook WHERE is_system_webhook LIMIT 1" 2>/dev/null || true)
-[[ -n $hook ]] && ok "global 00-tea webhook (db id $hook)" || warn "no global webhook row found"
+[[ -n $hook ]] && ok "global 2pizzas webhook (db id $hook)" || warn "no global webhook row found"
 
 models=$(curl -sf --max-time 3 "$(env_get LLAMA_CPP_URL)/v1/models" 2>/dev/null | jq -r '[.data[].id] | join(", ")' 2>/dev/null || true)
 [[ -n $models ]] && ok "llama.cpp models available: $models" || warn "llama.cpp router not reachable — agent tasks will fail until it is up"
@@ -593,11 +593,11 @@ cat <<EOF
 
   $C_INFO What's running:$C_RST
     Gitea        $GURL          (admin: $(env_get ADMIN_USER) — password in .env)
-    00-tea UI    http://127.0.0.1:3001  (dashboard — unlock with UI_TOKEN from .env)
+    2pizzas UI    http://127.0.0.1:3001  (dashboard — unlock with UI_TOKEN from .env)
     ports        bound to $(env_get HOST_TAILNET) (tailnet) + $(env_get HOST_LAN) (LAN) only
 
   $C_INFO Try it:$C_RST
-    1. open $GURL/$(env_get ADMIN_USER)/gitea-with-agents
+    1. open $GURL/$(env_get ADMIN_USER)/2pizzas-dev
     2. create an issue and comment:  @pi add a README.md with a project overview
     3. watch the task appear at http://127.0.0.1:3001 — the agent pushes
        as its own user (pi/opencode), a reviewer task runs, and it replies
@@ -611,5 +611,5 @@ cat <<EOF
     - agent model changes: edit agent-sandbox/{pi,opencode} config files,
       then ./setup.sh --rebuild (bakes the model list into the images)
     - the /pages services track repos from PAGES_SITES in .env (empty by
-      default) — add entries there and: docker compose up -d 00-tea
+      default) — add entries there and: docker compose up -d 2pizzas
 EOF

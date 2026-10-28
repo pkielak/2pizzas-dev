@@ -39,7 +39,7 @@ export function runRows(runs) {
 
 export async function androidPage() {
   let runs = [], err = null;
-  if (!CFG.adminToken) err = 'ADMIN_TOKEN not set — cannot list actions runs (add it to 00-tea in docker-compose.yml)';
+  if (!CFG.adminToken) err = 'ADMIN_TOKEN not set — cannot list actions runs (add it to 2pizzas in docker-compose.yml)';
   else { try { runs = await androidRuns(30); } catch (e) { err = e.message; } }
   return {
     html: `${err ? `<p class="err">${esc(err)}</p>` : ''}

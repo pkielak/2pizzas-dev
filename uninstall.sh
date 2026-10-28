@@ -7,11 +7,11 @@
 # What it removes:
 #   1. compose project `gitea` — containers gitea, db, gitea-pages,
 #      browser-llm-bench-pages, gitea-runner, gitea-android-runner,
-#      gitea-00-tea, plus the `gitea_gitea` network
-#   2. leftover 00-tea chat containers (`tea-chat-*`)
+#      gitea-2pizzas, plus the `gitea_gitea` network
+#   2. leftover 2pizzas chat containers (`tea-chat-*`)
 #   3. the built images (agent-sandbox:*, gitea-android, gitea-pages,
-#      the 00-tea image) — skipped with --keep-images
-#   4. the host runtime data dirs (data/, data-agent/, data-00-tea/,
+#      the 2pizzas image) — skipped with --keep-images
+#   4. the host runtime data dirs (data/, data-agent/, data-2pizzas/,
 #      data-android/, gitea/, postgres/) — ONLY with --purge
 #
 # It does NOT touch the git checkout itself, and it does NOT remove the
@@ -95,7 +95,7 @@ IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
   | grep -E '^(agent-sandbox|gitea-android|gitea-pages)(:|/)' \
   | grep -vE '^<none>' | sort -u | paste -sd', ' -) || true
 DATA_DIRS=""
-for d in data data-agent data-00-tea data-android gitea postgres; do
+for d in data data-agent data-2pizzas data-android gitea postgres; do
   [[ -e "$d" ]] && DATA_DIRS="$DATA_DIRS $d/"
 done
 
@@ -113,13 +113,13 @@ fi
 step "Confirm"
 printf '%s\n' \
   "  This will:" \
-  "    • stop + remove the compose project 'gitea' (Gitea, Postgres, 00-tea," \
+  "    • stop + remove the compose project 'gitea' (Gitea, Postgres, 2pizzas," \
   "      runners, pages) and the gitea_gitea network" \
   "    • remove leftover tea-chat-* containers"
 if [[ $KEEP_IMAGES == 1 ]]; then
   printf '    • KEEP the built images\n'
 else
-  printf '    • remove the built images (agent-sandbox:*, gitea-android, gitea-pages, 00-tea)\n'
+  printf '    • remove the built images (agent-sandbox:*, gitea-android, gitea-pages, 2pizzas)\n'
 fi
 if [[ $PURGE == 1 ]]; then
   printf '    • %sDELETE the host data dirs:%s%s (all Gitea data, task logs, sqlite)%s\n' \
@@ -178,7 +178,7 @@ fi
 # ── 5. host data dirs (only --purge) ───────────────────────────────
 if [[ $PURGE == 1 ]]; then
   step "Deleting host data dirs (--purge)"
-  for d in data data-agent data-00-tea data-android gitea postgres; do
+  for d in data data-agent data-2pizzas data-android gitea postgres; do
     if [[ -e "$d" ]]; then
       rm -rf -- "$d" && ok "removed $d/" || err "failed to remove $d/"
     fi

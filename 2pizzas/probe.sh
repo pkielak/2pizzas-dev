@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# probe.sh — test an inference backend FROM 00-tea's container vantage, i.e.
+# probe.sh — test an inference backend FROM 2pizzas's container vantage, i.e.
 # the exact network position of the code that actually calls the backend.
 #
 # This is the diagnostic for the #1 inference misconfiguration: a backend
@@ -8,11 +8,11 @@
 # must be bound to a ROUTABLE host IP (tailscale/LAN) to be reachable.
 # Running this on the host would always "work" for a loopback url — the whole
 # point is to probe from the container, which is why it goes through the
-# 00-tea API rather than curling the url directly.
+# 2pizzas API rather than curling the url directly.
 #
-#   ./00-tea/probe.sh [URL] [API_KEY]
-#   ./00-tea/probe.sh http://127.0.0.1:8080
-#   ./00-tea/probe.sh https://openrouter.ai/api sk-...
+#   ./2pizzas/probe.sh [URL] [API_KEY]
+#   ./2pizzas/probe.sh http://127.0.0.1:8080
+#   ./2pizzas/probe.sh https://openrouter.ai/api sk-...
 set -euo pipefail
 
 URL=${1:-http://127.0.0.1:8080}
@@ -30,5 +30,5 @@ resp=$(curl -sf --max-time 15 -X POST "$BASE/api/backends/test" \
 jq -r '
   if .ok
   then "OK  \(.ms)ms · \(.count) model(s): \(.models | join(", "))"
-  else "NOT reachable from 00-tea: \(.error)\n\(.hint // "")"
+  else "NOT reachable from 2pizzas: \(.error)\n\(.hint // "")"
   end' <<<"$resp"

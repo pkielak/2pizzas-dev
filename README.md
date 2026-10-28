@@ -1,4 +1,4 @@
-# gitea-with-agents
+# 2pizzas-dev
 
 A local [Gitea](https://gitea.com) instance with **AI agent runners**: post a
 comment on an issue or PR mentioning `@pi` or `@opencode` and the corresponding
@@ -9,7 +9,7 @@ through an automated review chain: a read-only reviewer agent checks the diff
 
 ![Architecture](docs/architecture.svg)
 
-*Static snapshot of the live `/infra` dashboard diagram (00-tea UI).*
+*Static snapshot of the live `/infra` dashboard diagram (2pizzas UI).*
 
 ## Components
 
@@ -19,9 +19,9 @@ through an automated review chain: a read-only reviewer agent checks the diff
 | `db` | Postgres 14 |
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — ordinary CI, incl. the `security-scan` gate (gitleaks + semgrep on every PR) |
 | `android-runner` | Dedicated runner for native Android builds, label `android`, job image `gitea-android:latest` (JDK 21 + Android SDK + warm Gradle cache) |
-| `00-tea` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
+| `2pizzas` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
 | `agent-sandbox:*` images | Docker images the agent tasks run in: a base image (git, node, gitleaks, semgrep with baked rule packs) + one variant per agent (pi, opencode, infra=pi+docker CLI, review=opencode+code-review skill), each preconfigured with the inference backends from `inference.json` |
-| `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 00-tea walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
+| `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 2pizzas walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
 
 The **template repo `owner/agents-actions`** is a thin README (the old agent
 workflows are gone). The authoritative copy lives in the `agents-actions/`
@@ -30,7 +30,7 @@ directory in this repo (`seed.sh` pushes it).
 ## Repository layout
 
 ```
-docker-compose.yml          # gitea + db + runner + 00-tea
+docker-compose.yml          # gitea + db + runner + 2pizzas
 setup.sh                    # one-command interactive setup wizard (8 steps)
 seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 sync-template.sh            # push agents-actions updates into template-based repos
@@ -49,7 +49,7 @@ runner/config.yaml          # my-runner: ubuntu-latest label
 ```
 
 Runtime state (gitignored, do not edit): `gitea/` (Gitea data), `postgres/`,
-`data/` (runner state), `data-00-tea/` (dispatcher state + task logs).
+`data/` (runner state), `data-2pizzas/` (dispatcher state + task logs).
 
 ## Setup
 
@@ -72,13 +72,13 @@ seeded stack:
    backend's live model list
 3. **`.env`** — generated (or finished) interactively: Gitea URL, admin user,
    postgres creds (auto-generated password), managed repos, CPU plan
-4. **images** — builds `00-tea`, `gitea-pages`, `agent-sandbox:{base,pi,
+4. **images** — builds `2pizzas`, `gitea-pages`, `agent-sandbox:{base,pi,
    opencode,review,infra,ops}` and (asked) `gitea-android`
 5. **Gitea + Postgres** — `compose up -d db server`, waits for health
 6. **seed** — runs `seed.sh` (users, tokens, repos, runners, global webhook)
 7. **full stack** — `compose up -d` for everything
 8. **verify + summary** — API/dispatcher/runner/webhook checks, backend
-   container-reachability (via 00-tea's own probe), links, and a "try it"
+   container-reachability (via 2pizzas's own probe), links, and a "try it"
    prompt
 
 Every step is idempotent — re-run `./setup.sh` anytime (e.g. after changing
@@ -95,7 +95,7 @@ the model set: `./setup.sh --rebuild`). Flags:
 
 - Docker + compose plugin
 - A llama.cpp server (OpenAI-compatible, `:8080`) reachable from the
-  **containers** (00-tea + the agent job containers), not just the host — see
+  **containers** (2pizzas + the agent job containers), not just the host — see
   [Inference backend networking](#inference-backend-networking)
 - Ports 3000 (web) and 222 (SSH) free
 - gVisor (`runsc`) — agent task sandboxes
@@ -103,14 +103,14 @@ the model set: `./setup.sh --rebuild`). Flags:
 ### Inference backend networking
 
 The inference backend must be reachable from the **containers** that call it
-(00-tea and the ephemeral agent job containers), not just from the host. This
+(2pizzas and the ephemeral agent job containers), not just from the host. This
 is the #1 setup gotcha:
 
 - **A container can never reach the host's `127.0.0.1`.** Inside a container,
   `127.0.0.1` is *that container's own* loopback — the host's loopback is
   invisible to it. So a llama.cpp/vLLM/Ollama bound to `127.0.0.1:8080`
   (or `localhost:8080`) is unreachable from the whole stack, even though
-  `curl http://localhost:8080` works on the host. The failure is silent: 00-tea
+  `curl http://localhost:8080` works on the host. The failure is silent: 2pizzas
   skips the unreachable backend and the task fails with "no backend reachable".
 
 | Bind the server to | url in `inference.json` | reachable from containers? |
@@ -120,7 +120,7 @@ is the #1 setup gotcha:
 | LAN IP | `http://<lan-ip>:8080` | ✅ (but DHCP can change it) |
 | `127.0.0.1` / `localhost` | `http://127.0.0.1:8080` | ❌ never |
 
-`host.docker.internal` is wired into both 00-tea (compose `extra_hosts`) and
+`host.docker.internal` is wired into both 2pizzas (compose `extra_hosts`) and
 the job containers (runTask `--add-host`); it resolves to each container's
 host-gateway, so it only works when the server listens on that interface —
 i.e. is bound to `0.0.0.0`, **not** loopback. It also needs the host firewall
@@ -129,12 +129,12 @@ to allow FORWARD to the docker bridges (setup.sh offers to add the ufw rules).
 Verify from the **container's** vantage, not the host's:
 
 ```bash
-./00-tea/probe.sh http://host.docker.internal:8080   # → "OK · N models" when good
+./2pizzas/probe.sh http://host.docker.internal:8080   # → "OK · N models" when good
 ```
 
-or the "test"/"test url" buttons on the 00-tea `/backends` page. `setup.sh`
+or the "test"/"test url" buttons on the 2pizzas `/backends` page. `setup.sh`
 offers to edit the backends in step 2 and verifies container-reachability for
-each in step 8 (via 00-tea's own probe — no external image pull, so it can't
+each in step 8 (via 2pizzas's own probe — no external image pull, so it can't
 hang) and warns if one isn't reachable.
 
 ### Manual setup (what the wizard does, step by step)
@@ -149,7 +149,7 @@ Agents act as a dedicated `bot` user so you can review their work (commits,
 PRs, comments all show up under `bot`).
 
 New repos: create from the `agents-actions` template — they self-enroll on
-the first `@pi`/`@opencode` mention (00-tea grants the bot write access
+the first `@pi`/`@opencode` mention (2pizzas grants the bot write access
 itself), so no manual collaborator step is needed.
 
 ### Updating template-based repos
@@ -181,7 +181,7 @@ actually changed.
 ## How the agents work
 
 A `@pi` / `@opencode` mention on an issue or PR in a managed repo triggers a
-webhook to **00-tea**, which queues the task and runs it as an ephemeral
+webhook to **2pizzas**, which queues the task and runs it as an ephemeral
 `docker run --runtime=runsc agent-sandbox:<agent>` container. The agent
 checks out the repo, does the work (pushes commits, opens PRs), and posts a
 reply via `post-comment.sh`.
@@ -196,7 +196,7 @@ change).
 
 ## Review feedback
 
-Human review comments on a worker's PR are picked up: 00-tea enqueues a
+Human review comments on a worker's PR are picked up: 2pizzas enqueues a
 `review` task when someone leaves an inline diff comment — the worker
 addresses it (changes, commit, push to the PR head branch). Separately,
 every work push goes through the automatic review chain (read-only

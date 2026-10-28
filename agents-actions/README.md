@@ -4,17 +4,17 @@ Template repo for AI-agent-managed Gitea repositories.
 
 ## How it works
 
-Agent tasks are dispatched by **00-tea** (a webhook-driven service in the
-`gitea-with-agents` infra repo), NOT by per-repo workflow files. This template
+Agent tasks are dispatched by **2pizzas** (a webhook-driven service in the
+`2pizzas-dev` infra repo), NOT by per-repo workflow files. This template
 repo is README-only — it exists so that new repos can be created from it and
-immediately recognized by the 00-tea dispatcher.
+immediately recognized by the 2pizzas dispatcher.
 
 To make a repo agent-managed:
 
 1. Append `owner/repo` to `AGENTD_REPOS` in the infra repo's `.env`
 2. Run `./seed.sh` (adds `bot` as write collaborator; the global webhook
    covers all repos — no per-repo webhook needed)
-3. `docker compose up -d 00-tea`
+3. `docker compose up -d 2pizzas`
 
 After that, `@pi` / `@opencode` comments on issues and PRs in this repo
 trigger agent tasks.
@@ -35,4 +35,4 @@ show up under `bot` and can be reviewed like a regular contribution.
    - API: `PUT /repos/{owner}/{repo}/collaborators/bot` with body `{"permission":"write"}`
 2. **Default branch is `main`** — the prompts tell the agent to open PRs
    against `main`. If your repo uses a different default branch, update the
-   00-tea prompt template.
+   2pizzas prompt template.

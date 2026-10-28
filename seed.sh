@@ -21,13 +21,13 @@ GITEA_URL="${GITEA_URL:-http://localhost:3000}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 # per-agent identities: each work agent is its OWN Gitea user (native
 # @mention autocomplete + per-agent commit/PR attribution). The review user
-# carries a read token (reviewer clone) and a write token (00-tea posts the
+# carries a read token (reviewer clone) and a write token (2pizzas posts the
 # verdicts). The legacy single "bot" user is dormant on old instances —
 # fresh instances never create it.
 AGENT_USERS="pi opencode infra review"
 CHAT_USER="chat"   # separate login for the /chat agents — audit separation from task work
 HOST="${GITEA_URL#http://}"; HOST="${HOST%/}"
-ADMIN_REPO="gitea-with-agents"
+ADMIN_REPO="2pizzas-dev"
 TEMPLATE_REPO="agents-actions"
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -75,9 +75,9 @@ runner_registered() {
     "$GITEA_URL/api/v1/admin/actions/runners?limit=50" 2>/dev/null \
     | jq -e --arg n "$1" '.runners[] | select(.name == $n)' >/dev/null 2>&1
 }
-# managed repos — comma-separated in .env (the same value the 00-tea service reads)
+# managed repos — comma-separated in .env (the same value the 2pizzas service reads)
 IFS=',' read -r -a AGENTD_REPOS <<< "${AGENTD_REPOS:-$ADMIN_USER/$ADMIN_REPO}"
-WEBHOOK_URL="http://00-tea:3001/webhook"
+WEBHOOK_URL="http://2pizzas:3001/webhook"
 
 gen_password() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 
@@ -131,24 +131,24 @@ declare -A agent_tok_user=( [PI_TOKEN]=pi [OPENCODE_TOKEN]=opencode [INFRA_TOKEN
 for k in PI_TOKEN OPENCODE_TOKEN INFRA_TOKEN; do
   if token_usable "${!k:-}"; then echo "$k: ok"; skip
   else
-    val=$(gen_token "${agent_tok_user[$k]}" "00-tea-${agent_tok_user[$k]}" "$AGENT_SCOPES")
+    val=$(gen_token "${agent_tok_user[$k]}" "2pizzas-${agent_tok_user[$k]}" "$AGENT_SCOPES")
     set_env "$k" "$val"; echo "$k: generated ($AGENT_SCOPES, user ${agent_tok_user[$k]}) → written to .env"
   fi
 done
-# Code REVIEWER (00-tea review chain), user "review", TWO tokens:
+# Code REVIEWER (2pizzas review chain), user "review", TWO tokens:
 #  - REVIEW_TOKEN: read:repository — the review container clones with it and
 #    gets nothing else, so a reviewer physically cannot push; it can only
 #    review.
-#  - REVIEW_POST_TOKEN: write — held by 00-tea ONLY (never given to the
+#  - REVIEW_POST_TOKEN: write — held by 2pizzas ONLY (never given to the
 #    container) so the review verdicts post under the review user.
 if token_usable "${REVIEW_TOKEN:-}"; then echo "REVIEW_TOKEN: ok"; skip
 else
-  val=$(gen_token review 00-tea-review read:repository)
+  val=$(gen_token review 2pizzas-review read:repository)
   set_env REVIEW_TOKEN "$val"; echo "REVIEW_TOKEN: generated (read:repository) → written to .env"
 fi
 if token_usable "${REVIEW_POST_TOKEN:-}"; then echo "REVIEW_POST_TOKEN: ok"; skip
 else
-  val=$(gen_token review 00-tea-review-post "read:issue,write:issue")
+  val=$(gen_token review 2pizzas-review-post "read:issue,write:issue")
   set_env REVIEW_POST_TOKEN "$val"; echo "REVIEW_POST_TOKEN: generated (read:issue,write:issue) → written to .env"
 fi
 # Write token for the /chat agents (user "chat"): chat containers receive it
@@ -157,7 +157,7 @@ fi
 # Write access per repo is still gated by collaborator grants (/chat UI).
 if token_usable "${CHAT_GITEA_TOKEN:-}"; then echo "CHAT_GITEA_TOKEN: ok"; skip
 else
-  val=$(gen_token "$CHAT_USER" 00-tea-chat write:repository)
+  val=$(gen_token "$CHAT_USER" 2pizzas-chat write:repository)
   set_env CHAT_GITEA_TOKEN "$val"; echo "CHAT_GITEA_TOKEN: generated (write:repository) → written to .env"
 fi
 
@@ -205,7 +205,7 @@ echo "template: true"
 # ── 5. runner registration tokens ──────────────────────────────────
 # my-runner (plain CI jobs, ubuntu-latest) + android-runner (label
 # `android`, gitea-android job image). Agent tasks no longer use runners —
-# they go through 00-tea webhooks (step 7).
+# they go through 2pizzas webhooks (step 7).
 log "Runner registration tokens"
 if runner_registered my-runner; then
   echo "my-runner registered, skipping"; skip
@@ -225,25 +225,25 @@ else
 fi
 
 # ── 6. services ────────────────────────────────────────────────────
-log "Starting runners + 00-tea"
-docker compose up -d runner android-runner 00-tea
-docker compose ps runner android-runner 00-tea || true
+log "Starting runners + 2pizzas"
+docker compose up -d runner android-runner 2pizzas
+docker compose ps runner android-runner 2pizzas || true
 
-# ── 7. 00-tea webhook (global) + bot access ───────────────────────
-log "00-tea global webhook"
+# ── 7. 2pizzas webhook (global) + bot access ───────────────────────
+log "2pizzas global webhook"
 if [[ -z ${WEBHOOK_SECRET:-} ]]; then
   set_env WEBHOOK_SECRET "$(gen_password)"
   echo "WEBHOOK_SECRET: generated → written to .env"
 fi
 # ONE system-wide webhook covers every repo — new repos need no webhook
-# setup; 00-tea gates on managed repos (env list ∪ self-enrolled) + @agent
+# setup; 2pizzas gates on managed repos (env list ∪ self-enrolled) + @agent
 # mentions — new repos self-enroll on mention, so this env list is optional.
 # Gitea 1.27 has no
 # API for system webhooks (admin-UI only), so seed.sh writes the row
 # directly: is_system_webhook=true, same shape as the per-repo rows.
 psql() { docker exec gitea-db-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"; }
 # NOTE: 1.27 has NO pull_request_review_comment hook event — inline review
-# comments are picked up by 00-tea's poll fallback (<=60s delay).
+# comments are picked up by 2pizzas's poll fallback (<=60s delay).
 # pull_request_comment: comments on a PR fire THIS event, not issue_comment —
 # without it, @agent mentions on PRs are never delivered
 HOOK_EVENTS='{"push_only":false,"send_everything":false,"choose_events":true,"branch_filter":"","events":{"issue_comment":true,"pull_request_review":true,"create":false,"repository":false,"status":false,"issues":false,"issue_label":false,"pull_request_label":false,"pull_request_sync":false,"push":false,"fork":false,"wiki":false,"workflow_job":false,"issue_milestone":false,"pull_request_assign":false,"pull_request_milestone":false,"pull_request":false,"pull_request_review_request":false,"delete":false,"release":false,"package":false,"workflow_run":false,"issue_assign":false,"pull_request_comment":true}}'
@@ -283,5 +283,5 @@ done
 log "Done"
 echo "  web:      $GITEA_URL"
 echo "  admin:    $ADMIN_USER (password in .env)"
-echo "  00-tea:   http://127.0.0.1:3001 (task dashboard)"
+echo "  2pizzas:   http://127.0.0.1:3001 (task dashboard)"
 echo "  template: $GITEA_URL/$ADMIN_USER/$TEMPLATE_REPO"

@@ -16,11 +16,11 @@ export async function dockerNames() {
 // Grid: 3 rows (y 40..150 / 250..350 / 450..550, 100px gutters), 4 columns
 // Three rows: AGENTS on top (5 boxes w 160 at x 30/225/420/615/810,
 // y 40..140), FOUNDATIONS in the middle (3 boxes w 240: gitea 30..270,
-// 00-tea 380..620, llama 730..970, y 250..360), RUNNERS/SERVERS at the
+// 2pizzas 380..620, llama 730..970, y 250..360), RUNNERS/SERVERS at the
 // bottom (3 boxes w 200 at x 30/280/530, y 460..560). Every connector is
 // a straight H/V polyline — no diagonals, no crossings, no hop arcs:
 // Three colored lines rise from the middle row to a tri-color convergence
-// bus at y=180: gitea (green, x=150), 00-tea (blue, x=500), llama (purple,
+// bus at y=180: gitea (green, x=150), 2pizzas (blue, x=500), llama (purple,
 // x=850). The bus drops into every agent container (110/305/500/695/890).
 // gitea→runners fans out below (bus y=410, drops at 130/380/630).
 // Line labels sit 8px above their line, centered on the segment.
@@ -79,14 +79,14 @@ ${block(615, 40, 160, 100, '@infra', ['agent-sandbox:infra', agentBusy('infra') 
 ${block(810, 40, 160, 100, 'chat containers', ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], chatN === null ? null : chatN > 0)}
 
 ${block(30, 250, 240, 110, 'Gitea', ['server :3000 · postgres db', `${managedN} managed repo${managedN === 1 ? '' : 's'} · agent + chat users`], up('gitea') === null ? null : (up('gitea') && up('gitea-db-1')), '#gitea')}
-${block(380, 250, 240, 110, '00-tea', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-00-tea'), '/tasks')}
+${block(380, 250, 240, 110, '2pizzas', ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], up('gitea-2pizzas'), '/tasks')}
 ${block(730, 250, 240, 110, esc(first.id) + (backends.length > 1 ? ` +${backends.length - 1}` : ''), [esc(first.url) + (backends.length > 1 ? ` · ${backends.length} backends` : ''), models ? (loaded.length ? `loaded: ${esc(loaded.join(', '))}` : 'reachable') : 'unreachable'], models ? true : false)}
 
 ${block(150, 460, 200, 100, 'my-runner', ['label: ubuntu-latest', 'runc · CI+security gate'], up('gitea-runner'))}
 ${block(400, 460, 200, 100, 'android-runner', ['label: android', 'gitea-android:latest image'], up('gitea-android-runner'))}
 ${block(650, 460, 200, 100, 'pages', [CFG.pagesSites.length ? CFG.pagesSites.map((s) => `${esc(s.split(':')[0])} :${esc(s.split(':')[1])}`).join(' · ') : 'no sites (PAGES_SITES)', 'serves gh-pages branches'], pagesUp)}
 
-<!-- gitea → 00-tea · 00-tea → llama -->
+<!-- gitea → 2pizzas · 2pizzas → llama -->
 ${conn('M 270 305 L 380 305')}
 ${label(325, 297, 'webhook')}
 ${conn('M 620 305 L 730 305')}
@@ -164,7 +164,7 @@ ${svg}
 <li><i class="na"></i>n/a · parked · unknown</li>
 </ul>
 <ul id="notes">
-<li>every agent job runs one-shot in a gVisor (runsc) sandbox; 00-tea, the runners and Gitea itself run on the host</li>
+<li>every agent job runs one-shot in a gVisor (runsc) sandbox; 2pizzas, the runners and Gitea itself run on the host</li>
 <li>agent images bake gitleaks + semgrep (rule packs in <code>/etc/semgrep</code> — scan offline); the reviewer runs them before the verdict</li>
 <li>every PR is gated by the <code>security-scan</code> CI workflow on my-runner (secrets block, code rules advisory)</li>
 <li>scroll to zoom, drag to pan — on touch: one finger pans, pinch zooms</li>

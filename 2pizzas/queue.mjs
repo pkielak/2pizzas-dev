@@ -35,7 +35,7 @@ export function enqueue({ repo, issue, agent, kind, comment, sender, eventId }) 
   liveBroadcast('tasks');
 }
 
-// Internal review-chain tasks: enqueued by 00-tea itself (never via the
+// Internal review-chain tasks: enqueued by 2pizzas itself (never via the
 // webhook — agent comments carry the via:agent marker and are ignored).
 // comment_id is NULL, so the (repo, kind, comment_id) webhook dedupe never
 // matches them; the parent_id+kind checks below are their loop guard.
@@ -46,7 +46,7 @@ export function enqueueReview(work, logText) {
   }
   const dup = db.prepare("SELECT 1 FROM tasks WHERE parent_id = ? AND kind = 'agent-review'").get(work.id);
   if (dup) return;
-  const pr = /\[00-tea\] pr: #(\d+)/.exec(logText)?.[1] ?? null;
+  const pr = /\[2pizzas\] pr: #(\d+)/.exec(logText)?.[1] ?? null;
   db.prepare(
     `INSERT INTO tasks (repo, issue, agent, kind, body, parent_id, round, pr)
      VALUES (?, ?, 'review', 'agent-review', ?, ?, ?, ?)`
@@ -113,7 +113,7 @@ export async function enqueueInfra(failed, errMsg) {
   }
   const ctx = `Task ${failed.id} (${failed.kind}, @${failed.agent}) on ${failed.repo}#${failed.issue} failed:\n${errMsg}\n\nLog tail:\n\`\`\`\n${readLog(failed.id).slice(-2000)}\n\`\`\``;
   const last = db.prepare(`SELECT id, issue, created_at FROM tasks WHERE kind = 'agent-infra' ORDER BY id DESC LIMIT 1`).get();
-  const tok = { token: CFG.agents.infra.token }; // 00-tea posts as the infra user
+  const tok = { token: CFG.agents.infra.token }; // 2pizzas posts as the infra user
   if (last && Date.now() - Date.parse(last.created_at.replace(' ', 'T') + 'Z') < CFG.infraCooldownMs) {
     await apiPost(`/repos/${CFG.infraRepo}/issues/${last.issue}/comments`, {
       body: `Another task failed in the same window:\n\n${ctx}\n\n${MARKER}`,
@@ -122,7 +122,7 @@ export async function enqueueInfra(failed, errMsg) {
     return;
   }
   const issue = await apiPost(`/repos/${CFG.infraRepo}/issues`, {
-    title: `[00-tea] infra incident: task ${failed.id} failed — ${errMsg.slice(0, 80)}`,
+    title: `[2pizzas] infra incident: task ${failed.id} failed — ${errMsg.slice(0, 80)}`,
     body: ctx,
   }, tok);
   // issue.number, NOT issue.id — the API returns the global db id in .id,

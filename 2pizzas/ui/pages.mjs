@@ -27,7 +27,7 @@ export async function pagesPage() {
   </a>`).join('\n');
   return {
     html: `<div class="list">${rows || '<div class="item"><div class="l2">no sites — set PAGES_SITES in .env (repo:port:container per pages service)</div></div>'}</div>
-<p class="meta">each site is a <code>pages/</code> compose service serving a repo's <code>gh-pages</code> branch (CI pushes the branch, the server syncs every 60s). add one: new compose service (see <code>browser-llm-bench-pages</code>) → append <code>repo:port:container</code> to PAGES_SITES → <code>docker compose up -d 00-tea</code></p>`,
+<p class="meta">each site is a <code>pages/</code> compose service serving a repo's <code>gh-pages</code> branch (CI pushes the branch, the server syncs every 60s). add one: new compose service (see <code>browser-llm-bench-pages</code>) → append <code>repo:port:container</code> to PAGES_SITES → <code>docker compose up -d 2pizzas</code></p>`,
     script: `<script>window.__pageInit = function(){
 document.querySelectorAll('a.plink').forEach(a=>a.href=location.protocol+'//'+location.hostname+':'+a.dataset.port);
 };</script>`,

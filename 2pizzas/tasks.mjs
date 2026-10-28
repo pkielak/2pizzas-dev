@@ -19,7 +19,7 @@ export const running = new Map(); // task id -> { log }
 let active = 0;
 export const activeCount = () => active;
 
-const parseRefs = (text) => [...text.matchAll(/\[00-tea\] ref: (\S+) ([0-9a-f]{40}) ([0-9a-f]{40})/g)]
+const parseRefs = (text) => [...text.matchAll(/\[2pizzas\] ref: (\S+) ([0-9a-f]{40}) ([0-9a-f]{40})/g)]
   .map((m) => ({ ref: m[1], old: m[2], new: m[3] }));
 
 // the task's Gitea identity: work agents act as their own user; review
@@ -31,7 +31,7 @@ async function runTask(t) {
   const log = { text: '', file: logfile };
   running.set(t.id, log);
   // redact(): agents echo secrets in their bash tool calls (export
-  // AGENT_TOKEN=…) — scrub every 00-tea-held secret before it hits the log
+  // AGENT_TOKEN=…) — scrub every 2pizzas-held secret before it hits the log
   const say = (s) => { const r = redact(s); log.text += r; fs.appendFileSync(logfile, r); };
   let tokens = null; // captured from the filter's end-of-stream marker
   let tail = '';
@@ -79,11 +79,11 @@ async function runTask(t) {
       db.prepare('UPDATE tasks SET model=?, model_ctx=? WHERE id=?').run(modelFull, modelSel.ctx, t.id);
       say(`$ model: ${modelFull} (ctx ${modelSel.ctx}, ${modelSel.source})\n`);
       const syncWarn = await checkBakedSync(t.agent, modelSel);
-      if (syncWarn) say(`[00-tea] WARNING: ${syncWarn}\n`);
+      if (syncWarn) say(`[2pizzas] WARNING: ${syncWarn}\n`);
     }
 
     // 2. self-contained bootstrap script, executed INSIDE the job container.
-    //    No host-path bind mounts (00-tea talks to the host docker daemon, so
+    //    No host-path bind mounts (2pizzas talks to the host docker daemon, so
     //    container paths are not host paths). Clone as bot → authenticated
     //    remote, so agent commits/PRs attribute to the bot user.
     //
@@ -93,20 +93,20 @@ async function runTask(t) {
     // Enforcement: a finished agent must have taken a visible action (pushed
     // commits, opened a PR, or posted a reply). If it did none of that, post
     // a fallback error comment and flag the task as a failure (checked in
-    // runTask via the '[00-tea] no-action' marker).
+    // runTask via the '[2pizzas] no-action' marker).
     // agent-review: the reviewer writes /tmp/reply.md; it is echoed into the
-    // log between markers (00-tea posts it — the container has no write
+    // log between markers (2pizzas posts it — the container has no write
     // token) and a missing file fails the task.
     const enforce = t.kind === 'agent-review' ? `
 
 echo '$ enforcing: reviewer must have written a review'
 if [ -s /tmp/reply.md ]; then
-  echo '[00-tea] review-body-begin'
+  echo '[2pizzas] review-body-begin'
   cat /tmp/reply.md
   echo ''
-  echo '[00-tea] review-body-end'
+  echo '[2pizzas] review-body-end'
 else
-  echo '[00-tea] no-action: reviewer wrote no review' >&2
+  echo '[2pizzas] no-action: reviewer wrote no review' >&2
   exit 1
 fi
 ` : `
@@ -124,10 +124,10 @@ if [ -s /tmp/refs-before.txt ] && [ -s /tmp/refs-after.txt ] && ! cmp -s /tmp/re
     new=$(awk -v r="$ref" '$2==r{print $1}' /tmp/refs-after.txt)
     [ -n "$new" ] || continue
     [ "\${old:-0000000000000000000000000000000000000000}" = "$new" ] && continue
-    echo "[00-tea] ref: $ref \${old:-0000000000000000000000000000000000000000} $new"
+    echo "[2pizzas] ref: $ref \${old:-0000000000000000000000000000000000000000} $new"
     p=$(curl -sf -H "Authorization: token $AGENT_TOKEN" "$GITEA_API/repos/$GITEA_REPO/pulls?state=open&limit=50" 2>/dev/null \\
       | jq -r --arg bot "$BOT_NAME" --arg b "\${ref#refs/heads/}" '[.[] | select(.user.login == $bot and .head.ref == $b)] | first | .number' 2>/dev/null || true)
-    [ -n "$p" ] && [ "$p" != "null" ] && echo "[00-tea] pr: #$p"
+    [ -n "$p" ] && [ "$p" != "null" ] && echo "[2pizzas] pr: #$p"
   done
 fi
 if [ -z "$ACTION" ]; then
@@ -137,7 +137,7 @@ if [ -z "$ACTION" ]; then
   # which is always true for a non-empty A)
   if [ -n "$PRINFO" ] && [ "\${PRINFO%% #*}" \">" "$(cat /tmp/start-iso.txt)" ]; then
     ACTION="opened PR \${PRINFO#* }"
-    echo "[00-tea] pr: #\${PRINFO##*#}"
+    echo "[2pizzas] pr: #\${PRINFO##*#}"
   fi
 fi
 if [ -z "$ACTION" ]; then
@@ -147,15 +147,15 @@ if [ -z "$ACTION" ]; then
   fi
 fi
 if [ -s /tmp/reply.md ]; then
-  bash .00-tea/post-comment.sh "$TASK_ISSUE" /tmp/reply.md
-  echo '[00-tea] posted reply from /tmp/reply.md'
+  bash .2pizzas/post-comment.sh "$TASK_ISSUE" /tmp/reply.md
+  echo '[2pizzas] posted reply from /tmp/reply.md'
 elif [ -n "$ACTION" ]; then
-  echo "[00-tea] no reply file, but the agent already acted: $ACTION"
+  echo "[2pizzas] no reply file, but the agent already acted: $ACTION"
 else
-  echo '[00-tea] ERROR: agent took no action (no commit, no PR, no reply)' >&2
-  printf '%s\n' '[00-tea] The agent finished but took no visible action (no commit, PR, or reply). Re-run the request or check the task log on the 00-tea dashboard.' > /tmp/reply.md
-  bash .00-tea/post-comment.sh "$TASK_ISSUE" /tmp/reply.md
-  echo '[00-tea] no-action: fallback comment posted' >&2
+  echo '[2pizzas] ERROR: agent took no action (no commit, no PR, no reply)' >&2
+  printf '%s\n' '[2pizzas] The agent finished but took no visible action (no commit, PR, or reply). Re-run the request or check the task log on the 2pizzas dashboard.' > /tmp/reply.md
+  bash .2pizzas/post-comment.sh "$TASK_ISSUE" /tmp/reply.md
+  echo '[2pizzas] no-action: fallback comment posted' >&2
 fi
 `;
 
@@ -190,17 +190,17 @@ git config user.email "$BOT_EMAIL"
 # here is fatal — an empty snapshot would make the later diff a false
 # positive and mask a no-op agent)
 git ls-remote --heads origin > /tmp/refs-before.txt
-mkdir -p .00-tea
-cat > .00-tea/post-comment.sh <<'${dPost}'
+mkdir -p .2pizzas
+cat > .2pizzas/post-comment.sh <<'${dPost}'
 ${fs.readFileSync(path.join(assetsDir, 'post-comment.sh'), 'utf8').replace(/\n+$/, '')}
 ${dPost}
-cat > .00-tea/output_filter.mjs <<'${dJq}'
+cat > .2pizzas/output_filter.mjs <<'${dJq}'
 ${fs.readFileSync(path.join(assetsDir, 'output_filter.mjs'), 'utf8').replace(/\n+$/, '')}
 ${dJq}
-cat > .00-tea/opencode_filter.mjs <<'${dOc}'
+cat > .2pizzas/opencode_filter.mjs <<'${dOc}'
 ${fs.readFileSync(path.join(assetsDir, 'opencode_filter.mjs'), 'utf8').replace(/\n+$/, '')}
 ${dOc}
-chmod +x .00-tea/post-comment.sh
+chmod +x .2pizzas/post-comment.sh
 cat > /tmp/prompt.txt <<'${dPrompt}'
 ${prompt}
 ${dPrompt}
@@ -209,7 +209,7 @@ export PROMPT
 echo ''
 echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandbox'}${modelSel ? `, model ${modelSel.provider}/${modelSel.id}` : ''})'
 ` + ((t.agent === 'pi' || t.agent === 'infra') // infra is pi-based
-      ? `bash -o pipefail -c \'pi -p --mode json --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .00-tea/output_filter.mjs\'\n` +
+      ? `bash -o pipefail -c \'pi -p --mode json --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .2pizzas/output_filter.mjs\'\n` +
         // pi >= 0.82: the SESSION-end event is `agent_settled` — emitted in
         // prompt()'s finally, AFTER `agent_end` and all post-run processing
         // (retries, compaction). `agent_end` only closes the loop, so it is
@@ -218,16 +218,16 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         // (exhausted auto-retry) appears anywhere in the stream.
         'tail -n1 /tmp/agent-out.jsonl > /tmp/last-event.json\n' +
         'if ! grep -q \'"type":"agent_settled"\' /tmp/last-event.json; then\n' +
-        '  echo "[00-tea] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
+        '  echo "[2pizzas] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
         '  exit 1\nfi\n' +
         'if grep \'"type":"agent_end"\' /tmp/agent-out.jsonl | tail -n1 | grep -q \'"errorMessage"\' || grep -q \'"finalError"\' /tmp/agent-out.jsonl; then\n' +
-        '  echo "[00-tea] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
-        '  exit 1\nfi\necho "[00-tea] agent finished OK"'
-      : `bash -o pipefail -c 'opencode run --format json --auto --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | OPENCODE_MODEL="${modelSel.provider}/${modelSel.id}" node .00-tea/opencode_filter.mjs'\n` +
+        '  echo "[2pizzas] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
+        '  exit 1\nfi\necho "[2pizzas] agent finished OK"'
+      : `bash -o pipefail -c 'opencode run --format json --auto --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | OPENCODE_MODEL="${modelSel.provider}/${modelSel.id}" node .2pizzas/opencode_filter.mjs'\n` +
         'tail -n1 /tmp/agent-out.jsonl > /tmp/last-event.json\n' +
         `if grep -q '"type":"error"' /tmp/last-event.json || ! grep -q '"type":"step_finish"' /tmp/last-event.json; then\n` +
-        '  echo "[00-tea] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
-        '  exit 1\nfi\necho "[00-tea] agent finished OK"') + enforce;
+        '  echo "[2pizzas] ERROR: agent did not finish cleanly (see stream above)" >&2\n' +
+        '  exit 1\nfi\necho "[2pizzas] agent finished OK"') + enforce;
     const b64 = Buffer.from(bootstrap).toString('base64');
 
     say(`$ docker run --rm ${isInfra ? '(runc + host docker socket) ' : '--runtime=runsc '}${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
@@ -235,7 +235,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
     // 3. run the agent in a fresh container. Every agent runs in the gVisor
     // sandbox EXCEPT infra: it repairs the stack, so it runs on runc with the
     // host docker socket + the live infra repo mounted read-only (the docker
-    // socket is the trust boundary — same as 00-tea itself).
+    // socket is the trust boundary — same as 2pizzas itself).
     await new Promise((resolve, reject) => {
     const dockerArgs = [
       'run', '--rm',
@@ -251,7 +251,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
       '--add-host=gitea:host-gateway',
       '--add-host=host.docker.internal:host-gateway',
         // agent-review runs on the READ-ONLY token for everything (clone +
-        // API): the reviewer physically cannot push or post — 00-tea posts
+        // API): the reviewer physically cannot push or post — 2pizzas posts
         // its comment from the task log.
         '-e', `BOOTSTRAP_B64=${b64}`,
         '-e', `CLONE_URL=http://${id.login}:${id.token}@${CFG.giteaHost}/${t.repo}.git`,
@@ -267,7 +267,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
       const onOut = (d) => {
         const s = d.toString();
         say(s);
-        const m = /\[00-tea\] usage: model=\S+ tokens=(\d+)/.exec(tail + s); // filter's end-of-stream marker
+        const m = /\[2pizzas\] usage: model=\S+ tokens=(\d+)/.exec(tail + s); // filter's end-of-stream marker
         if (m) tokens = +m[1];
         tail = s.length > 80 ? s.slice(-80) : s;
       };
@@ -279,10 +279,10 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
 
     // enforcement result: the bootstrap posted a fallback comment when the
     // agent did nothing visible — surface that as a task failure
-    if (log.text.includes('[00-tea] no-action: fallback comment posted'))
+    if (log.text.includes('[2pizzas] no-action: fallback comment posted'))
       throw new Error('agent took no action (no commit/PR/reply) — fallback comment posted');
   } catch (e) {
-    say(`\n[00-tea] ERROR: ${e.message}\n`);
+    say(`\n[2pizzas] ERROR: ${e.message}\n`);
     throw e;
   } finally {
     if (tokens != null) db.prepare('UPDATE tasks SET tokens=? WHERE id=?').run(tokens, t.id);
@@ -294,9 +294,9 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
 
 async function afterTask(t) {
   if (t.kind === 'agent-review') {
-    // 00-tea posts the review itself (the container had no write token),
+    // 2pizzas posts the review itself (the container had no write token),
     // then acts on the verdict marker in the review body.
-    const m = /\[00-tea\] review-body-begin\n([\s\S]*?)\n\[00-tea\] review-body-end/.exec(readLog(t.id));
+    const m = /\[2pizzas\] review-body-begin\n([\s\S]*?)\n\[2pizzas\] review-body-end/.exec(readLog(t.id));
     if (!m) { console.log(`[review] task ${t.id}: no review body in log — chain stops`); return; }
     const body = m[1].trim();
     const postTok = { token: CFG.review.postToken }; // verdicts post AS the review user
@@ -308,7 +308,7 @@ async function afterTask(t) {
     const round = t.round ?? 1;
     if (round >= CFG.reviewMaxRounds) {
       await apiPost(`/repos/${t.repo}/issues/${t.issue}/comments`, {
-        body: `[00-tea] Review cycle exhausted: the reviewer still has concerns after ${round} round${round > 1 ? 's' : ''}. A human should take over.\n\n${MARKER}`,
+        body: `[2pizzas] Review cycle exhausted: the reviewer still has concerns after ${round} round${round > 1 ? 's' : ''}. A human should take over.\n\n${MARKER}`,
       }, postTok);
       console.log(`[review] task ${t.id}: verdict=fail at round cap (${CFG.reviewMaxRounds}) — cycle exhausted`);
       return;
@@ -348,6 +348,6 @@ export async function pump() {
   }
 }
 setKick(pump);
-// 2s tick is a safety net (e.g. tasks queued while 00-tea was down); the
+// 2s tick is a safety net (e.g. tasks queued while 2pizzas was down); the
 // usual path is the event kick from enqueue()/pump() above
 setInterval(pump, 2000).unref?.();

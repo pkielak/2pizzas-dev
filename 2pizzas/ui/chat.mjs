@@ -89,7 +89,7 @@ export async function chatListPage() {
 <h2>past sessions</h2>
 <div class="list">${past || '<div class="item"><div class="l2">none yet</div></div>'}</div>
 ${grantUi}
-<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 00-tea task API, but cannot push or post.'} chats die on 00-tea restart or after ${CFG.chatIdleMs / 60000} min idle — their transcripts stay readable under <i>past sessions</i>.</p>`;
+<p class="meta">each chat is a long-lived gVisor sandbox with one agent.${CFG.chatGiteaToken ? ` it has Gitea access as <code>${esc(CFG.chatLogin)}</code> (write where granted above)` : ' no Gitea token — it chats and can read the 2pizzas task API, but cannot push or post.'} chats die on 2pizzas restart or after ${CFG.chatIdleMs / 60000} min idle — their transcripts stay readable under <i>past sessions</i>.</p>`;
   return {
     html,
     script: `<script>window.__pageInit = function(){
@@ -166,7 +166,7 @@ const userMsg = (t) => { curText = null; addEl('muser', escH(t)); };
 const textBlock = () => { curText = addEl('mtext', ''); };
 const toolBlock = (name, arg) => addEl('mtool', '⚙ <b>' + escH(name) + '</b> <code>' + escH(String(arg).slice(0, 200)) + '</code>');
 const handle = (line) => {
-  let e; try { e = JSON.parse(line); } catch { if (line.startsWith('[00-tea]')) addEl('msettle', escH(line)); return; }
+  let e; try { e = JSON.parse(line); } catch { if (line.startsWith('[2pizzas]')) addEl('msettle', escH(line)); return; }
   // transcript events (user_message, text_block, tool_call, settle, error)
   // are replayed on (re)connect — they rebuild the FULL conversation;
   // live events (text_delta, thinking, working, tool_end, auto_retry) are
@@ -211,7 +211,7 @@ const es = new EventSource(auth('/chat/${c.id}/stream'));
 es.onopen = () => { box.innerHTML = ''; box.appendChild(statusEl); };
 es.onmessage = (ev) => handle(ev.data);
 // session ended (idle timeout / killed / container died): the server sends
-// the [00-tea] chat closed line JUST BEFORE this event, so the reason is
+// the [2pizzas] chat closed line JUST BEFORE this event, so the reason is
 // already on screen — freeze the UI in place instead of a silent redirect
 es.addEventListener('done', () => {
   es.close();

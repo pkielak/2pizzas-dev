@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 00-tea — webhook-driven agent dispatcher.
+ * 2pizzas — webhook-driven agent dispatcher.
  *
  * Replaces the Gitea Actions agent workflows (comment-assist / pr-review):
  *
@@ -11,7 +11,7 @@
  *     verdict <!-- review:pass --> → done
  *     verdict <!-- review:fail --> → rework (round N+1, original agent)
  *       → pushes → agent-review (round N+1) → … capped at REVIEW_MAX_ROUNDS
- *   Internal tasks (agent-review/rework) are enqueued by 00-tea itself, never
+ *   Internal tasks (agent-review/rework) are enqueued by 2pizzas itself, never
  *   via the webhook (the reviewer's comment carries the via:agent marker).
  *
  * This file is the HTTP router only — the logic lives in sibling modules:
@@ -113,7 +113,7 @@ const server = http.createServer(async (req, res) => {
     // with dark fallbacks (degrades gracefully if Gitea is down)
     const th = giteaTheme();
     return send(401, 'text/html',
-    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>chat token required — 00-tea</title>
+    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>chat token required — 2pizzas</title>
     <link rel="stylesheet" href="/assets/gitea-theme.css">
     <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
     h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
@@ -173,7 +173,7 @@ const server = http.createServer(async (req, res) => {
     // shows the form for correction — no auto-redirect, that would 401-loop
     const th = giteaTheme();
     return send(401, 'text/html',
-    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>token required — 00-tea</title>
+    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>token required — 2pizzas</title>
     <link rel="stylesheet" href="/assets/gitea-theme.css">
     <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
     h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
@@ -184,7 +184,7 @@ const server = http.createServer(async (req, res) => {
     button{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:7px;padding:9px 18px;cursor:pointer;font-size:14px}
     button:hover{border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}</style></head>
     <body>
-    <h2>00-tea is token-protected</h2>
+    <h2>2pizzas is token-protected</h2>
     <p id="hint">Enter your <code>UI_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
     this browser and sets a 30-day session cookie — you won't be asked again.
     You can also manage it from the <a href="/settings">settings page</a>.</p>
@@ -262,7 +262,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
     if (!chatAuthed(req, url, res)) return chat401();
     // live status overlaid on the persisted rows (a live session's row has
-    // ended_at NULL). chatSeq ids restart at 1 per 00-tea run, so overlay
+    // ended_at NULL). chatSeq ids restart at 1 per 2pizzas run, so overlay
     // ONLY the row whose created_at matches the live session's start — an
     // older row with the same id is a dead session that merely shares the id
     const rows = chatSessions().map((r) => {
@@ -399,7 +399,7 @@ const server = http.createServer(async (req, res) => {
     return send(200, 'application/json', JSON.stringify({ providers: await bakedProviderIds() }));
   if (url.pathname === '/api/backends' && req.method === 'POST')
     return backendApi(async () => { await addBackend(await readJson(req)); });
-  // reachability probe — tests from 00-tea's OWN vantage (the container that
+  // reachability probe — tests from 2pizzas's OWN vantage (the container that
   // calls the backend), not the host. POST = an arbitrary url (add-form, before
   // saving); GET :id/test = a saved backend. Always 200; the body carries
   // ok/models/error/hint so the UI can render the diagnostic.
@@ -507,11 +507,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(CFG.port, () => {
-  console.log(`[00-tea] listening on :${CFG.port}`);
-  console.log(`[00-tea] repos (poll fallback): ${managedRepos().join(', ') || '(none)'} — new repos self-enroll on @agent mention`);
-  console.log(`[00-tea] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode} review=${CFG.images.review}`);
-  console.log(`[00-tea] review chain: ${CFG.review.token ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no REVIEW_TOKEN)'}`);
-  console.log(`[00-tea] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
+  console.log(`[2pizzas] listening on :${CFG.port}`);
+  console.log(`[2pizzas] repos (poll fallback): ${managedRepos().join(', ') || '(none)'} — new repos self-enroll on @agent mention`);
+  console.log(`[2pizzas] images: pi=${CFG.images.pi} opencode=${CFG.images.opencode} review=${CFG.images.review}`);
+  console.log(`[2pizzas] review chain: ${CFG.review.token ? `enabled (max ${CFG.reviewMaxRounds} rounds)` : 'DISABLED (no REVIEW_TOKEN)'}`);
+  console.log(`[2pizzas] webhook secret: ${CFG.secret ? 'set' : 'NOT SET (dev mode: signatures not verified)'}`);
   (async () => {
     try {
       for (const b of readRegistry()) {

@@ -37,6 +37,6 @@ export async function enroll(repo) {
 }
 
 // startup: re-verify grants on every managed repo — new agent users on
-// migrated instances, env-list edits and repos added while 00-tea was down
+// migrated instances, env-list edits and repos added while 2pizzas was down
 for (const repo of managedRepos())
   grantRepo(repo).catch((e) => console.error(`[repos] ${repo}: ${e.message}`));

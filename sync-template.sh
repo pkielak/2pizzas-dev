@@ -10,7 +10,7 @@
 # Behavior (per repo, idempotent — no commit if nothing changed):
 #   - overwrites the template-managed files with agents-actions/
 #   - removes STALE files (superseded agent workflows — agent tasks moved
-#     to 00-tea webhooks and no longer live in repo workflows)
+#     to 2pizzas webhooks and no longer live in repo workflows)
 #   - leaves repo-specific workflows (ci.yml, ...) untouched
 #
 # NOTE: the agents-actions template is currently workflows-free (README only),
@@ -54,7 +54,7 @@ for repo in "$@"; do
   fi
 
   git -c user.name="$ADMIN_USER" -c user.email="${ADMIN_USER}@localhost" \
-      commit -qm "sync: prune agent workflows (moved to 00-tea webhooks)"
+      commit -qm "sync: prune agent workflows (moved to 2pizzas webhooks)"
   git push -q origin "HEAD:$branch"
   echo "   synced → $branch ($(git rev-parse --short HEAD))"
   cd /; rm -rf "$tmp"

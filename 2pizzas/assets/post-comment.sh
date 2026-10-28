@@ -28,5 +28,5 @@ curl -sf -X POST \
   "${GITEA_API}/repos/${GITEA_REPO}/issues/${num}/comments"
 echo
 echo "posted comment on ${GITEA_REPO}#${num}"
-# consume the input: 00-tea treats a surviving /tmp/reply.md as "not yet posted"
+# consume the input: 2pizzas treats a surviving /tmp/reply.md as "not yet posted"
 rm -f "$file"

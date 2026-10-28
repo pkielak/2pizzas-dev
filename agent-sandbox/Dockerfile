@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip cur
     && rm -rf /tmp/sgwarm /var/lib/apt/lists/*
 
 # Pre-configure tea (Gitea CLI)
-# Token is injected via env at runtime (see 00-tea bootstrap)
+# Token is injected via env at runtime (see 2pizzas bootstrap)
 # This just sets the endpoint so tea doesn't prompt
 ARG GITEA_HOST=host.docker.internal:3000
 ARG GITEA_USER=admin

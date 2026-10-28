@@ -16,14 +16,14 @@ import { liveBroadcast } from './live.mjs';
 //   pi : docker run -i … agent-sandbox:pi pi --mode rpc --model …
 //        JSONL over stdin/stdout (prompt / abort / followUp-while-busy)
 //
-// Both join the CHAT_NETWORK (00-tea's compose network) and are reached by
+// Both join the CHAT_NETWORK (2pizzas's compose network) and are reached by
 // container name — no host port publishing (a 127.0.0.1 publish is invisible
-// to 00-tea, which is itself a container).
+// to 2pizzas, which is itself a container).
 //
-// 00-tea is a dumb bridge: browser SSE ⇄ agent stream, POST message ⇄ agent
+// 2pizzas is a dumb bridge: browser SSE ⇄ agent stream, POST message ⇄ agent
 // command. Chat containers get NO Gitea token — they chat and can read the
-// 00-tea task API (via host.docker.internal), they cannot push or post.
-// Sessions are in-memory (a 00-tea restart abandons them — orphaned
+// 2pizzas task API (via host.docker.internal), they cannot push or post.
+// Sessions are in-memory (a 2pizzas restart abandons them — orphaned
 // tea-chat-* containers are reaped at startup, idle ones are killed after
 // CHAT_IDLE_MINUTES) but every session is RECORDED in the chat_sessions
 // table with its log file — the /chat page lists past sessions and
@@ -99,7 +99,7 @@ const chatLive = (c, ev) => {
 // response success acks, thinking/toolcall start-end pairs.
 const piLine = (c, raw) => {
   let e;
-  try { e = JSON.parse(raw); } catch { return chatSay(c, raw); } // [00-tea]/[stderr] markers
+  try { e = JSON.parse(raw); } catch { return chatSay(c, raw); } // [2pizzas]/[stderr] markers
   switch (e.type) {
     case 'agent_start': c.isStreaming = true; return chatLive(c, { type: 'working' });
     case 'agent_settled':
@@ -164,7 +164,7 @@ export const chatKill = (c, note) => {
   // (docker 29 no longer prints the container id on `docker run`)
   try { c.child.kill('SIGKILL'); } catch { /* already gone */ }
   if (c.name) execFile('docker', ['rm', '-f', c.name], () => { /* gone */ });
-  if (note) chatSay(c, `[00-tea] chat closed: ${note}`);
+  if (note) chatSay(c, `[2pizzas] chat closed: ${note}`);
   for (const res of [...c.clients]) {
     try { res.write('event: done\ndata: \n\n'); res.end(); } catch { /* gone */ }
   }
@@ -180,7 +180,7 @@ export const chatJson = (c) => ({
 });
 
 // ── persisted session records (chat_sessions) ───────────────────────────────
-// chatSeq ids restart at 1 on every 00-tea run, so a dead id resolves to the
+// chatSeq ids restart at 1 on every 2pizzas run, so a dead id resolves to the
 // NEWEST row carrying it (an older run's session with the same id is
 // shadowed — acceptable: ids are per-run by design)
 export const chatSessionRow = (id) => db
@@ -190,7 +190,7 @@ export const chatSessions = (limit = 100) => db
   .prepare('SELECT * FROM chat_sessions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
 
 // true iff this persisted row belongs to a LIVE session: chatSeq ids restart
-// at 1 per 00-tea run, so matching must compare created_at, not id alone
+// at 1 per 2pizzas run, so matching must compare created_at, not id alone
 // (sqlite stores 'YYYY-MM-DD HH:MM:SS' UTC)
 export const chatRowLive = (r) => {
   const live = chats.get(r.id);
@@ -217,7 +217,7 @@ export const chatHistory = (row) => {
 // The Gitea section is only present when CHAT_GITEA_TOKEN is configured —
 // with it, the agent acts as the separate "chat" user (see createChat env)
 const CHAT_SYSTEM = `You are an interactive assistant inside a disposable sandbox (bash + file tools, empty workspace /work).
-You can read the 00-tea dispatcher state (which runs the Gitea coding agents) via its read-only API:
+You can read the 2pizzas dispatcher state (which runs the Gitea coding agents) via its read-only API:
   curl -s http://${CFG.hostTailnet}:3001/api/tasks | jq '.[0:5]'
 Use it when asked about tasks, agents, models, or token usage.${CFG.chatGiteaToken ? `
 You have Gitea access as user "${CFG.chatLogin}" (token: $GITEA_TOKEN, API: $GITEA_URL):
@@ -240,7 +240,7 @@ export async function createChat(agent) {
     child: null, name: '',
   };
   // unique per session (NOT just the id): chatSeq restarts at 1 on every
-  // 00-tea restart, and a bare <id>.log would append new sessions onto
+  // 2pizzas restart, and a bare <id>.log would append new sessions onto
   // stale log files from previous runs
   const suffix = crypto.randomBytes(3).toString('hex');
   c.logFile = path.join(CFG.dataDir, 'chats', `${id}-${suffix}.log`);
@@ -253,13 +253,13 @@ export async function createChat(agent) {
     .run(id, agent, c.model, c.logFile).lastInsertRowid;
   // start marker in the transcript (replayed on reconnect, and the first
   // line of the saved history)
-  chatSay(c, `[00-tea] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}`);
+  chatSay(c, `[2pizzas] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}`);
 
   // Gitea access for the chat agent: separate "chat" user (audit separation
   // from task work). Write still requires a per-repo collaborator grant.
   // the tailnet IP (not the compose service name — the runsc sandbox can't
   // use Docker's built-in DNS — and NOT host.docker.internal: neither Gitea
-  // nor 00-tea is bound to the host-gateway, both are bound to the tailnet IP)
+  // nor 2pizzas is bound to the host-gateway, both are bound to the tailnet IP)
   const giteaEnv = CFG.chatGiteaToken
     ? ['-e', `GITEA_TOKEN=${CFG.chatGiteaToken}`, '-e', `GITEA_URL=http://${CFG.giteaHost}`]
     : [];
@@ -335,7 +335,7 @@ export function chatAbort(id) {
   c.child.stdin.write(JSON.stringify({ type: 'abort' }) + '\n');
 }
 
-// reap chat containers orphaned by a previous 00-tea run (they are plain
+// reap chat containers orphaned by a previous 2pizzas run (they are plain
 // docker containers — they outlive the dispatcher that spawned them) AND
 // close out their session rows (a kill-by-restart never ran chatKill, so
 // their ended_at is still NULL)
@@ -344,7 +344,7 @@ execFile('docker', ['ps', '-aq', '--filter', 'name=tea-chat-', '--format', '{{.I
     if (err) return;
     for (const cid of out.trim().split('\n')) if (cid) execFile('docker', ['rm', '-f', cid]);
   });
-db.prepare(`UPDATE chat_sessions SET ended_at=created_at, end_reason='00-tea restart' WHERE ended_at IS NULL`).run();
+db.prepare(`UPDATE chat_sessions SET ended_at=created_at, end_reason='2pizzas restart' WHERE ended_at IS NULL`).run();
 
 setInterval(() => {
   for (const c of [...chats.values()])

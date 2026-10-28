@@ -3,7 +3,7 @@
 // Same reason for existence as output_filter.mjs (the pi one): jq buffers
 // piped stdout until the process exits, so logs would arrive in one lump.
 // This reads stdin line by line and writes each match immediately, so
-// 00-tea's log (and the SSE live view) stream line by line.
+// 2pizzas's log (and the SSE live view) stream line by line.
 //
 // Event set (opencode run --format json): step_start, tool_use, text,
 // step_finish, error. Only the interesting ones are rendered.
@@ -43,9 +43,9 @@ process.stdin.on('data', (d) => {
   }
 });
 process.stdin.on('end', () => {
-  // final usage marker — parsed by 00-tea into the task row (UI shows ctx usage)
+  // final usage marker — parsed by 2pizzas into the task row (UI shows ctx usage)
   if (!failed && lastTokens != null) {
-    process.stdout.write(`\n[00-tea] usage: model=${process.env.OPENCODE_MODEL ?? 'unknown'} tokens=${lastTokens}\n`);
+    process.stdout.write(`\n[2pizzas] usage: model=${process.env.OPENCODE_MODEL ?? 'unknown'} tokens=${lastTokens}\n`);
   }
   process.exit(0);
 });

@@ -2,7 +2,7 @@
 // Streaming log filter for `pi -p --mode json` output (replaces the old
 // output_filter.jq). jq buffers its output when stdout is a pipe — logs
 // arrived in one lump when the agent finished. This reads stdin line by
-// line and writes each match immediately, so 00-tea's log (and the SSE
+// line and writes each match immediately, so 2pizzas's log (and the SSE
 // live view) stream line by line.
 let buf = '';
 let lastMsg = null; // last assistant message (carries final usage + model)
@@ -36,10 +36,10 @@ process.stdin.on('data', (d) => {
   }
 });
 process.stdin.on('end', () => {
-  // final usage marker — parsed by 00-tea into the task row (UI shows ctx usage)
+  // final usage marker — parsed by 2pizzas into the task row (UI shows ctx usage)
   const u = lastMsg?.usage;
   if (u && u.totalTokens != null) {
-    process.stdout.write(`\n[00-tea] usage: model=${lastMsg.model ?? 'unknown'} tokens=${u.totalTokens}\n`);
+    process.stdout.write(`\n[2pizzas] usage: model=${lastMsg.model ?? 'unknown'} tokens=${u.totalTokens}\n`);
   }
   process.exit(0);
 });
