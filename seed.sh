@@ -146,7 +146,7 @@ done
 #  - AGENT_REVIEW_POST_TOKEN: write — held by 2pizzas ONLY
 if token_usable "${AGENT_REVIEW_TOKEN:-}"; then echo "AGENT_REVIEW_TOKEN: ok"; skip
 else
-  val=$(gen_token "$AGENT_REVIEW_NAME" "2pizzas-$AGENT_REVIEW_NAME" read:repository)
+  val=$(gen_token "$AGENT_REVIEW_NAME" "2pizzas-$AGENT_REVIEW_NAME" "read:repository,read:issue")
   set_env AGENT_REVIEW_TOKEN "$val"; echo "AGENT_REVIEW_TOKEN: generated (read:repository) → written to .env"
 fi
 if token_usable "${AGENT_REVIEW_POST_TOKEN:-}"; then echo "AGENT_REVIEW_POST_TOKEN: ok"; skip
