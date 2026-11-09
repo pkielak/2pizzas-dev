@@ -187,7 +187,7 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
     $SUDO ufw route allow in on any to "${BRIDGE_SUBNET:-172.18.0.0/16}" || ok_all=0
     $SUDO ufw route allow in on any to 172.17.0.0/16 || ok_all=0
     # Interface-scoped port allows (compose binds 0.0.0.0; ufw scopes reachability)
-    local PORTS="3000,3001,3002,3004,3443,3444"
+    local PORTS="22,3000,3001,3002,3004,3443,3444,6767"
     $SUDO ufw allow in on lo to any port $PORTS proto tcp || ok_all=0
     if ip link show tailscale0 >/dev/null 2>&1; then
       $SUDO ufw allow in on tailscale0 to any port $PORTS proto tcp || ok_all=0
@@ -210,7 +210,7 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
     warn "run manually:"
     warn "  $SUDO ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
     warn "  $SUDO ufw route allow in on any to 172.17.0.0/16"
-    warn "  $SUDO ufw allow in on lo to any port 3000,3001,3002,3004,3443,3444 proto tcp"
+    warn "  $SUDO ufw allow in on lo to any port 22,3000,3001,3002,3004,3443,3444,6767 proto tcp"
   fi
 else
   ok "no active ufw firewall — ports are reachable on all interfaces (consider enabling ufw for hardening)"
