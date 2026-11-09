@@ -41,11 +41,9 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      # bound to the tailnet + LAN IPs (set in .env) + loopback for host-side
-      # tooling (seed.sh, setup.sh) — never 0.0.0.0
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3000:3000"
-      - "${HOST_LAN:?set HOST_LAN in .env}:3000:3000"
-      - "127.0.0.1:3000:3000"
+      # 0.0.0.0 bind (always succeeds at boot) — reachability is scoped by
+      # ufw interface rules (setup.sh): lo + tailscale0 + LAN only
+      - "3000:3000"
     depends_on:
       - db
 
@@ -77,10 +75,8 @@ services:
     networks:
       - gitea
     ports:
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3002:8080"
-      - "${HOST_LAN:?set HOST_LAN in .env}:3002:8080"
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3443:8443"
-      - "${HOST_LAN:?set HOST_LAN in .env}:3443:8443"
+      - "3002:8080"
+      - "3443:8443"
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
@@ -102,10 +98,8 @@ services:
     networks:
       - gitea
     ports:
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3004:8080"
-      - "${HOST_LAN:?set HOST_LAN in .env}:3004:8080"
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3444:8443"   # same tailnet cert as :3443 (port is not in TLS names)
-      - "${HOST_LAN:?set HOST_LAN in .env}:3444:8443"
+      - "3004:8080"
+      - "3444:8443"   # same tailnet cert as :3443 (port is not in TLS names)
     volumes:
       - ./pages/certs:/etc/nginx/certs:ro
     depends_on:
@@ -191,15 +185,9 @@ services:
       - INFRA_HOST_REPO=${INFRA_HOST_REPO:-}
       - INFRA_COOLDOWN_MINUTES=${INFRA_COOLDOWN_MINUTES:-15}
       - GITEA_API=http://gitea:3000/api/v1
-      # job containers reach Gitea via this (clone + API). It MUST be an IP
-      # Gitea is actually BOUND to — the port map above binds Gitea to
-      # ${HOST_TAILNET} (not the host-gateway), so host.docker.internal:3000
-      # would be refused (nothing listens on the gateway IP). Use the tailnet
-      # IP: self-consistent with the binding, stable, container-reachable.
-      - GITEA_HOST=${HOST_TAILNET:?set HOST_TAILNET in .env}:3000
-      # chat containers (runsc, no DNS) reach Gitea/2pizzas via this tailnet IP
-      # (both services are bound to it) — not the host-gateway
-      - HOST_TAILNET=${HOST_TAILNET:?set HOST_TAILNET in .env}
+      # job/chat containers reach Gitea via host.docker.internal (= the bridge
+      # gateway) — Gitea binds 0.0.0.0 so the gateway IP is always covered
+      - GITEA_HOST=host.docker.internal:3000
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
       - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 2pizzas runs pi on a loadable model
       - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)
@@ -236,8 +224,7 @@ services:
       - ./inference.json:/app/inference.json
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "${HOST_TAILNET:?set HOST_TAILNET in .env}:3001:3001"   # reachable on the tailnet: http://<host>.<tailnet>.ts.net:3001
-      - "${HOST_LAN:?set HOST_LAN in .env}:3001:3001"
-      - "127.0.0.1:3001:3001"   # loopback for host-side checks (setup.sh healthz)
+      # 0.0.0.0 bind — reachability scoped by ufw (lo + tailscale0 + LAN)
+      - "3001:3001"
     depends_on:
       - server

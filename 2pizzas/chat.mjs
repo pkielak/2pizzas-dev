@@ -218,7 +218,7 @@ export const chatHistory = (row) => {
 // with it, the agent acts as the separate "chat" user (see createChat env)
 const CHAT_SYSTEM = `You are an interactive assistant inside a disposable sandbox (bash + file tools, empty workspace /work).
 You can read the 2pizzas dispatcher state (which runs the Gitea coding agents) via its read-only API:
-  curl -s http://${CFG.hostTailnet}:3001/api/tasks | jq '.[0:5]'
+  curl -s http://host.docker.internal:3001/api/tasks | jq '.[0:5]'
 Use it when asked about tasks, agents, models, or token usage.${CFG.chatGiteaToken ? `
 You have Gitea access as user "${CFG.chatLogin}" (token: $GITEA_TOKEN, API: $GITEA_URL):
   clone:  git clone http://${CFG.chatLogin}:$GITEA_TOKEN@${CFG.giteaHost}/OWNER/REPO

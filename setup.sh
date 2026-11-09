@@ -181,22 +181,40 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
   # and kill the wizard — the subnet is only a cosmetic hint in the warning
   BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null) || true
   warn "ufw is active — without FORWARD to the Docker bridges the stack is silently broken (containers can't reach the host: published ports, embedded DNS, and job-container git clones all fail)"
-  if yesno "apply the two ufw route-allow rules now? (needs $SUDO)" y; then
-    # both must succeed; a failure here is NOT fatal (operator can run manually)
-    if $SUDO ufw route allow in on any to "${BRIDGE_SUBNET:-172.18.0.0/16}" \
-        && $SUDO ufw route allow in on any to 172.17.0.0/16; then
-      ok "ufw route rules applied: ${BRIDGE_SUBNET:-172.18.0.0/16} + 172.17.0.0/16"
+  if yesno "apply ufw rules now? (FORWARD routes + interface-scoped port allows; needs $SUDO)" y; then
+    local ok_all=1
+    # FORWARD routes (Docker bridge traffic)
+    $SUDO ufw route allow in on any to "${BRIDGE_SUBNET:-172.18.0.0/16}" || ok_all=0
+    $SUDO ufw route allow in on any to 172.17.0.0/16 || ok_all=0
+    # Interface-scoped port allows (compose binds 0.0.0.0; ufw scopes reachability)
+    local PORTS="3000,3001,3002,3004,3443,3444"
+    $SUDO ufw allow in on lo to any port $PORTS proto tcp || ok_all=0
+    if ip link show tailscale0 >/dev/null 2>&1; then
+      $SUDO ufw allow in on tailscale0 to any port $PORTS proto tcp || ok_all=0
+    fi
+    # LAN interface (first non-lo, non-tailscale interface with a global addr)
+    local LAN_IF=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $2}' | head -1) || true
+    if [[ -n $LAN_IF ]]; then
+      $SUDO ufw allow in on "$LAN_IF" to any port $PORTS proto tcp || ok_all=0
+    fi
+    if [[ $ok_all -eq 1 ]]; then
+      ok "ufw rules applied: FORWARD routes + port $PORTS on lo${LAN_IF:+, $LAN_IF}${tailscale0:+, tailscale0}"
     else
-      err "ufw rules not applied ($SUDO failed / not authorized) — run manually:"
+      err "some ufw rules failed ($SUDO / not authorized) — run manually:"
       warn "  $SUDO ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
       warn "  $SUDO ufw route allow in on any to 172.17.0.0/16"
+      warn "  $SUDO ufw allow in on lo to any port $PORTS proto tcp"
+      [[ -n ${LAN_IF:-} ]] && warn "  $SUDO ufw allow in on $LAN_IF to any port $PORTS proto tcp"
     fi
   else
     warn "run manually:"
     warn "  $SUDO ufw route allow in on any to ${BRIDGE_SUBNET:-172.18.0.0/16}"
     warn "  $SUDO ufw route allow in on any to 172.17.0.0/16"
+    warn "  $SUDO ufw allow in on lo to any port 3000,3001,3002,3004,3443,3444 proto tcp"
   fi
-else ok "no active ufw firewall"; fi
+else
+  ok "no active ufw firewall — ports are reachable on all interfaces (consider enabling ufw for hardening)"
+fi
 
 # disk space — image builds + models need room
 AVAIL_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -d 'BG ')
@@ -397,8 +415,6 @@ CHAT_CPUS=2
 # cap for one-shot agent job containers (1 concurrent) — protects llama.cpp's cores
 AGENT_CPUS=2
 PAGES_SITES=
-HOST_TAILNET=
-HOST_LAN=
 EOF
   ok ".env created"
 fi
@@ -420,21 +436,7 @@ for k in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB GITEA_URL ADMIN_USER LLAMA_
 done
 ok ".env complete"
 
-# Port binding: compose binds service ports to these interface IPs only
-# (never 0.0.0.0) — auto-detect the tailnet + LAN addresses as defaults
-# || true: no such interface / no global address → the pipe fails, which would
-# kill the script under set -e; an empty IP just means "no detected default"
-TAIL_IP=$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1) || true
-LAN_IP=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $4}' | cut -d/ -f1 | head -1) || true
-for k in HOST_TAILNET HOST_LAN; do
-  v=$(env_get "$k")
-  if [[ -z $v ]]; then
-    d=$([[ $k == HOST_TAILNET ]] && echo "$TAIL_IP" || echo "$LAN_IP")
-    ask "$k (interface IP for port binding; empty = compose up fails)" "$d" v
-    set_env "$k" "$v"
-    [[ -n $v ]] && ok "$k: $v" || warn "$k empty — docker compose up will fail until it is set"
-  fi
-done
+
 v=$(env_get UI_TOKEN)
 if [[ -z $v ]]; then
   v=$(gen_password); set_env UI_TOKEN "$v"
@@ -594,7 +596,7 @@ cat <<EOF
   $C_INFO What's running:$C_RST
     Gitea        $GURL          (admin: $(env_get ADMIN_USER) — password in .env)
     2pizzas UI    http://127.0.0.1:3001  (dashboard — unlock with UI_TOKEN from .env)
-    ports        bound to $(env_get HOST_TAILNET) (tailnet) + $(env_get HOST_LAN) (LAN) only
+    ports        0.0.0.0 bind, reachability scoped by ufw (lo + tailscale0 + LAN)
 
   $C_INFO Try it:$C_RST
     1. open $GURL/$(env_get ADMIN_USER)/2pizzas-dev
