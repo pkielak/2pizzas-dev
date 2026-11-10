@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { CFG } from './config.mjs';
+import { CFG, isHostLocal } from './config.mjs';
 import { db } from './db.mjs';
 import { pickModel } from './inference.mjs';
 import { redact } from './redact.mjs';
@@ -56,6 +56,7 @@ export const CHAT_COOKIE = 'tea_chat_token';
 export const chatAuthed = (req, url, res) => {
   const toks = [CFG.chatToken, CFG.uiToken].filter(Boolean);
   if (!toks.length) return true;
+  if (isHostLocal(req)) return true; // SSH TUI / local curl — see config.mjs
   const cookies = (req.headers.cookie || '').split('; ');
   const c = cookies.find((x) => x.startsWith(`${CHAT_COOKIE}=`));
   if (c && toks.includes(c.slice(CHAT_COOKIE.length + 1))) return true;

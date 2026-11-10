@@ -38,6 +38,7 @@
  *   GET  /pages        gh-pages sites (last deployed commit per site)
  *   GET  /stats        usage stats (tasks, tokens, models, daily activity)
  *   GET  /backends     agents + inference providers (current setup)
+ *   GET  /api/backends              list backends (no apiKey — for API clients/TUI)
  *   POST   /api/backends              add backend {id,url,apiKey,defaultModel}
  *   PATCH  /api/backends/:id          update fields
  *   POST   /api/backends/:id/up|down  reorder priority
@@ -67,7 +68,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
-import { CFG } from './config.mjs';
+import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { managedRepos } from './repos.mjs';
 import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
@@ -159,6 +160,7 @@ const server = http.createServer(async (req, res) => {
   const uiAuthed = (req, url, res) => {
     const toks = [CFG.uiToken, CFG.chatToken].filter(Boolean);
     if (!toks.length) return true;
+    if (isHostLocal(req)) return true; // SSH TUI / local curl — see config.mjs
     const cookies = (req.headers.cookie || '').split('; ');
     const c = cookies.find((x) => x.startsWith(`${UI_COOKIE}=`));
     if (c && toks.includes(c.slice(UI_COOKIE.length + 1))) return true;
@@ -397,6 +399,10 @@ const server = http.createServer(async (req, res) => {
   };
   if (url.pathname === '/api/backends/baked' && req.method === 'GET')
     return send(200, 'application/json', JSON.stringify({ providers: await bakedProviderIds() }));
+  // list backends as JSON (apiKey redacted) — the /backends page renders the
+  // registry server-side, but API clients (the TUI) need a plain list
+  if (url.pathname === '/api/backends' && req.method === 'GET')
+    return send(200, 'application/json', JSON.stringify(readRegistry().map(({ apiKey, ...rest }) => rest)));
   if (url.pathname === '/api/backends' && req.method === 'POST')
     return backendApi(async () => { await addBackend(await readJson(req)); });
   // reachability probe — tests from 2pizzas's OWN vantage (the container that

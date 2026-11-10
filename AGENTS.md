@@ -146,7 +146,11 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   truncate+write), applies to the next task without a restart; a "not baked"
   badge marks backends missing from the agent images (`GET
   /api/backends/baked`) until `./setup.sh --rebuild`),
-  per-task logs in `data-2pizzas/logs/<id>.log`, `GET /api/tasks`. Running
+  per-task logs in `data-2pizzas/logs/<id>.log`, `GET /api/tasks`. There is also a
+  zero-dependency terminal TUI (`2pizzas/tui.mjs`, run with plain `node`) over the
+  same API for SSH sessions: tasks/backends/chats tabs, live SSE task-log tail,
+  chat with input; `GET /api/backends` (JSON list, apiKey redacted) is its backend
+  source. Running
   tasks show a **live log view**: `GET /task/:id/stream` is an SSE tail that
   emits each log line as it hits the file. The whole path is unbuffered:
   pi prints JSON lines live → `output_filter.mjs` (node) writes each match
@@ -219,7 +223,16 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   orphaned rows (`2pizzas restart`). Optional `UI_TOKEN` gates the WHOLE
   2pizzas UI (every page + API; `/webhook`, `/healthz` and the theme asset
   bypass; `CHAT_TOKEN` is accepted as the value and as a fallback when
-  `UI_TOKEN` is unset — the UI is tailnet-reachable). Token UX: the 401 is
+  `UI_TOKEN` is unset — the UI is tailnet-reachable). **Host-local
+  connections bypass the gate** (`isHostLocal()` in config.mjs): Docker's DNAT
+  rewrites host-originated sources to the bridge gateway, so a connection
+  whose source IP is the container's default-route gateway (read from
+  `/proc/net/route` at startup) is the host — the SSH TUI and local curl work
+  bare, while tailscale/LAN clients keep their real source IPs and stay
+  token-gated. The chat containers' `host.docker.internal` task-API reads ride
+  the same bypass (their source IS the gateway). `UI_TRUST_LOCAL=0` in `.env`
+  disables the bypass (multi-user hosts — then the TUI/curl need `UI_TOKEN`
+  explicitly). Token UX: the 401 is
   an UNLOCK form (a just-rejected token shows the form instead of
   auto-redirecting — that would loop), the token is stored in browser
   localStorage, and a request authenticated via `?token=`/`x-ui-token`
@@ -306,6 +319,7 @@ docker compose up -d <service>        # recreates — REQUIRED after env/config 
 docker compose down
 
 # 2pizzas (the dispatcher)
+node 2pizzas/tui.mjs                    # zero-dep TUI (tasks/backends/chats); env: PIZZAS_URL, UI_TOKEN (only for remote PIZZAS_URL)
 curl -s http://127.0.0.1:3001/healthz
 curl -s http://127.0.0.1:3001/api/tasks | jq
 #   task log: data-2pizzas/logs/<id>.log

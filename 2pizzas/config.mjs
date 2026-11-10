@@ -1,4 +1,30 @@
 // 2pizzas configuration — everything is env-injected by docker-compose (.env).
+import fs from 'node:fs';
+
+// Host-local bypass for the UI/chat token gates: Docker's DNAT rewrites
+// host-originated sources (127.0.0.1:3001 — the SSH TUI, local curl) to the
+// bridge gateway, so "local" == "source IP is our default-route gateway".
+// Remote clients (tailscale/LAN — the ports are ufw-scoped to lo+tail+LAN)
+// keep their real source IPs and stay token-gated. Someone already on the
+// host has root anyway, so this widens nothing. Opt out with
+// UI_TRUST_LOCAL=0 (e.g. a multi-user host with untrusted local users —
+// then pass UI_TOKEN to the TUI/curl explicitly).
+const hostGateway = (() => {
+  try {
+    for (const r of fs.readFileSync('/proc/net/route', 'utf8').trim().split('\n').slice(1)) {
+      const [, dest, gw] = r.trim().split(/\s+/);
+      if (dest === '00000000' && gw !== '00000000')
+        return [6, 4, 2, 0].map((s) => parseInt(gw.slice(s, s + 2), 16)).join('.');
+    }
+  } catch { /* not linux? */ }
+  return null;
+})();
+export const isHostLocal = (req) => {
+  if (process.env.UI_TRUST_LOCAL === '0') return false;
+  const ip = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  return !!hostGateway && ip === hostGateway;
+};
+
 export const CFG = {
   port: +(process.env.PORT || 3001),
   dataDir: process.env.DATA_DIR || '/data',

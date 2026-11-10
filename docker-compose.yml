@@ -196,6 +196,7 @@ services:
       # optional gate for the /chat pages+API (the UI is tailnet-reachable)
       - CHAT_TOKEN=${CHAT_TOKEN:-}
       - UI_TOKEN=${UI_TOKEN:-}         # whole-UI gate (falls back to CHAT_TOKEN)
+      - UI_TRUST_LOCAL=${UI_TRUST_LOCAL:-1}  # 0 = disable the host-local (SSH TUI / local curl) gate bypass
       # /chat agents act as the separate "chat" Gitea user (audit separation
       # from task work); per-repo write access is granted from the /chat UI
       # (chat name + token are in AGENT_CHAT_NAME / AGENT_CHAT_TOKEN above)
