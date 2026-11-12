@@ -178,6 +178,23 @@ actually changed.
 | Gitea API | `curl -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/...` |
 | Push template updates into repos | edit `agents-actions/` → `./sync-template.sh owner/repo [...]` |
 
+## GitHub mirror
+
+`.gitea/workflows/mirror-to-github.yaml` mirrors `main` to GitHub on every
+push (one-way — Gitea is the source of truth). It force-pushes, so
+GitHub-only commits are clobbered on purpose; the run also has a manual
+trigger (workflow dispatch) for one-off syncs after a history rewrite.
+
+Setup (once, in the Gitea repo settings):
+
+| Where | Name | Value |
+|---|---|---|
+| Repository → **Secrets** | `MIRROR_TOKEN` | a GitHub PAT/token with `repo` scope for the target account |
+| Repository → **Variables** | `MIRROR_REPO` | `owner/repo` of the GitHub target (defaults to `your-github/repo`) |
+
+The token is never committed — the workflow reads it from the runner's
+`secrets.MIRROR_TOKEN`.
+
 ## How the agents work
 
 A `@pi` / `@opencode` mention on an issue or PR in a managed repo triggers a
