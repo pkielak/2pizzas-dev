@@ -182,6 +182,9 @@ main.app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:
 .item{display:block;text-decoration:none;color:inherit;padding:11px 15px;background:var(--surface);border-bottom:2px solid var(--line)}
 .item:last-child{border-bottom:none}
 .item:hover{background:var(--cheese);color:var(--cheese-ink)}
+/* inner muted lines don't inherit — darken them on hover too (gray-on-
+   cheese is unreadable in dark mode) */
+.item:hover .l2,.item:hover .meta{color:var(--cheese-ink)}
 .l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;font-size:13.5px}
 .l2{color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.5}
 .err{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin-top:3px;word-break:break-word}
