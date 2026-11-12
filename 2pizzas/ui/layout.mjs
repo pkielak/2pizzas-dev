@@ -54,7 +54,7 @@ export const THEME_CSS = `:root{
 html[data-theme=dark]{
   --bg:var(--crust);--surface:#1c1c1c;--ink:#f5f5f5;--muted:#b0b0b0;--muted-2:#8a8a8a;--faint:#666;
   --line:#f5f5f5;--shadow:#666;--track:#2a2a2a;
-  --cheese:#96752f;--cheese-ink:var(--light);
+  --cheese:#eeddb2;--cheese-ink:var(--crust);
   --nav-active-bg:var(--cheese);--nav-active-ink:var(--cheese-ink);
   --color-text-2:#ccc;
   --color-secondary-alpha-20:#222;
