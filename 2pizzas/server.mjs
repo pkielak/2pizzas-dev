@@ -75,8 +75,8 @@ import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBacke
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatHistory, chatRowLive } from './chat.mjs';
-import { page } from './ui/layout.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive } from './chat.mjs';
+import { page, THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
 import { tasksPage, taskPage } from './ui/tasks.mjs';
@@ -110,22 +110,20 @@ const server = http.createServer(async (req, res) => {
   // JUST rejected (it's in the URL), don't auto-redirect with the saved
   // one — that would 401→redirect→401 loop; show the form for a correction
   const chat401 = () => {
-    // theme-aware like the rest of the UI: Gitea theme CSS + --color-* vars
-    // with dark fallbacks (degrades gracefully if Gitea is down)
-    const th = giteaTheme();
     return send(401, 'text/html',
-    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>chat token required — 2pizzas</title>
-    <link rel="stylesheet" href="/assets/gitea-theme.css">
-    <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
-    h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
-    a{color:var(--color-primary-light-2,#7ab)}
-    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd)}
-    input[type=password]::placeholder{color:var(--color-text-light-4,#777)}
-    input[type=password]:focus{outline:none;border-color:var(--color-primary,#7ab)}
-    button{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:7px;padding:9px 18px;cursor:pointer;font-size:14px}
-    button:hover{border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}</style></head>
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${THEME_SCRIPT}
+    <title>chat token required — 2pizzas</title>
+    <style>${THEME_CSS}
+    body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);max-width:60ch;margin:4em auto;padding:0 16px}
+    h2{font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:-.02em}
+    a{color:var(--sauce);font-weight:600}
+    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink)}
+    input[type=password]::placeholder{color:var(--faint)}
+    input[type=password]:focus{outline:none;box-shadow:3px 3px 0 var(--sauce)}
+    button{background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);padding:9px 18px;cursor:pointer;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
+    button:hover{background:var(--cheese);color:var(--crust);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
     <body>
-    <h2>chat is token-protected</h2>
+    <h2>🍕 chat is token-protected</h2>
     <p id="hint">Enter your <code>CHAT_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
     this browser and sets a 30-day session cookie — you won't be asked again.
     You can also manage it from the <a href="/settings">settings page</a>.</p>
@@ -173,20 +171,20 @@ const server = http.createServer(async (req, res) => {
   const ui401 = () => {
     // same unlock-form UX as chat401: a just-rejected token (in the URL)
     // shows the form for correction — no auto-redirect, that would 401-loop
-    const th = giteaTheme();
     return send(401, 'text/html',
-    `<!doctype html><html data-theme="${th.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>token required — 2pizzas</title>
-    <link rel="stylesheet" href="/assets/gitea-theme.css">
-    <style>body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--color-body,#111);color:var(--color-text,#ddd);max-width:60ch;margin:4em auto;padding:0 16px}
-    h2{font-size:20px;font-weight:700;letter-spacing:-.01em}
-    a{color:var(--color-primary-light-2,#7ab)}
-    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--color-input-background,#0c0c0c);border:1px solid var(--color-input-border,#333);border-radius:8px;color:var(--color-input-text,#ddd)}
-    input[type=password]::placeholder{color:var(--color-text-light-4,#777)}
-    input[type=password]:focus{outline:none;border-color:var(--color-primary,#7ab)}
-    button{background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);color:var(--color-button-secondary-text,#ddd);border-radius:7px;padding:9px 18px;cursor:pointer;font-size:14px}
-    button:hover{border-color:var(--color-primary,#7ab);color:var(--color-text,#fff)}</style></head>
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${THEME_SCRIPT}
+    <title>token required — 2pizzas</title>
+    <style>${THEME_CSS}
+    body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);max-width:60ch;margin:4em auto;padding:0 16px}
+    h2{font-size:22px;font-weight:900;text-transform:uppercase;letter-spacing:-.02em}
+    a{color:var(--sauce);font-weight:600}
+    input[type=password]{width:100%;box-sizing:border-box;padding:9px 11px;margin:12px 0;font-size:14px;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink)}
+    input[type=password]::placeholder{color:var(--faint)}
+    input[type=password]:focus{outline:none;box-shadow:3px 3px 0 var(--sauce)}
+    button{background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);padding:9px 18px;cursor:pointer;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
+    button:hover{background:var(--cheese);color:var(--crust);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
     <body>
-    <h2>2pizzas is token-protected</h2>
+    <h2>🍕 2pizzas is token-protected</h2>
     <p id="hint">Enter your <code>UI_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
     this browser and sets a 30-day session cookie — you won't be asked again.
     You can also manage it from the <a href="/settings">settings page</a>.</p>
@@ -274,10 +272,14 @@ const server = http.createServer(async (req, res) => {
     });
     return send(200, 'application/json', JSON.stringify(rows));
   }
-  const chatHistoryMatch = url.pathname.match(/^\/api\/chat\/(\d+)\/history$/);
+  // r<rowid> = a specific persisted session (rowid is the only globally
+  // unique key — chatSeq ids restart per run, so a bare id shadows older rows)
+  const chatHistoryMatch = url.pathname.match(/^\/api\/chat\/(r)?(\d+)\/history$/);
   if (chatHistoryMatch && req.method === 'GET') {
     if (!chatAuthed(req, url, res)) return chat401();
-    const row = chatSessionRow(+chatHistoryMatch[1]);
+    const row = chatHistoryMatch[1] === 'r'
+      ? chatSessionByRowid(+chatHistoryMatch[2])
+      : chatSessionRow(+chatHistoryMatch[2]);
     if (!row) return send(404, 'application/json', JSON.stringify({ error: 'no such session' }));
     return send(200, 'application/json', JSON.stringify({ session: row, lines: chatHistory(row) }));
   }
@@ -349,14 +351,19 @@ const server = http.createServer(async (req, res) => {
     if (c.dead) { res.write('event: done\ndata: \n\n'); res.end(); }
     return;
   }
-  const chatPageMatch = url.pathname.match(/^\/chat\/(\d+)$/);
+  const chatPageMatch = url.pathname.match(/^\/chat\/(r)?(\d+)$/);
   if (chatPageMatch) {
     if (!chatAuthed(req, url, res)) return chat401();
-    const c = chats.get(+chatPageMatch[1]);
-    if (c) return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
-    // dead session — read-only transcript from its log
-    const row = chatSessionRow(+chatPageMatch[1]);
+    const byRowid = chatPageMatch[1] === 'r';
+    const row = byRowid
+      ? chatSessionByRowid(+chatPageMatch[2])
+      : chatSessionRow(+chatPageMatch[2]);
     if (!row) return send(404, 'text/plain', 'no such chat');
+    const c = chats.get(row.id);
+    // r<rowid> of a live row → the live view; a bare id never shadows
+    if (c && (!byRowid || chatRowLive(row)))
+      return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
+    // dead session — read-only transcript from its log
     return send(200, 'text/html', page(`chat ${row.id} (ended)`, chatHistoryView(row), { auto: false, nav: 'chat', app: true }));
   }
   // clear the chat session cookie (authenticates via cookie/param, then

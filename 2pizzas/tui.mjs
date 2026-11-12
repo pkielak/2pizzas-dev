@@ -3,13 +3,20 @@
 // as the web UI. Run:  node 2pizzas/tui.mjs
 //   env: PIZZAS_URL (default http://127.0.0.1:3001), UI_TOKEN (if the UI is gated)
 //
-// Views:  0 home (default) · 1 tasks · 2 backends · 3 chats
+// Home boots. `c` opens the chat REPL (claude / pi coding-agent TUI
+// style) — type to talk, /commands to control:
+//   /new /stop /model /clear /task <id> /tasks /backends /chats /home
+//   /help /quit
+//   esc in chat   = clear input / abort the turn (a dead chat: back to the list)
+//   esc in a list = back to the chat you came from (else no-op)
+//   in chat `q` is a character (ctrl-c always quits); elsewhere q quits
+// Views:  1 home · 2 tasks · 3 backends · 4 chats
 //   list:    j/k or ↑/↓ scroll (5-row pages) · pgup/pgdn · g/G top/bottom
 //            · enter open · r refresh · esc/q quit
 //   home:    overview — latest 5 tasks (enter → log), backends, chat counts
 //   task:    live log tail (SSE) · j/k/wheel scroll (pins like tail -f) · g tail · esc back
 //   backends: t = probe reachability from 2pizzas's vantage
-//   chat:    live transcript (SSE) · type + enter to send · esc back
+//   chat:    live transcript (SSE) · type + enter to send · /commands · esc back
 
 import { StringDecoder } from 'node:string_decoder';
 
@@ -23,6 +30,13 @@ const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
   red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
   blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m',
+};
+// pizza palette (same as the web UI) — truecolor, so the exact brand hexes
+const tc = (r, g, b) => `\x1b[38;2;${r};${g};${b}m`;
+const P = {
+  sauce: tc(221, 74, 72),   // --sauce   errors, active tab
+  cheese: tc(238, 221, 178), // --cheese  brand, running, notes
+  olives: tc(78, 135, 82),   // --olives  success, live
 };
 const col = (s, c) => `${c}${s}${C.reset}`;
 
@@ -121,6 +135,7 @@ const state = {
   home: null,             // home-view extras (health, backends, sessions)
   sel: 0, items: [],
   detail: null,           // { kind:'task', id, lines[], status } | { kind:'chat', id, lines[], input }
+  returnChat: null,       // chat id to go back to (chat is home — lists are excursions)
   note: '',               // status bar note (transient)
   err: '',                // persistent error banner
   lastUpdate: 0,
@@ -128,7 +143,7 @@ const state = {
 let pollTimer = null;
 let detailOpen = false;   // a detail view is open → stop list polling
 
-const statusColor = { success: C.green, failure: C.red, running: C.yellow, queued: C.dim };
+const statusColor = { success: P.olives, failure: P.sauce, running: P.cheese, queued: C.dim };
 
 // ── list views ───────────────────────────────────────────────────────────────
 
@@ -178,18 +193,33 @@ function openTask(id) {
   jget(`/api/task/${id}`).then((t) => { if (state.detail) state.detail.status = t.status; render(); }).catch(() => {});
   render();
 }
-function openChat(id) {
+function openChat(id, row) {
   detailOpen = true;
   state.view = 'chatview';
-  state.detail = { kind: 'chat', id, lines: [], input: '', done: false };
+  state.returnChat = null; // the chat IS home
+  state.detail = { kind: 'chat', id, rowid: row?.rowid ?? null, lines: [], input: '', done: false, help: false };
+  // session meta (model) — /model shows it
+  jget('/api/chat/sessions').then((ss) => {
+    const s = (ss || []).find((x) => x.id === id);
+    if (s && state.detail?.kind === 'chat') state.detail.model = s.model;
+    render();
+  }).catch(() => {});
   sse(`/chat/${id}/stream`,
-    (line) => { state.detail.lines.push(line); if (state.detail.lines.length > 5000) state.detail.lines.shift(); render(); },
+    (line) => { state.detail.lines.push(line); state.detail.help = false; if (state.detail.lines.length > 5000) state.detail.lines.shift(); render(); },
     (err) => {
       state.detail.done = true; state.detail.errNote = err || 'stream closed';
-      // dead session: the stream 404s — load the recorded transcript instead
+      // dead session: the stream 404s — load the recorded transcript instead.
+      // Replace the raw "http 404" errNote with the session's end reason —
+      // the 404 is just how dead streams answer, not an error for the user.
+      // A list row carries its rowid — the only unique key (chatSeq ids
+      // restart per run, so a bare-id lookup shadows older same-id rows).
       if (!state.detail.lines.length && /404/.test(err || ''))
-        jget(`/api/chat/${id}/history`).then((h) => {
-          if (state.detail?.kind === 'chat') { state.detail.lines = h.lines || []; render(); }
+        jget(state.detail.rowid ? `/api/chat/r${state.detail.rowid}/history` : `/api/chat/${id}/history`).then((h) => {
+          if (state.detail?.kind === 'chat') {
+            state.detail.lines = h.lines || [];
+            state.detail.errNote = h.session?.end_reason || 'ended';
+            render();
+          }
         }).catch(() => {});
       render();
     });
@@ -197,10 +227,63 @@ function openChat(id) {
 }
 function closeDetail() {
   detailOpen = false;
-  state.view = state.detail?.kind === 'task' ? 'tasks' : 'chats';
+  const prev = state.detail;
   state.detail = null;
+  // a task log opened from a chat goes back to that chat, not the list
+  if (prev?.kind === 'task' && state.returnChat != null) { openChat(state.returnChat); return; }
+  state.view = prev?.kind === 'task' ? 'tasks' : 'chats';
+  if (prev?.kind !== 'chat') state.returnChat = null;
   render();
   refresh();
+}
+
+// boot into a fresh chat REPL (chat-first); fall back to home on failure
+async function startChat() {
+  try {
+    const c = await jpost('/api/chat', { agent: 'pi' });
+    openChat(c.id);
+  } catch (e) {
+    if (detailOpen) closeDetail();
+    state.err = e.message; refresh();
+  }
+}
+
+// claude/pi-style /commands in the chat REPL
+const CHAT_HELP = [
+  '/new                fresh chat (ends this session)',
+  '/stop               abort the current turn',
+  '/model              show the model in use',
+  '/task <id>          open a task log',
+  '/tasks /backends /chats /home   list views (esc returns)',
+  '/clear              clear the transcript view',
+  '/help               toggle this help',
+  '/quit               exit',
+  'esc                 abort turn · clear input (dead chat: back to the list)',
+];
+function chatCmd(d, cmd) {
+  const [name, ...args] = cmd.split(/\s+/);
+  const arg = args.join(' ');
+  switch (name) {
+    case 'help': d.help = !d.help; render(); break;
+    case 'new':
+      // end this session (like the web UI's close) before starting the fresh one
+      fetch(authed(BASE + `/api/chat/${d.id}`), { method: 'DELETE', headers: TOKEN ? { 'x-ui-token': TOKEN } : {} }).catch(() => {});
+      startChat();
+      break;
+    case 'stop': jpost(`/api/chat/${d.id}/abort`).catch((e) => { d.note = e.message; }).finally(render); break;
+    case 'model': d.note = d.model ? `model: ${d.model}` : 'model: server-picked (see /backends)'; render(); break;
+    case 'clear': d.lines = []; d.note = 'transcript view cleared (the server log is untouched)'; render(); break;
+    case 'task': {
+      const id = +arg;
+      if (!id) { d.note = 'usage: /task <id>'; render(); return; }
+      jget(`/api/task/${id}`).then(() => { state.returnChat = d.id; openTask(id); })
+        .catch((e) => { d.note = e.message; render(); });
+      break;
+    }
+    case 'tasks': case 'backends': case 'chats': case 'home': go(name); break;
+    case 'quit': shutdown(); break;
+    default: d.note = `unknown command /${name || '?'} — /help`; render();
+  }
 }
 
 // chat lines are JSON event objects (stringified in the SSE stream, parsed
@@ -222,14 +305,15 @@ function chatLine(l) {
   if (status) return [{ pre: C.dim, text: status, transient: true }];
   if (e.type === 'text_delta' || e.type === 'ctx' || e.type === 'compaction') return [];
   switch (e.type) {
-    // chat view is deliberately colorless (dark blue/magenta are hard to read
-    // in terminals) — bold for structure, plain for content, red only for errors
-    case 'user_message': return wrap(e.message, W() - 8).map((t) => ({ pre: C.bold + ' you » ' + C.reset, text: t }));
-    case 'text_block': return wrap(e.text, W() - 8).map((t, i) => ({ pre: i === 0 ? '      ' : '', text: t }));
-    case 'tool_call': return [{ pre: C.bold + ' ⚙ ' + C.reset, text: `${e.name} ${fit(e.arg || '', W() - 20)}` }];
+    // chat view is deliberately low-color (dark blue/magenta are hard to read
+    // in terminals) — palette accents for structure, plain for content, red for
+    // errors
+    case 'user_message': return wrap(e.message, W() - 8).map((t) => ({ pre: C.bold + P.cheese + ' you » ' + C.reset, text: t }));
+    case 'text_block': return wrap(e.text, W() - 14).map((t, i) => ({ pre: i === 0 ? C.bold + P.olives + ' assistant » ' + C.reset : '            ', text: t }));
+    case 'tool_call': return [{ pre: P.olives + ' ⚙ ' + C.reset, text: `${C.bold}${e.name}${C.reset} ${C.dim}${fit(e.arg || '', W() - 20)}${C.reset}` }];
     case 'settle': return [{ pre: C.dim, text: '─ done ─' }];
     case 'compacted': return [{ pre: C.dim, text: `─ compacted (${e.reason || 'threshold'}) ─` }];
-    case 'error': return [{ pre: C.red + ' ✗ ', text: e.message || 'error' }];
+    case 'error': return [{ pre: P.sauce + ' ✗ ', text: e.message || 'error' }];
     default: return [{ pre: C.dim, text: fit(l, W() - 2) }];
   }
 }
@@ -237,11 +321,11 @@ function chatLine(l) {
 // ── render ───────────────────────────────────────────────────────────────────
 
 function header() {
-  const tab = (n, name) => state.view.startsWith(n[0]) ? `${C.bold}${C.cyan}${name}${C.reset}` : `${C.dim}${name}${C.reset}`;
+  const tab = (n, name) => state.view.startsWith(n[0]) ? `${C.bold}${P.sauce}${name}${C.reset}` : `${C.dim}${name}${C.reset}`;
   const right = state.err
-    ? col(` ✗ ${state.err} `, C.red)
+    ? col(` ✗ ${state.err} `, P.sauce)
     : (state.lastUpdate ? col(` updated ${new Date(state.lastUpdate).toLocaleTimeString()} `, C.dim) : '');
-  const left = ` ${C.bold}2pizzas${C.reset}   ${tab('home', '0·home')}  ${tab('tasks', '1·tasks')}  ${tab('backends', '2·backends')}  ${tab('chats', '3·chats')} `;
+  const left = ` ${C.bold}${P.cheese}🍕 2pizzas${C.reset}   ${tab('home', '1·home')}  ${tab('tasks', '2·tasks')}  ${tab('backends', '3·backends')}  ${tab('chats', '4·chats')} `;
   // W()-1: never write the last column (delayed-wrap state garbles \n on some terminals)
   return left + ' '.repeat(Math.max(1, W() - 1 - vis(left) - vis(right))) + right;
 }
@@ -259,7 +343,7 @@ function rowsView(build, hint) {
   if (!n) out.push(C.dim + '  (empty)' + C.reset);
   if (n > PAGE) out.push(C.dim + `  ${top > 0 ? `↑ ${top} · ` : ''}${n - top - PAGE} more ↓` + C.reset);
   out.push('', hr(W()), col(hint, C.dim));
-  if (state.note) out.push(col(state.note, C.yellow));
+  if (state.note) out.push(col(state.note, P.cheese));
   return out.join('\n');
 }
 
@@ -269,16 +353,16 @@ function render() {
       const h = state.home;
       if (!h) { paint(''); break; }
       const out = [header(), hr(W()), ''];
-      out.push(fit(`  dispatcher ${C.green}ok${C.reset} · ${h.health.active} active task(s) · repos: ${h.health.repos.join(', ') || '—'}`, W() - 1));
+      out.push(fit(`  dispatcher ${P.olives}ok${C.reset} · ${h.health.active} active task(s) · repos: ${h.health.repos.join(', ') || '—'}`, W() - 1));
       out.push('');
-      out.push(col('  latest tasks', C.bold));
+      out.push(`${C.bold}${P.cheese}  latest tasks${C.reset}`);
       state.items.forEach((t, i) => {
         const st = col(fit(t.status, 8), statusColor[t.status] || '');
-        out.push(`${i === state.sel ? '> ' : '  '}${pad(t.id, 5)}${st}${pad(t.agent, 9)}${pad(t.repo + '#' + t.issue, 26)}${t.created_at || ''}`);
+        out.push(`${i === state.sel ? col('>', P.sauce) + ' ' : '  '}${pad(t.id, 5)}${st}${pad(t.agent, 9)}${pad(t.repo + '#' + t.issue, 26)}${t.created_at || ''}`);
       });
       if (!state.items.length) out.push(C.dim + '  (none)' + C.reset);
       out.push('');
-      out.push(col('  backends', C.bold));
+      out.push(`${C.bold}${P.cheese}  backends${C.reset}`);
       for (const b of h.backends)
         out.push(`  ${pad(b.id, 14)}${pad(b.defaultModel || '—', 24)}${fit(b.url, W() - 42)}`);
       out.push('');
@@ -286,8 +370,8 @@ function render() {
       out.push(`  chats: ${live} live · ${h.sessions.length - live} past`);
       while (out.length < H() - 4) out.push(''); // frame ends with hr + hint (+note) → ≤ H()-1
       out.push(hr(W()));
-      out.push(col('j/k pick task · enter log · 1/2/3 lists · r refresh · q quit', C.dim));
-      if (state.note) out.push(col(state.note, C.yellow));
+      out.push(col('j/k pick task · enter log · c chat · 2/3/4 lists · r refresh · q quit', C.dim));
+      if (state.note) out.push(col(state.note, P.cheese));
       paint(out.join('\n'));
       break;
     }
@@ -296,22 +380,22 @@ function render() {
         const st = col(fit(t.status, 8), statusColor[t.status] || '');
         // total row width must stay ≤ W()-1 (wrap mid-row shifts the frame)
         const wModel = Math.max(8, W() - 2 - 5 - 8 - 9 - 13 - 22 - 16 - 1);
-        return `${sel ? '> ' : '  '}${pad(t.id, 5)}${st}${pad(t.agent, 9)}${pad(t.kind, 13)}${pad(t.repo + '#' + t.issue, 22)}${pad(t.model || '—', wModel)}${fit(t.created_at || '', 16)}`;
-      }, 'j/k scroll · pgup/pgdn · g top · G bottom · enter log · r · 0 home · q quit'));
+        return `${sel ? col('>', P.sauce) + ' ' : '  '}${pad(t.id, 5)}${st}${pad(t.agent, 9)}${pad(t.kind, 13)}${pad(t.repo + '#' + t.issue, 22)}${pad(t.model || '—', wModel)}${fit(t.created_at || '', 16)}`;
+      }, 'j/k scroll · pgup/pgdn · g top · G bottom · enter log · r · 1 home · q quit'));
       break;
     }
     case 'backends': {
       paint(rowsView((b, sel) => {
-        const baked = b.baked ? '' : col(' not-baked', C.yellow);
-        return `${sel ? '> ' : '  '}${pad(b.id, 16)}${pad(b.defaultModel || '—', 24)}${pad(b.url, W() - 2 - 16 - 24 - 10 - 1)}${baked}`;
-      }, 'j/k scroll · t test · r · 0 home · q quit'));
+        const baked = b.baked ? '' : col(' not-baked', P.cheese);
+        return `${sel ? col('>', P.sauce) + ' ' : '  '}${pad(b.id, 16)}${pad(b.defaultModel || '—', 24)}${pad(b.url, W() - 2 - 16 - 24 - 10 - 1)}${baked}`;
+      }, 'j/k scroll · t test · r · 1 home · q quit'));
       break;
     }
     case 'chats': {
       paint(rowsView((c, sel) => {
-        const st = c.active ? (c.isStreaming ? col('streaming', C.yellow) : col('live', C.green)) : C.dim + 'ended' + C.reset;
-        return `${sel ? '> ' : '  '}${pad(c.id, 5)}${pad(c.agent, 9)}${pad(c.model || '—', 22)}${pad(c.messages ?? 0, 4)}${pad(c.tokens ?? '—', 7)}${pad(c.created_at, 18)}${st}`;
-      }, 'j/k scroll · enter open · n new · r · 0 home · q quit'));
+        const st = c.active ? (c.isStreaming ? col('streaming', P.cheese) : col('live', P.olives)) : C.dim + 'ended' + C.reset;
+        return `${sel ? col('>', P.sauce) + ' ' : '  '}${pad(c.id, 5)}${pad(c.agent, 9)}${pad(c.model || '—', 22)}${pad(c.messages ?? 0, 4)}${pad(c.tokens ?? '—', 7)}${pad(c.created_at, 18)}${st}`;
+      }, 'j/k scroll · enter open · n new · r · 1 home · q quit'));
       break;
     }
     case 'tasklog': {
@@ -319,7 +403,7 @@ function render() {
       const mode = d.pin == null
         ? (d.done ? 'finished' : 'live tail')
         : `paused ↑${d.lines.length - 1 - d.pin} from tail`;
-      paint(renderLog(d, `task #${d.id} · ${col(d.status, statusColor[d.status] || '')} · ${col(mode, d.pin == null ? '' : C.yellow)}`));
+      paint(renderLog(d, `task #${d.id} · ${col(d.status, statusColor[d.status] || '')} · ${col(mode, d.pin == null ? '' : P.cheese)}`));
       break;
     }
     case 'chatview': {
@@ -331,14 +415,18 @@ function render() {
       for (const l of d.lines) for (const r of chatLine(l)) rendered.push(r);
       // one transient status line at most — the newest replaces the last
       for (let i = rendered.length - 2; i >= 0; i--) if (rendered[i].transient) rendered.splice(i, 1);
-      const bodyH = H() - 6;
+      const helpN = d.help ? 1 + CHAT_HELP.length : 0; // counted against the budget so the input line is never clipped
+      const bodyH = H() - 6 - helpN;
       const start = Math.max(0, rendered.length - bodyH);
       for (const r of rendered.slice(start)) out.push(r.pre + fit(clean(r.text), W() - vis(r.pre) - 1));
-      while (out.length < H() - 3) out.push('');
+      while (out.length < H() - 3 - helpN) out.push('');
+      if (d.help) { out.push(''); for (const l of CHAT_HELP) out.push(col('  ' + l, C.dim)); }
       out.push(hr(W()));
-      out.push(C.bold + ' > ' + C.reset + fit(d.input, W() - 40) // room for the suffix
+      out.push(`${C.bold}${P.cheese} > ${C.reset}` + fit(d.input, W() - 40) // room for the suffix
         + (d.done ? C.dim + '  (ended — esc to go back)' + C.reset
-           : d.note ? ' ' + col(d.note, C.red) : ' '));
+           : d.note ? ' ' + col(d.note, P.sauce)
+           : d.help ? ' ' + col('/help again to hide', C.dim)
+           : ' ' + col('/help for commands', C.dim)));
       paint(out.slice(0, H()).join('\n'));
       break;
     }
@@ -361,7 +449,7 @@ function renderLog(d, title) {
   out.push(hr(W()));
   const above = start > 0 ? ` ↑ ${start}` : '';
   out.push(col(` esc back · j/k or wheel scroll · g tail${above} · q quit`, C.dim));
-  if (d.note) out.push(col(d.note, C.yellow));
+  if (d.note) out.push(col(d.note, P.cheese));
   return out.join('\n');
 }
 
@@ -369,11 +457,12 @@ function renderLog(d, title) {
 
 async function onKey(key) {
   // global
-  if (key === 'q' || key === '\x03') { shutdown(); return; }
+  if (key === '\x03') { shutdown(); return; } // ctrl-c quits everywhere (q is a character in chat)
 
   if (state.view === 'tasklog') {
     const d = state.detail;
     if (key === '\x1b') { closeDetail(); return; }
+    if (key === 'q') { shutdown(); return; }
     const up = key === '\x1b[A' || key === 'k' ? 1 : (key === '\x1b[5~' || key === '\x1b[65~' ? PAGE : 0);
     const dn = key === '\x1b[B' || key === 'j' ? 1 : (key === '\x1b[6~' || key === '\x1b[64~' ? PAGE : 0);
     if (up) {
@@ -395,9 +484,18 @@ async function onKey(key) {
   }
   if (state.view === 'chatview') {
     const d = state.detail;
-    if (key === '\x1b') { closeDetail(); return; }
+    if (key === '\x1b') {
+      // chat is home — esc never leaves a live chat:
+      // clear the input, or abort the running turn
+      if (d.input) { d.input = ''; render(); return; }
+      if (d.done) { closeDetail(); return; }
+      jpost(`/api/chat/${d.id}/abort`).catch((e) => { d.note = e.message; }).finally(render);
+      return;
+    }
     if (key === '\r') {
-      const msg = d.input; d.input = '';
+      const msg = d.input.trim(); d.input = '';
+      if (!msg) return;
+      if (msg.startsWith('/')) { chatCmd(d, msg.slice(1).trim()); return; } // /commands
       jpost(`/api/chat/${d.id}/message`, { message: msg }).catch((e) => { d.note = e.message; }).finally(render);
       return;
     }
@@ -407,6 +505,7 @@ async function onKey(key) {
   }
 
   // list views (home included — its selectable rows are the latest tasks)
+  if (key === 'q') { shutdown(); return; }
   const n = state.items.length;
   const clampSel = (v) => { state.sel = Math.max(0, Math.min(n - 1, v)); render(); };
   switch (key) {
@@ -416,15 +515,21 @@ async function onKey(key) {
     case '\x1b[6~': case '\x1b[64~': if (n) clampSel(state.sel + PAGE); break;  // pgdn / wheel-down
     case 'g': if (n) clampSel(0); break;
     case 'G': if (n) clampSel(n - 1); break;
-    case '\x1b': break; // esc in a list view: no-op
+    case '\x1b':
+      // back to the chat (chat is home)
+      if (state.returnChat != null) openChat(state.returnChat);
+      break;
     case 'r': refresh(); break;
-    case '0': case '\x1b0': go('home'); break;
-    case '1': case '\x1b1': go('tasks'); break;
-    case '2': case '\x1b2': go('backends'); break;
-    case '3': case '\x1b3': go('chats'); break;
+    case '1': case '\x1b1': go('home'); break;
+    case '2': case '\x1b2': go('tasks'); break;
+    case '3': case '\x1b3': go('backends'); break;
+    case '4': case '\x1b4': go('chats'); break;
     case '\r':
       if ((state.view === 'tasks' || state.view === 'home') && state.items[state.sel]) openTask(state.items[state.sel].id);
-      else if (state.view === 'chats' && state.items[state.sel]) openChat(state.items[state.sel].id);
+      else if (state.view === 'chats' && state.items[state.sel]) openChat(state.items[state.sel].id, state.items[state.sel]);
+      break;
+    case 'c':
+      startChat();
       break;
     case 'n':
       if (state.view === 'chats') {
@@ -446,6 +551,7 @@ async function onKey(key) {
   }
 }
 function go(view) {
+  state.returnChat = state.detail?.kind === 'chat' ? state.detail.id : null;
   if (detailOpen) closeDetail();
   state.view = view; state.sel = 0; state.items = [];
   render(); refresh();
@@ -464,6 +570,7 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.stdout.write('\x1b]2;🍕 2pizzas\x07'); // terminal title (branding)
 process.stdout.write('\x1b[?25l\x1b[H\x1b[2J'); // hide cursor, clear
 
 let pending = '';
@@ -489,4 +596,4 @@ pollTimer = setInterval(() => {
     jget(`/api/task/${state.detail.id}`).then((t) => { state.detail.status = t.status; render(); }).catch(() => {});
   else if (!detailOpen && !state.err) refresh().catch(() => {});
 }, 4000);
-refresh();
+refresh(); // home boots

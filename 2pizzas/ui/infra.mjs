@@ -144,15 +144,15 @@ ${label(625, 402, 'syncs gh-pages branch (60s)')}
   #zrow{flex:none}
   #diagWrap{flex:1;min-height:0}
   #diagWrap svg{width:100%;height:100%}
-  #diagfoot{flex:none;background:var(--color-body,#111);border-top:1px solid var(--color-light-border,#2a2a2a);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+  #diagfoot{flex:none;background:var(--color-body,#f5f5f5);border-top:2px solid var(--color-light-border,#000);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
   #diagfoot #legend{margin-top:0}
   #diagfoot #notes{margin-top:6px}
 }
 </style>
 <div id="zrow" style="display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px">
-<button id="zIn" title="zoom in" style="width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer;background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);border-radius:7px;color:var(--color-button-secondary-text,#ddd)">+</button>
-<button id="zOut" title="zoom out" style="width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer;background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);border-radius:7px;color:var(--color-button-secondary-text,#ddd)">−</button>
-<button id="zReset" title="reset view" style="height:30px;font-size:12px;padding:0 10px;cursor:pointer;background:var(--color-button-secondary-background,#222);border:1px solid var(--color-button-secondary-border,#444);border-radius:7px;color:var(--color-button-secondary-text,#ddd)">reset</button>
+<button id="zIn" title="zoom in" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">+</button>
+<button id="zOut" title="zoom out" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">−</button>
+<button id="zReset" title="reset view" style="height:30px;font-size:11px;font-weight:800;text-transform:uppercase;padding:0 12px;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">reset</button>
 </div>
 <div id="diagWrap" style="position:relative">
 ${svg}

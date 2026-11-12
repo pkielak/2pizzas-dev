@@ -33,7 +33,7 @@ export async function chatListPage() {
   // still readable from each session's log file
   const past = chatSessions(100)
     .filter((r) => !chatRowLive(r)) // live ones are in the section above (id-only matching would shadow an older run's same-id row)
-    .map((r) => `<a class="item" href="/chat/${r.id}">
+    .map((r) => `<a class="item" href="/chat/r${r.rowid}">
     <div class="l1">@${esc(r.agent)} <span>#${r.id}</span> <span class="badge">ended</span></div>
     <div class="l2">${esc(r.created_at?.slice(5, 16) ?? '')} → ${esc(r.ended_at?.slice(11, 19) ?? '?')} UTC · ${esc(r.end_reason ?? '?')} · ${r.messages} message${r.messages === 1 ? '' : 's'}</div>
   </a>`).join('\n');
@@ -208,12 +208,23 @@ const es = new EventSource(auth('/chat/${c.id}/stream'));
 // every (re)connect replays the whole stream from the server — clear on open;
 // statusEl MUST be re-attached: addEl() inserts before it, and insertBefore
 // with a detached reference throws, silently killing all rendering
-es.onopen = () => { box.innerHTML = ''; box.appendChild(statusEl); };
+let ended = false;
+// a dead session's stream 404s and EventSource retries it FOREVER — the
+// done event only reaches clients connected at kill time, so a page loaded
+// just before the death 404-loops. Detect it and hand over to the read-only
+// transcript (the same URL now serves the history view).
+es.onerror = () => {
+  if (ended) return;
+  fetch(auth('/api/chat/' + ${c.id})).then((r) => {
+    if (r.status === 404) location.replace(auth('/chat/' + ${c.id}));
+  }).catch(() => {}); // network blip — EventSource keeps retrying
+};
 es.onmessage = (ev) => handle(ev.data);
 // session ended (idle timeout / killed / container died): the server sends
 // the [2pizzas] chat closed line JUST BEFORE this event, so the reason is
 // already on screen — freeze the UI in place instead of a silent redirect
 es.addEventListener('done', () => {
+  ended = true;
   es.close();
   setStatus('');
   stateEl.textContent = 'ended';

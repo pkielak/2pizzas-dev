@@ -187,8 +187,13 @@ export const chatJson = (c) => ({
 export const chatSessionRow = (id) => db
   .prepare('SELECT * FROM chat_sessions WHERE id=? ORDER BY created_at DESC LIMIT 1').get(id);
 
+// rowid is the only globally-unique session key — chatSeq ids restart per
+// run, so past-session links must carry it (an id link shadows older rows)
+export const chatSessionByRowid = (rowid) => db
+  .prepare('SELECT *, rowid FROM chat_sessions WHERE rowid=?').get(rowid);
+
 export const chatSessions = (limit = 100) => db
-  .prepare('SELECT * FROM chat_sessions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
+  .prepare('SELECT *, rowid FROM chat_sessions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
 
 // true iff this persisted row belongs to a LIVE session: chatSeq ids restart
 // at 1 per 2pizzas run, so matching must compare created_at, not id alone
