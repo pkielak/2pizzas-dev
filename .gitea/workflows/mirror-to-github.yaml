@@ -37,4 +37,6 @@ jobs:
           git remote remove github >/dev/null 2>&1 || true
           git remote add github "${remote_url}"
 
-          git push github HEAD:main
+          # Gitea is the source of truth — the mirror force-pushes so it tracks
+          # Gitea's main exactly (GitHub-only commits get clobbered on purpose).
+          git push --force-with-lease github HEAD:main
