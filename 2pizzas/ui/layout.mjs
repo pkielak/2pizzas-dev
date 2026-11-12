@@ -12,7 +12,7 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 // the active scheme without per-file edits.
 export const THEME_CSS = `:root{
   --crust:#121212;--dark:#000000;--light:#f5f5f5;--sauce:#dd4a48;--cheese:#eeddb2;--olives:#4e8752;
-  --sauce-dark:#b93a38;--olives-dark:#3d6b41;--bacon:#9a6b2f;
+  --sauce-dark:#b93a38;--olives-dark:#3d6b41;--ham:#d17a66;
   /* semantic — light mode */
   --bg:#f5f5f5;--surface:#fff;--ink:#121212;--muted:#555;--muted-2:#666;--faint:#999;
   --line:#000;--shadow:#000;--track:#e2e2e2;

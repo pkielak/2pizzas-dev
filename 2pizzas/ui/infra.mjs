@@ -24,7 +24,7 @@ export async function dockerNames() {
 // container (110/305/500/695/890). gitea→runners fans out below
 // (bus y=410, drops at 250/500/750).
 // Line labels sit 8px above their line, centered on the segment.
-const C_GITEA = 'var(--olives)', C_00TEA = 'var(--sauce)', C_LLAMA = 'var(--bacon)';
+const C_GITEA = 'var(--olives)', C_00TEA = 'var(--sauce)', C_LLAMA = 'var(--ham)';
 const conn = (d, color = 'var(--sauce)', marker = 'arr', arrow = true) =>
   `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none" opacity=".75"${arrow ? ` marker-end="url(#${marker})"` : ''}/>`;
 const label = (x, y, t, anchor = 'middle') => `<text x="${x}" y="${y}" font-size="11.5" fill="var(--muted-2)" text-anchor="${anchor}">${t}</text>`;
@@ -103,9 +103,9 @@ ${label(862, 222, 'llm /v1', 'start')}
 <rect x="107" y="180" width="786" height="2" fill="${C_00TEA}" opacity=".8"/>
 <rect x="107" y="182" width="786" height="2" fill="${C_LLAMA}" opacity=".8"/>
 
-<!-- drops from top of band (y=178) down to agent bottoms (y=140) — the bus
-     is a mix of all three, so the drops stay neutral -->
-${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 2}" y="140" width="4" height="40" fill="var(--muted-2)" opacity=".6"/>`).join('')}
+<!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140):
+     each agent is fed by all three sources -->
+${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 3}" y="140" width="2" height="38" fill="${C_GITEA}" opacity=".7"/><rect x="${x - 1}" y="140" width="2" height="40" fill="${C_00TEA}" opacity=".7"/><rect x="${x + 1}" y="140" width="2" height="42" fill="${C_LLAMA}" opacity=".7"/>`).join('')}
 ${label(325, 220, 'runsc one-shot / long-lived (chat)', 'middle')}
 
 <!-- gitea → runners + pages (CI bus, y=410 — gitea's color) -->
