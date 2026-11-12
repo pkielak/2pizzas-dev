@@ -39,4 +39,7 @@ jobs:
 
           # Gitea is the source of truth — the mirror force-pushes so it tracks
           # Gitea's main exactly (GitHub-only commits get clobbered on purpose).
+          # Fetch first: --force-with-lease leases against the tracking ref,
+          # which does not exist for a freshly-added remote ("stale info").
+          git fetch github main --no-tags >/dev/null 2>&1 || true
           git push --force-with-lease github HEAD:main
