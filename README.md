@@ -19,7 +19,7 @@ through an automated review chain: a read-only reviewer agent checks the diff
 | `db` | Postgres 14 |
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — ordinary CI, incl. the `security-scan` gate (gitleaks + semgrep on every PR) |
 | `android-runner` | Dedicated runner for native Android builds, label `android`, job image `gitea-android:latest` (JDK 21 + Android SDK + warm Gradle cache) |
-| `2pizzas` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container |
+| `2pizzas` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container. Web UI on `:3001` (dashboard, tasks, live chat, backend management) + a zero-dependency terminal TUI (`node 2pizzas/tui.mjs`) |
 | `agent-sandbox:*` images | Docker images the agent tasks run in: a base image (git, node, gitleaks, semgrep with baked rule packs) + one variant per agent (pi, opencode, infra=pi+docker CLI, review=opencode+code-review skill), each preconfigured with the inference backends from `inference.json` |
 | `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 2pizzas walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
 
@@ -177,23 +177,6 @@ actually changed.
 | Gitea CLI | `docker exec -u git gitea gitea admin ...` (no `su` inside the container — run directly as `git`) |
 | Gitea API | `curl -H "Authorization: token $ADMIN_TOKEN" http://localhost:3000/api/v1/...` |
 | Push template updates into repos | edit `agents-actions/` → `./sync-template.sh owner/repo [...]` |
-
-## GitHub mirror
-
-`.gitea/workflows/mirror-to-github.yaml` mirrors `main` to GitHub on every
-push (one-way — Gitea is the source of truth). It force-pushes, so
-GitHub-only commits are clobbered on purpose; the run also has a manual
-trigger (workflow dispatch) for one-off syncs after a history rewrite.
-
-Setup (once, in the Gitea repo settings):
-
-| Where | Name | Value |
-|---|---|---|
-| Repository → **Secrets** | `MIRROR_TOKEN` | a GitHub PAT/token with `repo` scope for the target account |
-| Repository → **Variables** | `MIRROR_REPO` | `owner/repo` of the GitHub target (defaults to `your-github/repo`) |
-
-The token is never committed — the workflow reads it from the runner's
-`secrets.MIRROR_TOKEN`.
 
 ## How the agents work
 
