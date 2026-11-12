@@ -19,17 +19,15 @@ export async function dockerNames() {
 // 2pizzas 380..620, llama 730..970, y 250..360), RUNNERS/SERVERS at the
 // bottom (3 boxes w 200 at x 30/280/530, y 460..560). Every connector is
 // a straight H/V polyline — no diagonals, no crossings, no hop arcs:
-// Three colored lines rise from the middle row to a tri-color convergence
-// bus at y=180: gitea (green, x=150), 2pizzas (blue, x=500), llama (purple,
-// x=850). The bus drops into every agent container (110/305/500/695/890).
-// gitea→runners fans out below (bus y=410, drops at 130/380/630).
+// Three lines rise from the middle row to a convergence bus at y=180
+// (gitea x=150, 2pizzas x=500, llama x=850) and drop into every agent
+// container (110/305/500/695/890). gitea→runners fans out below
+// (bus y=410, drops at 250/500/750).
 // Line labels sit 8px above their line, centered on the segment.
-const F = 'stroke:var(--color-primary,#7ab);stroke-width:1.5;fill:none;opacity:.75';
-const C_GITEA = '#3fb950', C_00TEA = '#58a6ff', C_LLAMA = '#bc8cff';
+const F = 'stroke:var(--sauce);stroke-width:1.5;fill:none;opacity:.75';
 const conn = (d, arrow = true) => `<path d="${d}" style="${F}"${arrow ? ' marker-end="url(#arr)"' : ''}/>`;
-const connC = (d, color, markerId, arrow = true) => `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none" opacity=".75"${arrow ? ` marker-end="url(#${markerId})"` : ''}/>`;
-const label = (x, y, t, anchor = 'middle') => `<text x="${x}" y="${y}" font-size="11.5" fill="var(--color-text-light-2,#888)" text-anchor="${anchor}">${t}</text>`;
-const rlabel = (x, y, t) => `<text transform="rotate(-90 ${x} ${y})" x="${x}" y="${y}" font-size="11.5" fill="var(--color-text-light-2,#888)" text-anchor="middle">${t}</text>`;
+const label = (x, y, t, anchor = 'middle') => `<text x="${x}" y="${y}" font-size="11.5" fill="var(--muted-2)" text-anchor="${anchor}">${t}</text>`;
+const rlabel = (x, y, t) => `<text transform="rotate(-90 ${x} ${y})" x="${x}" y="${y}" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">${t}</text>`;
 
 
 export function infraPage() {
@@ -54,10 +52,10 @@ export function infraPage() {
     const block = (x, y, w, h, title, lines, ok, href) => {
       // even padding all sides; dot centered in the top-left corner
       const pad = Math.round((h - 46) / 2);
-      const body = `<g class="blk${ok === true ? ' ok' : ok === false ? ' bad' : ''}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="var(--color-secondary-alpha-10,rgba(255,255,255,.03))" stroke="var(--color-light-border,#2a2a2a)"/>
+      const body = `<g class="blk${ok === true ? ' ok' : ok === false ? ' bad' : ''}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="0" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>
 ${dot(ok, x + Math.round(pad / 2), y + Math.round(pad / 2))}
-<text x="${x + pad}" y="${y + pad + 10}" font-size="14" font-weight="700" fill="var(--color-text,#ddd)">${esc(title)}</text>
-${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-size="12" fill="var(--color-text-light-2,#999)">${l}</text>`).join('')}</g>`;
+<text x="${x + pad}" y="${y + pad + 10}" font-size="14" font-weight="900" fill="var(--ink)">${esc(title)}</text>
+${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-size="12" fill="var(--muted-2)">${l}</text>`).join('')}</g>`;
       return href ? `<a href="${href}" style="text-decoration:none">${body}</a>` : body;
     };
 
@@ -65,11 +63,7 @@ ${lines.map((l, i) => `<text x="${x + pad}" y="${y + pad + 28 + i * 16}" font-si
 
     const svg = `<svg id="diag" viewBox="0 0 1000 570" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" style="width:100%;display:block;cursor:grab;touch-action:none" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary,#7ab)"/></marker>
-<marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_GITEA}"/></marker>
-<marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_00TEA}"/></marker>
-<marker id="arr-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${C_LLAMA}"/></marker>
-
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sauce)"/></marker>
 </defs>
 
 ${block(30, 40, 160, 100, '@' + CFG.agents.pi.login, ['agent-sandbox:pi', agentBusy('pi') ? 'task in flight' : 'idle'], agentBusy('pi') ? true : null)}
@@ -92,21 +86,19 @@ ${label(325, 297, 'webhook')}
 ${conn('M 620 305 L 730 305')}
 ${label(675, 297, 'model pick')}
 
-<!-- Three colored sources rise from bottom of band (y=184) to middle row (y=250) -->
-${connC('M 150 184 L 150 250', C_GITEA, 'arr-g')}
+<!-- Three sources rise from bottom of band (y=184) to middle row (y=250) -->
+${conn('M 150 184 L 150 250')}
 ${label(138, 222, 'agent work', 'end')}
-${connC('M 500 250 L 500 184', C_00TEA, 'arr-b')}
+${conn('M 500 250 L 500 184')}
 ${label(512, 222, 'tasks', 'start')}
-${connC('M 850 250 L 850 184', C_LLAMA, 'arr-p')}
+${conn('M 850 250 L 850 184')}
 ${label(862, 222, 'llm /v1', 'start')}
 
-<!-- convergence band: solid 6px block (y 178–184), three 2px rects touching -->
-<rect x="107" y="178" width="786" height="2" fill="${C_GITEA}" opacity=".8"/>
-<rect x="107" y="180" width="786" height="2" fill="${C_00TEA}" opacity=".8"/>
-<rect x="107" y="182" width="786" height="2" fill="${C_LLAMA}" opacity=".8"/>
+<!-- convergence band: solid 6px block (y 178–184) -->
+<rect x="107" y="178" width="786" height="6" fill="var(--sauce)" opacity=".55"/>
 
-<!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140) -->
-${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 3}" y="140" width="2" height="38" fill="${C_GITEA}" opacity=".7"/><rect x="${x - 1}" y="140" width="2" height="40" fill="${C_00TEA}" opacity=".7"/><rect x="${x + 1}" y="140" width="2" height="42" fill="${C_LLAMA}" opacity=".7"/>`).join('')}
+<!-- drops from top of band (y=178) down to agent bottoms (y=140) -->
+${[110, 305, 500, 695, 890].map(x => `<rect x="${x - 2}" y="140" width="4" height="40" fill="var(--sauce)" opacity=".55"/>`).join('')}
 ${label(325, 220, 'runsc one-shot / long-lived (chat)', 'middle')}
 
 <!-- gitea → runners + pages (CI bus, y=410) -->
@@ -124,18 +116,18 @@ ${label(625, 402, 'syncs gh-pages branch (60s)')}
       html: `<style>
 @keyframes teadot{50%{transform:scale(1.45)}}
 .blk rect{transition:stroke .4s}
-.blk.ok rect{stroke:var(--color-success-text,#3a3);stroke-opacity:.55}
-.blk.bad rect{stroke:var(--color-error-text,#a33);stroke-opacity:.6}
-.st{fill:var(--color-text-light-2,#555);transition:fill .4s}
-.st.ok{fill:var(--color-success-text,#6d6);transform-box:fill-box;transform-origin:center;animation:teadot 1.6s ease-in-out infinite;filter:drop-shadow(0 0 3px var(--color-success-text,#6d6))}
-.st.bad{fill:var(--color-error-text,#f66);filter:drop-shadow(0 0 3px var(--color-error-text,#f66))}
+.blk.ok rect{stroke:var(--olives);stroke-opacity:.8}
+.blk.bad rect{stroke:var(--sauce);stroke-opacity:.8}
+.st{fill:var(--faint);transition:fill .4s}
+.st.ok{fill:var(--olives);transform-box:fill-box;transform-origin:center;animation:teadot 1.6s ease-in-out infinite}
+.st.bad{fill:var(--sauce)}
 #legend{display:flex;flex-wrap:wrap;gap:8px 18px;list-style:none;margin:12px 0 0;padding:0}
-#legend li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--color-text-light-2,#999)}
+#legend li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
 #legend i{width:10px;height:10px;border-radius:50%;flex:none}
-#legend .ok{background:var(--color-success-text,#6d6);animation:teadot 1.6s ease-in-out infinite}
-#legend .bad{background:var(--color-error-text,#f66)}
-#legend .na{background:var(--color-text-light-2,#555)}
-#notes{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:var(--color-text-light-2,#999)}
+#legend .ok{background:var(--olives);animation:teadot 1.6s ease-in-out infinite}
+#legend .bad{background:var(--sauce)}
+#legend .na{background:var(--faint)}
+#notes{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted)}
 #notes li{margin:3px 0}
 /* mobile: the viewing area gets ALL remaining space — the page becomes a
    100dvh column: button row · diagram (flex:1, centered) · legend+notes at the bottom */
@@ -144,15 +136,15 @@ ${label(625, 402, 'syncs gh-pages branch (60s)')}
   #zrow{flex:none}
   #diagWrap{flex:1;min-height:0}
   #diagWrap svg{width:100%;height:100%}
-  #diagfoot{flex:none;background:var(--color-body,#f5f5f5);border-top:2px solid var(--color-light-border,#000);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+  #diagfoot{flex:none;background:var(--bg);border-top:2px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
   #diagfoot #legend{margin-top:0}
   #diagfoot #notes{margin-top:6px}
 }
 </style>
 <div id="zrow" style="display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px">
-<button id="zIn" title="zoom in" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">+</button>
-<button id="zOut" title="zoom out" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">−</button>
-<button id="zReset" title="reset view" style="height:30px;font-size:11px;font-weight:800;text-transform:uppercase;padding:0 12px;cursor:pointer;background:#fff;border:2px solid var(--dark);border-radius:0;color:var(--crust);box-shadow:2px 2px 0 var(--dark)">reset</button>
+<button id="zIn" title="zoom in" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);box-shadow:2px 2px 0 var(--shadow)">+</button>
+<button id="zOut" title="zoom out" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);box-shadow:2px 2px 0 var(--shadow)">−</button>
+<button id="zReset" title="reset view" style="height:30px;font-size:11px;font-weight:800;text-transform:uppercase;padding:0 12px;cursor:pointer;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);box-shadow:2px 2px 0 var(--shadow)">reset</button>
 </div>
 <div id="diagWrap" style="position:relative">
 ${svg}
