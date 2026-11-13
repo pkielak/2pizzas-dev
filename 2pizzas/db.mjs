@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS managed_repos (
   PRIMARY KEY (owner, name)
 );
 `);
-try { db.exec('ALTER TABLE chat_sessions ADD COLUMN tokens INTEGER'); } catch { /* already present */ } // live dbs from before the tokens column
+for (const col of ['tokens INTEGER', 'session_dir TEXT', 'parent_session INTEGER']) {
+  try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`); } catch { /* already present */ }
+} // live dbs from before these columns
 for (const col of ['body TEXT', 'model TEXT', 'model_ctx INTEGER', 'tokens INTEGER',
   'parent_id INTEGER',  // review chain: the task this one was spawned by
   'round INTEGER',      // work round (1 = original, N+1 = rework after review N)

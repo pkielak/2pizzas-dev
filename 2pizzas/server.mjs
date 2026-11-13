@@ -245,10 +245,10 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; if (body.length > 256 * 1024) { send(413, 'text/plain', 'body too large'); req.destroy(); } });
     req.on('end', async () => {
-      let agent = '';
-      try { agent = JSON.parse(body).agent; } catch { /* empty body */ }
+      let agent = '', resumeFrom = null;
+      try { const b = JSON.parse(body); agent = b.agent; resumeFrom = b.resumeFrom ?? null; } catch { /* empty body */ }
       try {
-        const c = await createChat(agent);
+        const c = await createChat(agent, resumeFrom);
         if (!c) return send(502, 'application/json', JSON.stringify({ error: 'agent container failed to start' }));
         send(200, 'application/json', JSON.stringify({ id: c.id }));
       } catch (e) { send(400, 'application/json', JSON.stringify({ error: e.message })); }

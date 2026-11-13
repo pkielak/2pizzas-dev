@@ -36,10 +36,13 @@ export async function chatListPage() {
   // still readable from each session's log file
   const past = chatSessions(100)
     .filter((r) => !chatRowLive(r)) // live ones are in the section above (id-only matching would shadow an older run's same-id row)
-    .map((r) => `<a class="item" href="/chat/r${r.rowid}">
+    .map((r) => `<div class="item" style="display:flex;align-items:center;gap:8px">
+    <a class="item" style="flex:1;text-decoration:none;color:inherit" href="/chat/r${r.rowid}">
     <div class="l1">@${esc(r.agent)} <span>#${r.id}</span> <span class="badge">ended</span></div>
     <div class="l2">${esc(r.created_at?.slice(5, 16) ?? '')} → ${esc(r.ended_at?.slice(11, 19) ?? '?')} UTC · ${esc(r.end_reason ?? '?')} · ${r.messages} message${r.messages === 1 ? '' : 's'}</div>
-  </a>`).join('\n');
+    </a>
+    ${r.session_dir ? `<button class="grantbtn" data-resume="${r.rowid}">continue</button>` : ''}
+  </div>`).join('\n');
   // grant UI: every repo on the instance, with a per-repo grant/revoke toggle
   let grantUi = '';
   if (CFG.chatGiteaToken) {
@@ -108,6 +111,12 @@ if (form) form.onsubmit = async function (e) {
   if (r.ok) location.href = '/chat/' + j.id; else alert(j.error || 'failed to start chat');
 };
 document.querySelectorAll('.grantbtn').forEach(b => b.onclick = async () => {
+  if (b.dataset.resume) {
+    const r = await fetch(auth('/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent: 'pi', resumeFrom: +b.dataset.resume }) });
+    const j = await r.json();
+    if (r.ok) location.href = '/chat/' + j.id; else alert(j.error || 'resume failed');
+    return;
+  }
   const grant = b.dataset.grant === '1';
   if (!grant && !confirm('revoke ' + b.dataset.repo + ' write access for the chat agent?')) return;
   const r = await fetch(auth('/api/chat/grant'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo: b.dataset.repo, grant }) });
@@ -263,12 +272,24 @@ document.getElementById('closechat').onclick = async (e) => {
 // read-only transcript of a dead session (log file → message blocks)
 export function chatHistoryView(row) {
   const blocks = chatHistory(row).map(historyBlock).join('\n');
+  const resumeBtn = row.session_dir
+    ? `<button id="resumebtn" class="grantbtn" data-rowid="${row.rowid}">continue this session</button>`
+    : '';
   return `<div class="chatapp">
 <div class="chathead">
 <a class="back" href="/chat">←</a><span class="chid">#${row.id}</span><span class="badge">ended</span>
 <span class="meta">${esc(row.end_reason ?? '')} · ${row.messages} msg${row.tokens ? ` · <span class="ctx">${fmtTok(row.tokens)} tok ctx</span>` : ''} · ${esc(row.created_at?.slice(5, 16) ?? '')} → ${esc(row.ended_at?.slice(11, 19) ?? '')}</span>
 </div>
 <div id="msgs">${blocks || '<div class="msettle">empty session</div>'}</div>
-<div class="chatin endednote"><span class="meta">this session has ended — its transcript is preserved. <a href="/chat">start a new chat</a></span></div>
-</div>`;
+<div class="chatin endednote"><span class="meta">this session has ended — its transcript is preserved. ${resumeBtn} <a href="/chat">start a new chat</a></span></div>
+</div>
+${resumeBtn ? `<script>
+document.getElementById('resumebtn').onclick = async () => {
+  const tk = new URLSearchParams(location.search).get('token') || localStorage.getItem('tea_chat_token');
+  const auth = (p) => p + (tk ? '?token=' + encodeURIComponent(tk) : '');
+  const r = await fetch(auth('/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent: 'pi', resumeFrom: ${row.rowid} }) });
+  const j = await r.json();
+  if (r.ok) location.href = '/chat/' + j.id; else alert(j.error || 'resume failed');
+};
+</script>` : ''}`;
 }

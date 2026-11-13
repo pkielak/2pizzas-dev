@@ -43,6 +43,24 @@ import { liveBroadcast } from './live.mjs';
 export const chats = new Map(); // id -> session
 let chatSeq = 0;
 
+// find .jsonl session files in a pi session dir (host path). Returns
+// relative paths (from the dir root) sorted newest-first. Pi organizes
+// them as --<cwd>--/<timestamp>_<uuid>.jsonl
+const findSessionFiles = (dir) => {
+  const out = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith('.jsonl')) out.push(path.relative(dir, full));
+    }
+  };
+  walk(dir);
+  return out.sort().reverse(); // newest timestamp first
+};
+
 // The chat gate: ?token= param, x-chat-token header, or the session cookie.
 // A request that authenticates via param/header gets a 30-day HttpOnly
 // cookie set, so the token only has to be typed into a URL ONCE — after
@@ -231,7 +249,7 @@ You have Gitea access as user "${CFG.chatLogin}" (token: $GITEA_TOKEN, API: $GIT
   api:    curl -s -H "Authorization: token $GITEA_TOKEN" $GITEA_URL/api/v1/...
 You can READ any repo you can see. You can only WRITE (push, comment, PR) in repos where you have been granted collaborator access — if a push fails with 403 "permission denied", say so and stop trying other write paths.` : ' You have no write access to Gitea.'}`;
 
-export async function createChat(agent) {
+export async function createChat(agent, resumeFromRowid) {
   if (agent !== 'pi') throw new Error(`unknown agent: ${agent}`);
   const modelSel = await pickModel();
   chatSeq++;
@@ -244,6 +262,7 @@ export async function createChat(agent) {
     ctxUsed: 0, modelCtx: modelSel?.ctx ?? 0, // pi's get_session_stats refines both after the first turn
     logFile: '',
     child: null, name: '',
+    sessionDir: '', // persistent pi session state (mounted into the container)
   };
   // unique per session (NOT just the id): chatSeq restarts at 1 on every
   // 2pizzas restart, and a bare <id>.log would append new sessions onto
@@ -251,15 +270,33 @@ export async function createChat(agent) {
   const suffix = crypto.randomBytes(3).toString('hex');
   c.logFile = path.join(CFG.dataDir, 'chats', `${id}-${suffix}.log`);
   c.name = `tea-chat-${id}-${suffix}`;
+  // persistent session directory (pi's session files survive container death)
+  c.sessionDir = path.join(CFG.dataDir, 'chat-sessions', `${id}-${suffix}`);
+  // session resume: if resuming from a previous session, reuse its session
+  // dir and find the .jsonl to pass to pi (pi loads the full conversation
+  // state natively — compaction, tokens, tool results, tree)
+  let sessionArg = [];
+  if (resumeFromRowid) {
+    const oldRow = chatSessionByRowid(resumeFromRowid);
+    if (oldRow?.session_dir) {
+      const sessFiles = findSessionFiles(oldRow.session_dir);
+      if (sessFiles.length) {
+        c.sessionDir = oldRow.session_dir; // mount the same dir (rw)
+        sessionArg = ['--session', `/root/.pi/agent/sessions/${sessFiles[0]}`];
+      }
+    }
+  }
+  fs.mkdirSync(c.sessionDir, { recursive: true });
   fs.mkdirSync(path.dirname(c.logFile), { recursive: true });
   chats.set(id, c);
   // rowid scopes later UPDATEs — chatSeq ids restart per run, so a bare
   // WHERE id=? would hit older rows sharing the same id
-  c.rowid = db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file) VALUES (?,?,?,?)')
-    .run(id, agent, c.model, c.logFile).lastInsertRowid;
+  const parentSession = resumeFromRowid || null;
+  c.rowid = db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file, session_dir, parent_session) VALUES (?,?,?,?,?,?)')
+    .run(id, agent, c.model, c.logFile, c.sessionDir, parentSession).lastInsertRowid;
   // start marker in the transcript (replayed on reconnect, and the first
   // line of the saved history)
-  chatSay(c, `[2pizzas] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}`);
+  chatSay(c, `[2pizzas] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}${parentSession ? ` · resumed from r${parentSession}` : ''}${sessionArg.length ? ` · pi session ${sessionArg[1].split('/').pop()}` : ''}`);
 
   // Gitea access for the chat agent: separate "chat" user (audit separation
   // from task work). Write still requires a per-repo collaborator grant.
@@ -280,11 +317,14 @@ export async function createChat(agent) {
     '--network', CFG.chatNetwork,
     '--add-host=host.docker.internal:host-gateway',
     '--name', c.name,
+    // persistent pi session state (survives container death → resumable)
+    '-v', `${c.sessionDir}:/root/.pi/agent/sessions`,
     ...giteaEnv,
     CFG.images.pi,
     'pi', '--mode', 'rpc',
     '--model', `${modelSel?.provider ?? 'none'}/${modelSel?.id ?? 'unknown'}`,
     '--append-system-prompt', CHAT_SYSTEM,
+    ...sessionArg,
   ]);
 
   // auto-compaction ON for this long-lived session (the image bakes it off —
