@@ -4,6 +4,9 @@ import { apiGet } from '../gitea.mjs';
 import { chats, chatSessions, chatHistory, chatRowLive } from '../chat.mjs';
 import { esc, fmtTok } from './layout.mjs';
 
+// wrap known host commands in a distinct chip so they stand out in chat text
+const hlCmds = (t) => t.replace(/\.\/(setup\.sh\s+\S+|deploy\.sh)/g, '<code class="cmdchip">$1</code>');
+
 // one line of the persisted transcript (log line: parsed event or plain
 // marker text) → a rendered message block (same classes as the live view)
 const historyBlock = (line) => {
@@ -13,7 +16,7 @@ const historyBlock = (line) => {
     return `<div class="msettle">${esc(e)}</div>`;
   switch (e.type) {
     case 'user_message': return `<div class="muser">${esc(e.message)}</div>`;
-    case 'text_block': return `<div class="mtext">${esc(e.text)}</div>`;
+    case 'text_block': return `<div class="mtext">${hlCmds(esc(e.text))}</div>`;
     case 'tool_call': return `<div class="mtool">⚙ <b>${esc(e.name)}</b> <code>${esc(String(e.arg).slice(0, 200))}</code></div>`;
     case 'settle': return `<div class="msettle">settled</div>`;
     case 'compacted': return `<div class="mcompacted">— context compacted —</div>`;
@@ -182,7 +185,7 @@ const handle = (line) => {
     // text — a visual no-op), replay clients get it whole; mark it settled
     // so the next live delta starts a FRESH block
     if (!curText || curText.dataset.settled) textBlock();
-    curText.textContent = e.text;
+    curText.innerHTML = hlCmds(escH(e.text));
     curText.dataset.settled = 1;
     box.scrollTop = box.scrollHeight;
   } else if (e.type === 'tool_call') {

@@ -228,6 +228,7 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
 .mtext{border-left:4px solid var(--ink);padding:4px 13px;margin:9px 0;white-space:pre-wrap;font-size:13px}
 .mtool{color:var(--muted);font-size:12px;margin:6px 0;word-break:break-word;border-left:3px solid var(--line);padding-left:10px}
 .mtool code{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.cmdchip{display:inline-block;background:var(--cheese);color:var(--cheese-ink);border:2px solid var(--line);border-radius:0;box-shadow:2px 2px 0 var(--shadow);padding:2px 8px;margin:2px 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;font-weight:700;cursor:default}
 .merr{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:8px 0;white-space:pre-wrap}
 .msettle{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;margin:12px 0;text-align:right}
 .mcompacted{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;margin:12px 0;text-align:center}

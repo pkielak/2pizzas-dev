@@ -309,7 +309,11 @@ function chatLine(l) {
     // in terminals) — palette accents for structure, plain for content, red for
     // errors
     case 'user_message': return wrap(e.message, W() - 8).map((t) => ({ pre: C.bold + P.cheese + ' you » ' + C.reset, text: t }));
-    case 'text_block': return wrap(e.text, W() - 14).map((t, i) => ({ pre: i === 0 ? C.bold + P.olives + ' assistant » ' + C.reset : '            ', text: t }));
+    case 'text_block': {
+      // highlight host commands (./setup.sh --deploy etc.) in bold cheese
+      const hl = (t) => t.replace(/\.\/(setup\.sh\s+\S+|deploy\.sh)/g, `${C.bold}${P.cheese}$&${C.reset}`);
+      return wrap(hl(e.text), W() - 14).map((t, i) => ({ pre: i === 0 ? C.bold + P.olives + ' assistant » ' + C.reset : '            ', text: t }));
+    }
     case 'tool_call': return [{ pre: P.olives + ' ⚙ ' + C.reset, text: `${C.bold}${e.name}${C.reset} ${C.dim}${fit(e.arg || '', W() - 20)}${C.reset}` }];
     case 'settle': return [{ pre: C.dim, text: '─ done ─' }];
     case 'compacted': return [{ pre: C.dim, text: `─ compacted (${e.reason || 'threshold'}) ─` }];

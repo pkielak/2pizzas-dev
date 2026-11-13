@@ -19,6 +19,7 @@
 #   ./setup.sh             # interactive wizard
 #   ./setup.sh --yes       # non-interactive: defaults + existing .env
 #   ./setup.sh --rebuild   # force-rebuild all images
+#   ./setup.sh --deploy    # rebuild + restart 2pizzas only (after a code change)
 #   ./setup.sh --skip-build
 #   ./setup.sh --no-android
 #
@@ -26,11 +27,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # ── options ─────────────────────────────────────────────────────────
-NONINTERACTIVE=0 REBUILD=0 SKIP_BUILD=0 WANT_ANDROID=ask
+NONINTERACTIVE=0 REBUILD=0 SKIP_BUILD=0 WANT_ANDROID=ask DEPLOY=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --yes|-y)     NONINTERACTIVE=1 ;;
     --rebuild)    REBUILD=1 ;;
+    --deploy)     DEPLOY=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
     --no-android) WANT_ANDROID=0 ;;
     -h|--help)    grep '^# ' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -49,6 +51,23 @@ fi
 ok()   { printf '  %s✓%s %s\n' "$C_OK"   "$C_RST" "$*"; }
 warn() { printf '  %s!%s %s\n' "$C_WARN" "$C_RST" "$*"; }
 err()  { printf '  %s✗%s %s\n' "$C_ERR"  "$C_RST" "$*" >&2; }
+
+# ── --deploy: rebuild + restart 2pizzas only ──────────────────────
+if [[ $DEPLOY == 1 ]]; then
+  echo "${C_BOLD}Deploy 2pizzas${C_RST}"
+  docker compose build 2pizzas
+  docker compose up -d 2pizzas
+  for i in $(seq 1 30); do
+    if curl -sf http://127.0.0.1:3001/healthz >/dev/null 2>&1; then
+      ok "2pizzas is healthy"
+      exit 0
+    fi
+    sleep 1
+  done
+  err "2pizzas did NOT become healthy in 30s"
+  docker logs --tail 30 gitea-2pizzas >&2
+  exit 1
+fi
 
 STEP=0
 step() {
