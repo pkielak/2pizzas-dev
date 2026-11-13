@@ -121,7 +121,7 @@ const server = http.createServer(async (req, res) => {
     input[type=password]::placeholder{color:var(--faint)}
     input[type=password]:focus{outline:none;box-shadow:3px 3px 0 var(--sauce)}
     button{background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);padding:9px 18px;cursor:pointer;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
-    button:hover{background:var(--cheese);color:var(--crust);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
+    button:hover{background:var(--cheese);color:var(--charcoal);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
     <body>
     <h2>🍕 chat is token-protected</h2>
     <p id="hint">Enter your <code>CHAT_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in
@@ -182,7 +182,7 @@ const server = http.createServer(async (req, res) => {
     input[type=password]::placeholder{color:var(--faint)}
     input[type=password]:focus{outline:none;box-shadow:3px 3px 0 var(--sauce)}
     button{background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);padding:9px 18px;cursor:pointer;font-size:13px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
-    button:hover{background:var(--cheese);color:var(--crust);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
+    button:hover{background:var(--cheese);color:var(--charcoal);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}</style></head>
     <body>
     <h2>🍕 2pizzas is token-protected</h2>
     <p id="hint">Enter your <code>UI_TOKEN</code> (from <code>.env</code>) to unlock. It is stored only in

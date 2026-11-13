@@ -45,9 +45,9 @@ every page works with no token in the URL.</p>
   <div class="l1">token <span id="tkstate" class="meta"></span></div>
   <div class="l2" style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
     <input type="password" id="tk" placeholder="ui token" style="flex:1;min-width:20ch;max-width:38ch;padding:6px 9px" autocomplete="off">
-    <button id="tksave">save &amp; unlock</button>
-    <button id="tkclear">clear saved</button>
-    <button id="tkout">sign out</button>
+    <button class="btn" id="tksave">save &amp; unlock</button>
+    <button class="btn" id="tkclear">clear saved</button>
+    <button class="btn" id="tkout">sign out</button>
   </div>
   <p class="meta" id="tkhelp"></p>
 </div></div>

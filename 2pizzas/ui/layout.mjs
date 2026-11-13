@@ -11,13 +11,13 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 // var(--color-*, fallback) reference in page-specific styles resolving to
 // the active scheme without per-file edits.
 export const THEME_CSS = `:root{
-  --crust:#121212;--dark:#000000;--light:#f5f5f5;--sauce:#dd4a48;--cheese:#eeddb2;--olives:#4e8752;
+  --crust:#181818;--charcoal:#121212;--dark:#000000;--light:#f5f5f5;--sauce:#dd4a48;--cheese:#eeddb2;--olives:#4e8752;
   --sauce-dark:#b93a38;--olives-dark:#3d6b41;--ham:#d17a66;
   /* semantic — light mode */
   --bg:#f5f5f5;--surface:#fff;--ink:#121212;--muted:#555;--muted-2:#666;--faint:#999;
   --line:#000;--shadow:#000;--track:#e2e2e2;
-  --cheese:#eeddb2;--cheese-ink:var(--crust);
-  --nav-active-bg:var(--crust);--nav-active-ink:var(--light);
+  --cheese:#eeddb2;--cheese-ink:var(--charcoal);
+  --nav-active-bg:var(--charcoal);--nav-active-ink:var(--light);
   /* legacy --color-* aliases (point at the semantic set → follow dark mode) */
   --color-body:var(--bg);
   --color-text:var(--ink);
@@ -54,7 +54,7 @@ export const THEME_CSS = `:root{
 html[data-theme=dark]{
   --bg:var(--crust);--surface:#1c1c1c;--ink:#f5f5f5;--muted:#b0b0b0;--muted-2:#8a8a8a;--faint:#666;
   --line:#f5f5f5;--shadow:#666;--track:#2a2a2a;
-  --cheese:#eeddb2;--cheese-ink:var(--crust);
+  --cheese:#eeddb2;--cheese-ink:var(--charcoal);
   --nav-active-bg:var(--cheese);--nav-active-ink:var(--cheese-ink);
   --color-text-2:#ccc;
   --color-secondary-alpha-20:#222;
