@@ -10,6 +10,8 @@ import Settings from '../pages/Settings.svelte';
 import Repos from '../pages/Repos.svelte';
 import Android from '../pages/Android.svelte';
 import Pages from '../pages/Pages.svelte';
+import Infra from '../pages/Infra.svelte';
+import Home from '../pages/Home.svelte';
 
 // SPA routes. Everything else in the nav is a plain anchor → full load of
 // the server-rendered page (ui/*.mjs) until it migrates. The server mirrors
@@ -23,6 +25,8 @@ const routes = [
   { re: /^\/repos$/, component: Repos, title: () => 'repos' },
   { re: /^\/android$/, component: Android, title: () => 'android' },
   { re: /^\/pages$/, component: Pages, title: () => 'pages' },
+  { re: /^\/infra$/, component: Infra, title: () => 'infra' },
+  { re: /^\/$/, component: Home, title: () => 'home' },
   { re: /^\/tasks$/, component: Tasks, title: () => 'tasks' },
   {
     re: /^\/task\/(\d+)$/,

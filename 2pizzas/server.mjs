@@ -71,20 +71,15 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
-import { execFileP } from './util.mjs';
+import { execFileP, dockerNames, pagesStatus } from './util.mjs';
 import { managedRepos } from './repos.mjs';
 import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
 import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive, chatRepos } from './chat.mjs';
-import { page, THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
-import { homePage } from './ui/home.mjs';
-import { infraPage } from './ui/infra.mjs';
-import { androidPage } from './ui/android.mjs';
-import { pagesPage, pagesStatus } from './ui/pages.mjs';
+import { THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { androidRuns } from './gitea.mjs';
-import { reposPage } from './ui/repos.mjs';
 import { statsData } from './ui/stats.mjs';
 
 // importing these for their side effects: pump interval, poll interval,
@@ -93,14 +88,6 @@ import { activeCount } from './tasks.mjs';
 import './poll.mjs';
 import './live.mjs';
 
-// page functions return either a body string or { html, script } — the
-// script (window.__pageInit) is rendered OUTSIDE <main> so it survives the
-// in-place live updates (see layout.mjs)
-const renderPage = async (title, p, opts = {}) => {
-  const r = await p;
-  const b = typeof r === 'string' ? { html: r, script: '' } : r;
-  return page(title, b.html, { ...opts, script: b.script ?? '' });
-};
 
 const server = http.createServer(async (req, res) => {
   // 401 for the chat gate — an UNLOCK form: the first chat use prompts for
@@ -472,6 +459,41 @@ const server = http.createServer(async (req, res) => {
   // GET /api/pages — the SPA /pages page (per-site sync status)
   if (url.pathname === '/api/pages' && req.method === 'GET')
     return send(200, 'application/json', JSON.stringify({ sites: await pagesStatus() }));
+  // GET /api/infra — the SPA /infra page: live docker status + agent task
+  // activity + inference backend state for the block diagram
+  if (url.pathname === '/api/infra' && req.method === 'GET') {
+    const backends = readRegistry();
+    const first = backends[0];
+    const [running, models, busy] = await Promise.all([
+      dockerNames(),
+      first ? backendModels(first).catch(() => null) : null,
+      Promise.resolve(db.prepare("SELECT agent FROM tasks WHERE status IN ('queued','running')").all().map((r) => r.agent)),
+    ]);
+    const up = (n) => running === null ? null : running.has(n);
+    const pagesUp = CFG.pagesSites.length
+      ? CFG.pagesSites.map((s) => s.split(':')[2]).map(up).every((u) => u === true)
+      : null;
+    return send(200, 'application/json', JSON.stringify({
+      agents: { pi: CFG.agents.pi.login, opencode: CFG.agents.opencode.login, review: CFG.review.login, infra: CFG.agents.infra.login },
+      busy: [...new Set(busy)],
+      docker: running === null ? null : {
+        gitea: up('gitea') && up('gitea-db-1'),
+        db: up('gitea-db-1'),
+        dispatcher: up('gitea-2pizzas'),
+        runner: up('gitea-runner'),
+        androidRunner: up('gitea-android-runner'),
+        pages: pagesUp,
+        chatN: [...running].filter((n) => n.startsWith('tea-chat-')).length,
+      },
+      managedN: (await managedRepos()).length,
+      backend: {
+        id: first?.id ?? '', url: first?.url ?? '', n: backends.length,
+        loaded: models ? models.filter((m) => m.loaded).map((m) => m.id) : [],
+        reachable: !!models,
+      },
+      pagesSites: CFG.pagesSites.map((s) => { const [repo, port] = s.split(':'); return { repo, port }; }),
+    }));
+  }
   // remove a self-enrolled repo (env-listed ones are pinned — no-op → 404)
   const repoDelMatch = url.pathname.match(/^\/api\/repos\/(.+)$/);
   if (repoDelMatch && req.method === 'DELETE') {
@@ -559,7 +581,7 @@ const server = http.createServer(async (req, res) => {
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
-  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/, /^\/settings$/, /^\/repos$/, /^\/android$/, /^\/pages$/];
+  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/, /^\/settings$/, /^\/repos$/, /^\/android$/, /^\/pages$/, /^\/infra$/, /^\/$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));
@@ -575,8 +597,8 @@ const server = http.createServer(async (req, res) => {
   if (SPA_ROUTES.some((re) => re.test(url.pathname)))
     return send(200, 'text/html', fs.readFileSync(path.join(UI_DIST, 'index.html')));
 
-  if (url.pathname === '/') return send(200, 'text/html', await renderPage('home', homePage(), { nav: 'home' }));
-  if (url.pathname === '/infra') return send(200, 'text/html', await renderPage('infra', infraPage(), { nav: 'infra' }));
+  // / (home) is SPA-migrated (SPA_ROUTES serves the shell)
+  // /infra is SPA-migrated (SPA_ROUTES serves the shell)
   // /tasks + /task/<id> are SPA-migrated (SPA_ROUTES above serves the shell)
   // /repos, /android, /pages, /backends, /settings are SPA-migrated (SPA_ROUTES serves the shell)
   // /backends and /settings are SPA-migrated (SPA_ROUTES serves the shell)
