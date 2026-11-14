@@ -5,6 +5,7 @@ import TaskDetail from '../pages/TaskDetail.svelte';
 import ChatList from '../pages/ChatList.svelte';
 import ChatView from '../pages/ChatView.svelte';
 import ChatHistory from '../pages/ChatHistory.svelte';
+import Backends from '../pages/Backends.svelte';
 
 // SPA routes. Everything else in the nav is a plain anchor → full load of
 // the server-rendered page (ui/*.mjs) until it migrates. The server mirrors
@@ -13,6 +14,7 @@ import ChatHistory from '../pages/ChatHistory.svelte';
 // layout.
 const routes = [
   { re: /^\/stats$/, component: Stats, title: () => 'stats' },
+  { re: /^\/backends$/, component: Backends, title: () => 'backends' },
   { re: /^\/tasks$/, component: Tasks, title: () => 'tasks' },
   {
     re: /^\/task\/(\d+)$/,

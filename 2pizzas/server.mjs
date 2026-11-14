@@ -72,7 +72,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { managedRepos } from './repos.mjs';
-import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
+import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
@@ -85,7 +85,6 @@ import { androidPage } from './ui/android.mjs';
 import { pagesPage } from './ui/pages.mjs';
 import { reposPage } from './ui/repos.mjs';
 import { statsData } from './ui/stats.mjs';
-import { backendsPage } from './ui/backends.mjs';
 
 // importing these for their side effects: pump interval, poll interval,
 // theme discovery, chat orphan reaping + idle killer
@@ -394,6 +393,17 @@ const server = http.createServer(async (req, res) => {
   };
   if (url.pathname === '/api/backends/baked' && req.method === 'GET')
     return send(200, 'application/json', JSON.stringify({ providers: await bakedProviderIds() }));
+  // full data for the SPA /backends page: the registry WITH apiKey (the UI
+  // is token-gated — same trust domain as the old server-rendered page,
+  // which also embedded the key in the edit form), the live pickModel()
+  // result, the pi baked default, the baked provider ids, and each
+  // backend's model list (null = unreachable)
+  if (url.pathname === '/api/backends/full' && req.method === 'GET') {
+    const backends = readRegistry();
+    const [picked, piDef, baked] = await Promise.all([pickModel(), piDefaultModel(), bakedProviderIds()]);
+    const models = await Promise.all(backends.map((b) => backendModels(b).catch(() => null)));
+    return send(200, 'application/json', JSON.stringify({ backends, models, picked, piDefault: piDef, baked, images: CFG.images }));
+  }
   // list backends as JSON (apiKey redacted) — the /backends page renders the
   // registry server-side, but API clients (the TUI) need a plain list
   if (url.pathname === '/api/backends' && req.method === 'GET')
@@ -509,7 +519,7 @@ const server = http.createServer(async (req, res) => {
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
-  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/];
+  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));
@@ -531,7 +541,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/android') return send(200, 'text/html', await renderPage('android', androidPage(), { nav: 'android' }));
   if (url.pathname === '/pages') return send(200, 'text/html', await renderPage('pages', pagesPage(), { nav: 'pages' }));
   if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
-  if (url.pathname === '/backends') return send(200, 'text/html', await renderPage('backends', backendsPage(), { nav: 'backends' }));
+  // /backends is SPA-migrated (SPA_ROUTES above serves the shell)
   if (url.pathname === '/settings') return send(200, 'text/html', await renderPage('settings', settingsPage(), { nav: 'settings' }));
   send(404, 'text/plain', 'not found');
 });
