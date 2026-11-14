@@ -36,7 +36,6 @@ seed.sh                     # one-shot bootstrap: users, tokens, repos, runners
 sync-template.sh            # push agents-actions updates into template-based repos
 inference.json              # inference backend registry (gitignored; .example committed)
 .env / .env.example         # all secrets (token, passwords) — .env is gitignored
-gitea-policy.yaml           # sandbox egress policy for agent binaries (network allowlist)
 agents-actions/             # exact content of the agents-actions template repo (source of truth)
 agent-sandbox/
   Dockerfile                # base image: git, curl, jq, node

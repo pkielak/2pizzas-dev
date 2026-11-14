@@ -298,7 +298,6 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `agent-sandbox/infra/Dockerfile` | `agent-sandbox:infra` = pi + docker-cli (runc + docker socket, see infra agent) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model providers (baked from `inference.json`, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
-| `gitea-policy.yaml` | sandbox network egress policy for agent binaries |
 | `.gitea/workflows/` | ordinary CI workflows — `mirror-to-github.yaml`, `security-scan.yaml` (gitleaks + semgrep gate on every PR) — run on my-runner |
 | `pages/` | static pages server (`Dockerfile`, `nginx.conf`, `entrypoint.sh`): syncs a repo's `gh-pages` branch and serves it on `:3002` (stand-in for Gitea Pages, which 1.27 lacks) |
 
