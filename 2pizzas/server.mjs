@@ -80,7 +80,6 @@ import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbo
 import { page, THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
-import { tasksPage, taskPage } from './ui/tasks.mjs';
 import { chatListPage, chatView, chatHistoryView } from './ui/chat.mjs';
 import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
@@ -450,7 +449,20 @@ const server = http.createServer(async (req, res) => {
   if (apiTaskMatch) {
     const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+apiTaskMatch[1]);
     if (!t) return send(404, 'application/json', '{}');
-    return send(200, 'application/json', JSON.stringify(t));
+    // kids (review chain) for the SPA detail view — TUI ignores the extra field
+    const kids = db.prepare('SELECT id FROM tasks WHERE parent_id = ?').all(t.id).map((k) => k.id);
+    return send(200, 'application/json', JSON.stringify({ ...t, kids }));
+  }
+  // settled log tail (last 400 lines) for the SPA task view
+  const taskLogMatch = url.pathname.match(/^\/api\/task\/(\d+)\/log$/);
+  if (taskLogMatch && req.method === 'GET') {
+    const t = db.prepare('SELECT id FROM tasks WHERE id=?').get(+taskLogMatch[1]);
+    if (!t) return send(404, 'application/json', '{}');
+    const f = logPath(t.id);
+    const log = fs.existsSync(f)
+      ? fs.readFileSync(f, 'utf8').split('\n').slice(-400).join('\n')
+      : '(no log yet)';
+    return send(200, 'application/json', JSON.stringify({ log }));
   }
   const streamMatch = url.pathname.match(/^\/task\/(\d+)\/stream$/);
   if (streamMatch) {
@@ -500,12 +512,6 @@ const server = http.createServer(async (req, res) => {
     req.on('close', () => clearInterval(iv));
     return;
   }
-  const taskMatch = url.pathname.match(/^\/task\/(\d+)$/);
-  if (taskMatch) {
-    const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(+taskMatch[1]);
-    if (!t) return send(404, 'text/plain', 'no such task');
-    return send(200, 'text/html', page(`task ${t.id}`, taskPage(t), { auto: false, nav: 'tasks' }));
-  }
   if (url.pathname === '/assets/gitea-theme.css') {
     const th = giteaTheme();
     return send(200, 'text/css', th.css || '/* gitea theme css unavailable — UI uses fallback palette */');
@@ -516,7 +522,8 @@ const server = http.createServer(async (req, res) => {
   // server-side from ui/*.mjs until it migrates. Static assets live under
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
-  const SPA_ROUTES = new Set(['/stats']);
+  // must stay in sync with SPA routes in src/lib/router.mjs
+  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));
@@ -529,16 +536,15 @@ const server = http.createServer(async (req, res) => {
     const t = file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html';
     return send(200, t, fs.readFileSync(file));
   }
-  if (SPA_ROUTES.has(url.pathname))
+  if (SPA_ROUTES.some((re) => re.test(url.pathname)))
     return send(200, 'text/html', fs.readFileSync(path.join(UI_DIST, 'index.html')));
 
   if (url.pathname === '/') return send(200, 'text/html', await renderPage('home', homePage(), { nav: 'home' }));
   if (url.pathname === '/infra') return send(200, 'text/html', await renderPage('infra', infraPage(), { nav: 'infra' }));
-  if (url.pathname === '/tasks') return send(200, 'text/html', await renderPage('tasks', tasksPage(), { nav: 'tasks' }));
+  // /tasks + /task/<id> are SPA-migrated (SPA_ROUTES above serves the shell)
   if (url.pathname === '/android') return send(200, 'text/html', await renderPage('android', androidPage(), { nav: 'android' }));
   if (url.pathname === '/pages') return send(200, 'text/html', await renderPage('pages', pagesPage(), { nav: 'pages' }));
   if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
-  // /stats is SPA-migrated (SPA_ROUTES above serves the shell)
   if (url.pathname === '/backends') return send(200, 'text/html', await renderPage('backends', backendsPage(), { nav: 'backends' }));
   if (url.pathname === '/settings') return send(200, 'text/html', await renderPage('settings', settingsPage(), { nav: 'settings' }));
   send(404, 'text/plain', 'not found');
