@@ -47,7 +47,7 @@
   <p class="err">{err}</p>
 {/if}
 
-<form>
+<form id="newchat">
   <button type="button" onclick={() => start()}>start chat</button>
 </form>
 

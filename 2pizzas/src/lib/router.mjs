@@ -20,7 +20,9 @@ const routes = [
     title: (m) => `task ${m[1]}`,
     props: (m) => ({ taskId: +m[1] }),
   },
-  { re: /^\/chat$/, component: ChatList, title: () => 'chat', nav: 'chat', app: true },
+  // the LIST page uses the normal scrolling layout (no app) — only the
+  // session views pin input/messages full-height
+  { re: /^\/chat$/, component: ChatList, title: () => 'chat', nav: 'chat' },
   {
     re: /^\/chat\/(\d+)$/,
     component: ChatView,
