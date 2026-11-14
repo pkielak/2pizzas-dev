@@ -76,11 +76,10 @@ import { readRegistry, backendModels, piDefaultModel, bakedProviderIds, addBacke
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive } from './chat.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive, chatRepos } from './chat.mjs';
 import { page, THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
-import { chatListPage, chatView, chatHistoryView } from './ui/chat.mjs';
 import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
 import { pagesPage } from './ui/pages.mjs';
@@ -259,6 +258,10 @@ const server = http.createServer(async (req, res) => {
     if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'application/json', JSON.stringify([...chats.values()].map(chatJson)));
   }
+  if (url.pathname === '/api/chat/repos' && req.method === 'GET') {
+    if (!chatAuthed(req, url, res)) return chat401();
+    return send(200, 'application/json', JSON.stringify(await chatRepos()));
+  }
   if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
     if (!chatAuthed(req, url, res)) return chat401();
     // live status overlaid on the persisted rows (a live session's row has
@@ -351,21 +354,6 @@ const server = http.createServer(async (req, res) => {
     if (c.dead) { res.write('event: done\ndata: \n\n'); res.end(); }
     return;
   }
-  const chatPageMatch = url.pathname.match(/^\/chat\/(r)?(\d+)$/);
-  if (chatPageMatch) {
-    if (!chatAuthed(req, url, res)) return chat401();
-    const byRowid = chatPageMatch[1] === 'r';
-    const row = byRowid
-      ? chatSessionByRowid(+chatPageMatch[2])
-      : chatSessionRow(+chatPageMatch[2]);
-    if (!row) return send(404, 'text/plain', 'no such chat');
-    const c = chats.get(row.id);
-    // r<rowid> of a live row → the live view; a bare id never shadows
-    if (c && (!byRowid || chatRowLive(row)))
-      return send(200, 'text/html', page(`chat ${c.id}`, chatView(c), { auto: false, nav: 'chat', app: true }));
-    // dead session — read-only transcript from its log
-    return send(200, 'text/html', page(`chat ${row.id} (ended)`, chatHistoryView(row), { auto: false, nav: 'chat', app: true }));
-  }
   // clear the chat session cookie (authenticates via cookie/param, then
   // the clearing set-cookie overwrites the one chatAuthed() just set)
   if (url.pathname === '/api/chat/logout' && req.method === 'POST') {
@@ -375,10 +363,8 @@ const server = http.createServer(async (req, res) => {
     return send(200, 'application/json', '{"ok":true}');
   }
 
-  if (url.pathname === '/chat') {
-    if (!chatAuthed(req, url, res)) return chat401();
-    return send(200, 'text/html', await renderPage('chat', chatListPage(), { nav: 'chat' }));
-  }
+  // /chat, /chat/<id>, /chat/r<rowid> are SPA-migrated (SPA_ROUTES serves
+  // the shell; the SPA falls back to the transcript view for dead sessions)
 
   // live update feed for the dashboard: pages swap their <main> in place
   // on any event (see live.mjs) — replaces the old 3s full-page reload
@@ -523,7 +509,7 @@ const server = http.createServer(async (req, res) => {
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
-  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/];
+  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));

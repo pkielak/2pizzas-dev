@@ -31,7 +31,7 @@
     {#each nav as [href, label]}
       <a
         class="navl"
-        class:on={$currentRoute && $currentRoute.title === label}
+        class:on={$currentRoute && $currentRoute.nav === label}
         href={href}
         onclick={(e) => {
           if (navigate(href)) e.preventDefault();
@@ -40,7 +40,7 @@
     {/each}
     <a class="navl sbfoot" href={location.protocol + '//' + location.hostname + ':3000'}>gitea ↗</a>
   </aside>
-  <main>
+  <main class:app={$currentRoute?.app}>
     {#if $currentRoute}
       <svelte:component this={$currentRoute.component} {...$currentRoute.props} />
     {:else}

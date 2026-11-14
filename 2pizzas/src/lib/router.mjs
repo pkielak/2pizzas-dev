@@ -2,10 +2,15 @@ import { writable } from 'svelte/store';
 import Stats from '../pages/Stats.svelte';
 import Tasks from '../pages/Tasks.svelte';
 import TaskDetail from '../pages/TaskDetail.svelte';
+import ChatList from '../pages/ChatList.svelte';
+import ChatView from '../pages/ChatView.svelte';
+import ChatHistory from '../pages/ChatHistory.svelte';
 
 // SPA routes. Everything else in the nav is a plain anchor → full load of
 // the server-rendered page (ui/*.mjs) until it migrates. The server mirrors
-// this list in SPA_ROUTES (server.mjs) — keep the two in sync.
+// this list in SPA_ROUTES (server.mjs) — keep the two in sync. `nav` is the
+// sidebar highlight key (defaults to the title); `app` = full-height chat
+// layout.
 const routes = [
   { re: /^\/stats$/, component: Stats, title: () => 'stats' },
   { re: /^\/tasks$/, component: Tasks, title: () => 'tasks' },
@@ -15,12 +20,29 @@ const routes = [
     title: (m) => `task ${m[1]}`,
     props: (m) => ({ taskId: +m[1] }),
   },
+  { re: /^\/chat$/, component: ChatList, title: () => 'chat', nav: 'chat', app: true },
+  {
+    re: /^\/chat\/(\d+)$/,
+    component: ChatView,
+    title: (m) => `chat ${m[1]}`,
+    nav: 'chat',
+    app: true,
+    props: (m) => ({ sessionId: +m[1] }),
+  },
+  {
+    re: /^\/chat\/r(\d+)$/,
+    component: ChatHistory,
+    title: (m) => `chat ${m[1]} (ended)`,
+    nav: 'chat',
+    app: true,
+    props: (m) => ({ rowid: +m[1] }),
+  },
 ];
 
 export const resolve = (p) => {
   for (const r of routes) {
     const m = p.match(r.re);
-    if (m) return { component: r.component, title: r.title(m), props: r.props ? r.props(m) : {} };
+    if (m) return { component: r.component, title: r.title(m), nav: r.nav ?? r.title(m), app: r.app, props: r.props ? r.props(m) : {} };
   }
   return null;
 };

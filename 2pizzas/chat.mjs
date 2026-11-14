@@ -5,6 +5,7 @@ import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db } from './db.mjs';
+import { apiGet } from './gitea.mjs';
 import { pickModel } from './inference.mjs';
 import { redact } from './redact.mjs';
 import { liveBroadcast } from './live.mjs';
@@ -223,8 +224,44 @@ export const chatKill = (c, note) => {
 
 export const chatJson = (c) => ({
   id: c.id, agent: c.agent, model: c.model, isStreaming: c.isStreaming,
-  lastActive: c.lastActive, startedAt: c.startedAt,
+  lastActive: c.lastActive, startedAt: c.startedAt, modelCtx: c.modelCtx,
 });
+
+// data for the SPA chat list's grant section: every repo on the instance
+// with the chat user's recorded grants. Drift cleanup: chat_grants is our
+// OWN record — a human can revoke the collaborator in Gitea directly,
+// leaving a stale "write since" row. Verify each recorded grant against the
+// real permission (204 = yes, 404 = no) and drop the stale ones; a Gitea
+// blip (error) never drops a row.
+export async function chatRepos() {
+  if (!CFG.chatGiteaToken) return { hasToken: false, repos: [], grants: {}, idleMin: CFG.chatIdleMs / 60000 };
+  const grants = Object.fromEntries(
+    db.prepare('SELECT repo, granted_at FROM chat_grants').all().map((g) => [g.repo, g.granted_at]));
+  for (const repo of [...Object.keys(grants)]) {
+    let state; // 'yes' | 'no' | 'unknown'
+    try {
+      state = (await apiGet(`/repos/${repo}/collaborators/${CFG.chatLogin}`, { token: CFG.chatGiteaToken, ok404: true })) !== null ? 'yes' : 'no';
+    } catch { state = 'unknown'; } // Gitea blip — never drop a row on an error
+    if (state === 'no') {
+      db.prepare('DELETE FROM chat_grants WHERE repo=?').run(repo);
+      delete grants[repo];
+    }
+  }
+  let repos = [], repoError = null;
+  try {
+    // /admin/repos does not exist in Gitea 1.27 — search covers all repos
+    // the admin token can see (private included). No total_count in the
+    // response, so paginate until a short page (was a blind limit=250)
+    for (let page = 1; ; page++) {
+      const rs = await apiGet(`/repos/search?limit=50&page=${page}`, { token: CFG.adminToken });
+      const batch = (rs.data ?? []).map((r) => r.full_name);
+      repos.push(...batch);
+      if (batch.length < 50) break;
+    }
+    repos.sort();
+  } catch (e) { repoError = e.message; }
+  return { hasToken: true, chatLogin: CFG.chatLogin, repos, grants, repoError, idleMin: CFG.chatIdleMs / 60000 };
+}
 
 // ── persisted session records (chat_sessions) ───────────────────────────────
 // chatSeq ids restart at 1 on every 2pizzas run, so a dead id resolves to the
