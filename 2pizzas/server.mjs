@@ -67,6 +67,7 @@
  */
 import http from 'node:http';
 import fs from 'node:fs';
+import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
@@ -85,7 +86,7 @@ import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
 import { pagesPage } from './ui/pages.mjs';
 import { reposPage } from './ui/repos.mjs';
-import { statsPage } from './ui/stats.mjs';
+import { statsData } from './ui/stats.mjs';
 import { backendsPage } from './ui/backends.mjs';
 
 // importing these for their side effects: pump interval, poll interval,
@@ -394,6 +395,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/tasks') {
     return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 100').all()));
   }
+  if (url.pathname === '/api/stats' && req.method === 'GET')
+    return send(200, 'application/json', JSON.stringify(statsData()));
   // ── inference backends (inference.json — see inference.mjs) ──
   const readJson = (rq) => new Promise((resolve, reject) => {
     let body = '';
@@ -507,13 +510,35 @@ const server = http.createServer(async (req, res) => {
     const th = giteaTheme();
     return send(200, 'text/css', th.css || '/* gitea theme css unavailable — UI uses fallback palette */');
   }
+
+  // ── Svelte SPA (built by vite — see vite.config.mjs / Dockerfile ui stage) ──
+  // Migrated routes serve the SPA shell; everything else below still renders
+  // server-side from ui/*.mjs until it migrates. Static assets live under
+  // /ui/ (the vite `base`), so they never collide with /assets/*.
+  const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
+  const SPA_ROUTES = new Set(['/stats']);
+  const uiFile = (reqPath) => {
+    const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
+    const file = path.normalize(path.join(UI_DIST, rel));
+    if (!file.startsWith(UI_DIST) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
+    return file;
+  };
+  if (url.pathname === '/ui' || url.pathname.startsWith('/ui/')) {
+    const file = uiFile(url.pathname);
+    if (!file) return send(404, 'text/plain', 'not found');
+    const t = file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html';
+    return send(200, t, fs.readFileSync(file));
+  }
+  if (SPA_ROUTES.has(url.pathname))
+    return send(200, 'text/html', fs.readFileSync(path.join(UI_DIST, 'index.html')));
+
   if (url.pathname === '/') return send(200, 'text/html', await renderPage('home', homePage(), { nav: 'home' }));
   if (url.pathname === '/infra') return send(200, 'text/html', await renderPage('infra', infraPage(), { nav: 'infra' }));
   if (url.pathname === '/tasks') return send(200, 'text/html', await renderPage('tasks', tasksPage(), { nav: 'tasks' }));
   if (url.pathname === '/android') return send(200, 'text/html', await renderPage('android', androidPage(), { nav: 'android' }));
   if (url.pathname === '/pages') return send(200, 'text/html', await renderPage('pages', pagesPage(), { nav: 'pages' }));
   if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
-  if (url.pathname === '/stats') return send(200, 'text/html', await renderPage('stats', statsPage(), { nav: 'stats' }));
+  // /stats is SPA-migrated (SPA_ROUTES above serves the shell)
   if (url.pathname === '/backends') return send(200, 'text/html', await renderPage('backends', backendsPage(), { nav: 'backends' }));
   if (url.pathname === '/settings') return send(200, 'text/html', await renderPage('settings', settingsPage(), { nav: 'settings' }));
   send(404, 'text/plain', 'not found');

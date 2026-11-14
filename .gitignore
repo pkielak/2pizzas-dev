@@ -1,5 +1,9 @@
 # Secrets
 .env
+
+# 2pizzas UI (Svelte) — deps + build artifacts
+2pizzas/node_modules/
+2pizzas/ui/dist/
 inference.json
 agent-sandbox/pi/pi-settings/models.json
 agent-sandbox/pi/pi-settings/settings.json
