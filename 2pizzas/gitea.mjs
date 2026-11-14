@@ -13,6 +13,25 @@ export async function apiGet(p, opts = {}) {
   return res.json();
 }
 
+// android builds: the runs API doesn't expose the runner/label — that
+// lives on the JOBS — so a run is an "android build" iff one of its jobs
+// carries the `android` label (same opt-in the runner uses: runs-on: android)
+export async function androidRuns(limit = 30) {
+  const runs = (await apiGet(`/admin/actions/runs?limit=${limit}`, { token: CFG.adminToken })).workflow_runs;
+  const withJobs = await Promise.all(runs.map(async (r) => {
+    let jobs = [];
+    try {
+      const j = await apiGet(`/repos/${r.repository.owner.login}/${r.repository.name}/actions/runs/${r.id}/jobs`,
+        { token: CFG.adminToken, ok404: true });
+      jobs = (j && j.jobs) || [];
+    } catch { /* jobs unavailable — treated as non-android */ }
+    r.jobs = jobs;
+    r.isAndroid = jobs.some((j) => (j.labels || []).includes('android'));
+    return r;
+  }));
+  return withJobs.filter((r) => r.isAndroid);
+}
+
 export async function apiPost(p, body, opts = {}) {
   const res = await fetch(`${CFG.giteaApi}${p}`, {
     method: 'POST',

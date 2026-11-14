@@ -1,7 +1,8 @@
 import { CFG } from '../config.mjs';
 import { db } from '../db.mjs';
 import { esc } from './layout.mjs';
-import { androidRuns, runRows } from './android.mjs';
+import { runRows } from './android.mjs';
+import { androidRuns } from '../gitea.mjs';
 import { pagesStatus } from './pages.mjs';
 import { taskRows } from './tasks.mjs';
 

@@ -6,6 +6,10 @@ import ChatList from '../pages/ChatList.svelte';
 import ChatView from '../pages/ChatView.svelte';
 import ChatHistory from '../pages/ChatHistory.svelte';
 import Backends from '../pages/Backends.svelte';
+import Settings from '../pages/Settings.svelte';
+import Repos from '../pages/Repos.svelte';
+import Android from '../pages/Android.svelte';
+import Pages from '../pages/Pages.svelte';
 
 // SPA routes. Everything else in the nav is a plain anchor → full load of
 // the server-rendered page (ui/*.mjs) until it migrates. The server mirrors
@@ -15,6 +19,10 @@ import Backends from '../pages/Backends.svelte';
 const routes = [
   { re: /^\/stats$/, component: Stats, title: () => 'stats' },
   { re: /^\/backends$/, component: Backends, title: () => 'backends' },
+  { re: /^\/settings$/, component: Settings, title: () => 'settings' },
+  { re: /^\/repos$/, component: Repos, title: () => 'repos' },
+  { re: /^\/android$/, component: Android, title: () => 'android' },
+  { re: /^\/pages$/, component: Pages, title: () => 'pages' },
   { re: /^\/tasks$/, component: Tasks, title: () => 'tasks' },
   {
     re: /^\/task\/(\d+)$/,

@@ -71,6 +71,7 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
+import { execFileP } from './util.mjs';
 import { managedRepos } from './repos.mjs';
 import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
@@ -80,9 +81,9 @@ import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbo
 import { page, THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { homePage } from './ui/home.mjs';
 import { infraPage } from './ui/infra.mjs';
-import { settingsPage } from './ui/settings.mjs';
 import { androidPage } from './ui/android.mjs';
-import { pagesPage } from './ui/pages.mjs';
+import { pagesPage, pagesStatus } from './ui/pages.mjs';
+import { androidRuns } from './gitea.mjs';
 import { reposPage } from './ui/repos.mjs';
 import { statsData } from './ui/stats.mjs';
 
@@ -432,6 +433,45 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'PATCH') return backendApi(async () => { await updateBackend(id, await readJson(req)); });
     if (backendItemMatch[2] && req.method === 'POST') return backendApi(() => moveBackend(id, backendItemMatch[2]));
   }
+  // GET /api/repos — the SPA /repos page: per-repo task counts + the global
+  // webhook status (checked via psql like seed.sh — Gitea 1.27 has no API
+  // for system webhooks)
+  if (url.pathname === '/api/repos' && req.method === 'GET') {
+    let webhook = { ok: false, msg: 'check failed (gitea-db unreachable?)' };
+    try {
+      const out = await execFileP('docker', ['exec', CFG.giteaDbContainer, 'psql', '-U', CFG.giteaDbUser, '-d', CFG.giteaDbName, '-tAc', "SELECT id FROM webhook WHERE is_system_webhook AND url LIKE '%:3001/webhook' LIMIT 1"], { timeout: 5000 });
+      webhook = out.trim() ? { ok: true, id: out.trim() } : { ok: false, msg: 'missing — run ./seed.sh' };
+    } catch { /* left as failed */ }
+    const repos = (await managedRepos()).map((r) => {
+      const [tot, ok, bad, last, added] = [
+        db.prepare('SELECT COUNT(*) n FROM tasks WHERE repo=?').get(r).n,
+        db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='success'").get(r).n,
+        db.prepare("SELECT COUNT(*) n FROM tasks WHERE repo=? AND status='failure'").get(r).n,
+        db.prepare('SELECT MAX(created_at) t FROM tasks WHERE repo=?').get(r).t,
+        db.prepare('SELECT added_at FROM managed_repos WHERE owner=? AND name=?').get(...r.split('/'))?.added_at,
+      ];
+      return { repo: r, auto: !CFG.repos.includes(r), added, tot, ok, bad, last };
+    });
+    return send(200, 'application/json', JSON.stringify({ webhook, repos }));
+  }
+  // GET /api/android — the SPA /android page (job list folded to a flag
+  // server-side; the runs API doesn't expose labels)
+  if (url.pathname === '/api/android' && req.method === 'GET') {
+    let runs = [], err = null;
+    if (!CFG.adminToken) err = 'ADMIN_TOKEN not set — cannot list actions runs (add it to 2pizzas in docker-compose.yml)';
+    else { try { runs = await androidRuns(30); } catch (e) { err = e.message; } }
+    return send(200, 'application/json', JSON.stringify({
+      err,
+      runs: runs.map((r) => ({
+        id: r.id, repo: r.repository.full_name, head_branch: r.head_branch || '',
+        display_title: r.display_title || '', run_attempt: r.run_attempt,
+        started_at: r.started_at || '—', status: r.status, conclusion: r.conclusion,
+      })),
+    }));
+  }
+  // GET /api/pages — the SPA /pages page (per-site sync status)
+  if (url.pathname === '/api/pages' && req.method === 'GET')
+    return send(200, 'application/json', JSON.stringify({ sites: await pagesStatus() }));
   // remove a self-enrolled repo (env-listed ones are pinned — no-op → 404)
   const repoDelMatch = url.pathname.match(/^\/api\/repos\/(.+)$/);
   if (repoDelMatch && req.method === 'DELETE') {
@@ -519,7 +559,7 @@ const server = http.createServer(async (req, res) => {
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
-  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/];
+  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/, /^\/settings$/, /^\/repos$/, /^\/android$/, /^\/pages$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));
@@ -538,11 +578,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/') return send(200, 'text/html', await renderPage('home', homePage(), { nav: 'home' }));
   if (url.pathname === '/infra') return send(200, 'text/html', await renderPage('infra', infraPage(), { nav: 'infra' }));
   // /tasks + /task/<id> are SPA-migrated (SPA_ROUTES above serves the shell)
-  if (url.pathname === '/android') return send(200, 'text/html', await renderPage('android', androidPage(), { nav: 'android' }));
-  if (url.pathname === '/pages') return send(200, 'text/html', await renderPage('pages', pagesPage(), { nav: 'pages' }));
-  if (url.pathname === '/repos') return send(200, 'text/html', await renderPage('repos', reposPage(), { nav: 'repos' }));
-  // /backends is SPA-migrated (SPA_ROUTES above serves the shell)
-  if (url.pathname === '/settings') return send(200, 'text/html', await renderPage('settings', settingsPage(), { nav: 'settings' }));
+  // /repos, /android, /pages, /backends, /settings are SPA-migrated (SPA_ROUTES serves the shell)
+  // /backends and /settings are SPA-migrated (SPA_ROUTES serves the shell)
   send(404, 'text/plain', 'not found');
 });
 

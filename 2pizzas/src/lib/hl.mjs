@@ -9,6 +9,10 @@ export const giteaHref = (u) => {
   return m ? location.protocol + '//' + location.hostname + ':3000' + m[1] : u;
 };
 
+// build a gitea URL for a repo path (owner/name) + optional sub-path
+export const giteaRepoHref = (repo, suffix = '') =>
+  location.protocol + '//' + location.hostname + ':3000/' + repo + (suffix ? '/' + suffix : '');
+
 // raw text → escaped HTML with host commands as chips and Gitea issue/PR
 // URLs as links (same rules as the old server renderer)
 export const hlText = (raw) => {
