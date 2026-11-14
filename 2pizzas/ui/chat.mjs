@@ -4,8 +4,20 @@ import { apiGet } from '../gitea.mjs';
 import { chats, chatSessions, chatHistory, chatRowLive } from '../chat.mjs';
 import { esc, fmtTok } from './layout.mjs';
 
-// wrap known host commands in a distinct chip so they stand out in chat text
-const hlCmds = (t) => t.replace(/\.\/(setup\.sh\s+\S+|deploy\.sh)/g, '<code class="cmdchip">$1</code>');
+// raw text → escaped HTML with known host commands as chips and Gitea
+// issue/PR URLs as links (the refs a chat created land here too)
+const hlText = (raw) => {
+  raw = String(raw).replace(/\n{3,}/g, '\n\n'); // collapse excessive blank lines
+  let out = '', last = 0;
+  for (const m of raw.matchAll(/\.\/(setup\.sh\s+\S+|deploy\.sh)|https?:\/\/[^\s"'<>]+?\/(issues|pulls)\/\d+/g)) {
+    out += esc(raw.slice(last, m.index));
+    out += m[0].startsWith('./')
+      ? `<code class="cmdchip">${esc(m[1])}</code>`
+      : `<a class="glref" href="${esc(m[0])}" target="_blank" rel="noopener">${esc(m[0])}</a>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(raw.slice(last));
+};
 
 // one line of the persisted transcript (log line: parsed event or plain
 // marker text) → a rendered message block (same classes as the live view)
@@ -16,8 +28,9 @@ const historyBlock = (line) => {
     return `<div class="msettle">${esc(e)}</div>`;
   switch (e.type) {
     case 'user_message': return `<div class="muser">${esc(e.message)}</div>`;
-    case 'text_block': return `<div class="mtext">${hlCmds(esc(e.text))}</div>`;
+    case 'text_block': return `<div class="mtext">${hlText(e.text)}</div>`;
     case 'tool_call': return `<div class="mtool">⚙ <b>${esc(e.name)}</b> <code>${esc(String(e.arg).slice(0, 200))}</code></div>`;
+    case 'gitea_ref': return `<div class="mref">🔗 <b>${esc(e.kind)} #${e.number}</b> · <a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url)}</a></div>`;
     case 'settle': return `<div class="msettle">settled</div>`;
     case 'compacted': return `<div class="mcompacted">— context compacted —</div>`;
     case 'error': return `<div class="merr">error: ${esc(e.message)}</div>`;
@@ -154,10 +167,25 @@ const stateEl = document.getElementById('chatstate');
 const ta = document.getElementById('msg');
 let curText = null;
 const escH = (s) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+// raw text → escaped HTML with host commands as chips and Gitea issue/PR
+// URLs as links (same rules as the server's history renderer)
+const hlText = (raw) => {
+  raw = String(raw).replace(/\\n{3,}/g, '\\n\\n'); // collapse excessive blank lines
+  let out = '', last = 0;
+  for (const m of raw.matchAll(/\\.\\/(setup\\.sh\\s+\\S+|deploy\\.sh)|https?:\\/\\/[^\\s"'<>]+?\\/(issues|pulls)\\/\\d+/g)) {
+    out += escH(raw.slice(last, m.index));
+    out += m[0].startsWith('./')
+      ? '<code class="cmdchip">' + escH(m[1]) + '</code>'
+      : '<a class="glref" href="' + escH(m[0]) + '" target="_blank" rel="noopener">' + escH(m[0]) + '</a>';
+    last = m.index + m[0].length;
+  }
+  return out + escH(raw.slice(last));
+};
 const addEl = (cls, html) => {
   const d = document.createElement('div');
   d.className = cls; d.innerHTML = html;
   box.insertBefore(d, statusEl); // the status line always stays at the bottom
+  giteaFix(d); // re-point any Gitea issue/PR link at this host (see giteaFix in layout.mjs)
   box.scrollTop = box.scrollHeight;
   return d;
 };
@@ -185,7 +213,10 @@ const handle = (line) => {
   // not replayed — they only drive the status line + incremental text
   if (e.type === 'user_message') { userMsg(e.message); return; }
   if (e.type === 'text_delta') {
-    if (!curText || curText.dataset.settled) textBlock(); // a settled block must never receive live deltas
+    if (!curText || curText.dataset.settled) {
+      if (!e.delta || !e.delta.trim()) return; // don't start a block for whitespace-only deltas
+      textBlock(); // a settled block must never receive live deltas
+    }
     curText.textContent += e.delta;
     box.scrollTop = box.scrollHeight;
     setStatus('writing…');
@@ -194,9 +225,13 @@ const handle = (line) => {
     // text — a visual no-op), replay clients get it whole; mark it settled
     // so the next live delta starts a FRESH block
     if (!curText || curText.dataset.settled) textBlock();
-    curText.innerHTML = hlCmds(escH(e.text));
+    curText.innerHTML = hlText(e.text);
+    giteaFix(curText); // inline Gitea URLs in the settled block
     curText.dataset.settled = 1;
     box.scrollTop = box.scrollHeight;
+  } else if (e.type === 'gitea_ref') {
+    curText = null;
+    addEl('mref', '🔗 <b>' + escH(e.kind) + ' #' + e.number + '</b> · <a href="' + escH(e.url) + '" target="_blank" rel="noopener">' + escH(e.url) + '</a>');
   } else if (e.type === 'tool_call') {
     curText = null;
     toolBlock(e.name, e.arg);
@@ -266,6 +301,7 @@ document.getElementById('closechat').onclick = async (e) => {
   await fetch(auth('/api/chat/${c.id}'), { method: 'DELETE' });
   location.href = auth('/chat'); // the done banner fires on the way out
 };
+giteaFix(box); // safety net: re-point every Gitea link in the live transcript
 </script>`;
 }
 
@@ -283,6 +319,7 @@ export function chatHistoryView(row) {
 <div id="msgs">${blocks || '<div class="msettle">empty session</div>'}</div>
 <div class="chatin endednote"><span class="meta">this session has ended — its transcript is preserved. ${resumeBtn} <a href="/chat">start a new chat</a></span></div>
 </div>
+<script>giteaFix(document.getElementById('msgs'));</script>
 ${resumeBtn ? `<script>
 document.getElementById('resumebtn').onclick = async () => {
   const tk = new URLSearchParams(location.search).get('token') || localStorage.getItem('tea_chat_token');

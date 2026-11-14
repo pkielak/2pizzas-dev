@@ -130,6 +130,7 @@ export function page(title, bodyHtml, { auto = true, nav = null, app = false, sc
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} — 2pizzas</title>
 ${THEME_SCRIPT}
 <script>function glinkFix(){document.querySelectorAll('a.glink').forEach(function(a){a.href=location.protocol+'//'+location.hostname+':3000/'+a.dataset.repo+'/actions/runs/'+a.dataset.run;});}</script>
+<script>function giteaFix(root){(root||document).querySelectorAll('a[href]').forEach(function(a){var m=/^https?:\\/\\/[^/]+(\\/[^#?]*?\\/(?:issues|pulls)\\/\\d+)/.exec(a.getAttribute('href')||'');if(m){var u=location.protocol+'//'+location.hostname+':3000'+m[1];a.setAttribute('href',u);if(a.textContent.trim()!==u)a.textContent=u;}});}</script>
 <style>
 ${THEME_CSS}
 *{box-sizing:border-box}
@@ -225,12 +226,14 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
 #msgs{flex:1;min-height:0;overflow-y:auto;border:2px solid var(--line);border-radius:0;padding:10px 14px;margin:12px 0;background:var(--surface);box-shadow:4px 4px 0 var(--shadow)}
 .muser{background:var(--cheese);color:var(--cheese-ink);border:2px solid var(--line);border-radius:0;box-shadow:3px 3px 0 var(--shadow);padding:9px 13px;margin:9px 0;white-space:pre-wrap;font-size:13px}
 .muser::before{content:"you";display:block;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:var(--sauce-dark);margin-bottom:3px}
-.mtext{border-left:4px solid var(--ink);padding:4px 13px;margin:9px 0;white-space:pre-wrap;font-size:13px}
+.mtext{border-left:4px solid var(--ink);padding:4px 13px;margin:9px 0;font-size:13px;line-height:1.5}
 .mtool{color:var(--muted);font-size:12px;margin:6px 0;word-break:break-word;border-left:3px solid var(--line);padding-left:10px}
 .mtool code{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .cmdchip{display:inline-block;background:var(--cheese);color:var(--cheese-ink);border:2px solid var(--line);border-radius:0;box-shadow:2px 2px 0 var(--shadow);padding:2px 8px;margin:2px 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;font-weight:700;cursor:default}
 .merr{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:8px 0;white-space:pre-wrap}
 .msettle{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;margin:12px 0;text-align:right}
+.mref{font-size:12.5px;margin:8px 0;border-left:3px solid var(--olives);padding-left:10px;word-break:break-all}
+.mtext a.glref,.mref a{color:var(--sauce-dark);text-decoration:underline}
 .mcompacted{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;margin:12px 0;text-align:center}
 .mstatus{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:8px 0;opacity:.85}
 .mend{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:12px 0;text-align:center;border-top:2px solid var(--line);padding-top:10px}

@@ -112,6 +112,26 @@ const chatLive = (c, ev) => {
   }
 };
 
+// The chat agent creates Gitea issues/PRs with curl (POST/--data); the
+// API response carries the created object's html_url (…/issues/42,
+// …/pulls/42). Detect a write whose output contains such a URL and turn
+// it into a gitea_ref transcript event — the web UI and TUI render it as
+// a link. Reads (GETs of existing issues) are deliberately ignored: only
+// creations link.
+const GITEA_REF_RE = /https?:\/\/[^\s"'<>\\]+?\/(issues|pulls)\/(\d+)/;
+const giteaRefFromTool = (tool, e) => {
+  if (!tool || tool.name !== 'bash' || e.isError) return null;
+  const cmd = tool.command || '';
+  if (!/\bcurl\b/.test(cmd)) return null;
+  if (!/-X\s*(POST|PUT|PATCH)\b|(^|\s)(-d|-F|--data|--form)\b/.test(cmd)) return null;
+  const r = e.result || {};
+  const out = (typeof r.output === 'string' && r.output)
+    || (Array.isArray(r.content) && r.content.map((p) => p.text || '').join(''))
+    || '';
+  const m = GITEA_REF_RE.exec(out);
+  return m ? { type: 'gitea_ref', kind: m[1] === 'pulls' ? 'pr' : 'issue', number: +m[2], url: m[0] } : null;
+};
+
 // raw pi JSONL line → compact chat events (see the lane comment above).
 // Everything not listed is noise: turn_start/end, message_start,
 // tool_execution_update (full partial results), agent_end (full history),
@@ -153,9 +173,17 @@ const piLine = (c, raw) => {
       return;
     }
     case 'tool_execution_start':
+      // remember the FULL command (the tool_call event only keeps 500 chars):
+      // giteaRefFromTool() needs the flags even when the payload is long
+      c.lastTool = { name: e.toolName, command: e.args && e.args.command ? String(e.args.command) : '' };
       return chatSay(c, { type: 'tool_call', name: e.toolName,
         arg: String(e.args && (e.args.command || JSON.stringify(e.args))).slice(0, 500) });
-    case 'tool_execution_end': return chatLive(c, { type: 'tool_end' });
+    case 'tool_execution_end': {
+      const ref = giteaRefFromTool(c.lastTool, e);
+      c.lastTool = null;
+      if (ref) chatSay(c, ref); // transcript lane — persisted + replayed, both UIs link it
+      return chatLive(c, { type: 'tool_end' });
+    }
     case 'auto_retry_start': return chatLive(c, { type: 'auto_retry', attempt: e.attempt, max: e.maxAttempts });
     case 'response':
       if (e.command === 'get_session_stats') {

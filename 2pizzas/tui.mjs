@@ -22,6 +22,13 @@ import { StringDecoder } from 'node:string_decoder';
 
 const BASE = (process.env.PIZZAS_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
 const TOKEN = process.env.UI_TOKEN || '';
+// Gitea is on the SAME host as the 2pizzas UI (port 3000). The URLs the chat
+// agent emits use host.docker.internal (only reachable from job containers),
+// so re-point them at the host this TUI reaches the UI on — copy-paste-able.
+const giteaUrl = (u) => {
+  const m = /^https?:\/\/[^/]+(\/[^#?]*?\/(?:issues|pulls)\/\d+)/.exec(u);
+  return m ? `${new URL(BASE).protocol}//${new URL(BASE).hostname}:3000${m[1]}` : u;
+};
 const authed = (p) => (TOKEN ? `${p}${p.includes('?') ? '&' : '?'}token=${encodeURIComponent(TOKEN)}` : p);
 
 // ── terminal ─────────────────────────────────────────────────────────────────
@@ -311,9 +318,13 @@ function chatLine(l) {
     case 'user_message': return wrap(e.message, W() - 8).map((t) => ({ pre: C.bold + P.cheese + ' you » ' + C.reset, text: t }));
     case 'text_block': {
       // highlight host commands (./setup.sh --deploy etc.) in bold cheese
-      const hl = (t) => t.replace(/\.\/(setup\.sh\s+\S+|deploy\.sh)/g, `${C.bold}${P.cheese}$&${C.reset}`);
+      // and Gitea issue/PR URLs in cyan — created refs land here too
+      const hl = (t) => t
+        .replace(/\.\/(setup\.sh\s+\S+|deploy\.sh)/g, `${C.bold}${P.cheese}$&${C.reset}`)
+        .replace(/https?:\/\/[^\s"'<>]+?\/(issues|pulls)\/\d+/g, (u) => `${C.cyan}${giteaUrl(u)}${C.reset}`);
       return wrap(hl(e.text), W() - 14).map((t, i) => ({ pre: i === 0 ? C.bold + P.olives + ' assistant » ' + C.reset : '            ', text: t }));
     }
+    case 'gitea_ref': return [{ pre: P.olives + ' 🔗 ' + C.reset, text: `${C.bold}${e.kind} #${e.number}${C.reset} ${C.cyan}${giteaUrl(e.url)}${C.reset}` }];
     case 'tool_call': return [{ pre: P.olives + ' ⚙ ' + C.reset, text: `${C.bold}${e.name}${C.reset} ${C.dim}${fit(e.arg || '', W() - 20)}${C.reset}` }];
     case 'settle': return [{ pre: C.dim, text: '─ done ─' }];
     case 'compacted': return [{ pre: C.dim, text: `─ compacted (${e.reason || 'threshold'}) ─` }];
