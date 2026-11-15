@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { getJson } from '../lib/api.mjs';
+  import Loading from '../components/Loading.svelte';
 
   let sites = $state(null);
   let err = $state('');
@@ -16,7 +17,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if !sites}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <div class="list">
     {#if sites.length}

@@ -13,11 +13,9 @@ import Pages from '../pages/Pages.svelte';
 import Infra from '../pages/Infra.svelte';
 import Home from '../pages/Home.svelte';
 
-// SPA routes. Everything else in the nav is a plain anchor → full load of
-// the server-rendered page (ui/*.mjs) until it migrates. The server mirrors
-// this list in SPA_ROUTES (server.mjs) — keep the two in sync. `nav` is the
-// sidebar highlight key (defaults to the title); `app` = full-height chat
-// layout.
+// SPA routes — every nav route. The server mirrors this list in SPA_ROUTES
+// (server.mjs) — keep the two in sync. `nav` is the sidebar highlight key
+// (defaults to the title); `app` = full-height chat layout.
 const routes = [
   { re: /^\/stats$/, component: Stats, title: () => 'stats' },
   { re: /^\/backends$/, component: Backends, title: () => 'backends' },

@@ -3,6 +3,7 @@
   import { live } from '../lib/live.mjs';
   import { getJson } from '../lib/api.mjs';
   import { fmtTok } from '../lib/fmt.mjs';
+  import Loading from '../components/Loading.svelte';
 
   let data = $state(null);
   let err = $state('');
@@ -22,7 +23,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if data === null}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else if !data.total}
   <p class="meta">no tasks yet</p>
 {:else}

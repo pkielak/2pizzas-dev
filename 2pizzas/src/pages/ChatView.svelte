@@ -7,6 +7,7 @@
   import { parseLine } from '../lib/hl.mjs';
   import TranscriptBlocks from '../components/TranscriptBlocks.svelte';
   import EndedChat from '../components/EndedChat.svelte';
+  import Loading from '../components/Loading.svelte';
 
   // One component for both modes: a LIVE session (SSE stream + input) and,
   // if the session dies (idle timeout / kill / container death), the
@@ -160,7 +161,7 @@
 {:else if hist}
   <EndedChat session={hist.session} blocks={hist.blocks} onContinue={() => resume(hist.session.rowid)} />
 {:else if !session}
-  <p class="meta">loading…</p>
+  <Loading label="connecting" />
 {:else}
   <div class="chatapp">
     <div class="chathead">

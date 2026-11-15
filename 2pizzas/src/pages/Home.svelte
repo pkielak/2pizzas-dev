@@ -3,7 +3,9 @@
   import { live } from '../lib/live.mjs';
   import { getJson } from '../lib/api.mjs';
   import { navigate } from '../lib/router.mjs';
-  import { ctxText } from '../lib/fmt.mjs';
+  import { runPill } from '../lib/fmt.mjs';
+  import TaskRow from '../components/TaskRow.svelte';
+  import Loading from '../components/Loading.svelte';
 
   let tasks = $state(null);
   let runs = $state(null);
@@ -20,19 +22,13 @@
   $effect(() => { if ($live) load(); });
 
   const inFlight = (r) => ['queued', 'waiting', 'pending', 'running'].includes(r.status);
-  const pill = (r) => {
-    if (inFlight(r)) return { cls: 'running', text: r.status };
-    if (r.conclusion === 'success') return { cls: 'success', text: 'success' };
-    if (r.conclusion === 'failure') return { cls: 'failure', text: 'failure' };
-    if (r.conclusion === 'cancelled') return { cls: 'queued', text: 'cancelled' };
-    return { cls: 'queued', text: r.status || '—' };
-  };
+
 </script>
 
 {#if err}
   <p class="err">{err}</p>
 {:else if !tasks || !runs || !sites}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <p class="meta">
     {#if tasks.filter((t) => inFlight(t)).length}
@@ -48,20 +44,7 @@
   <div class="list">
     {#if tasks.length}
       {#each tasks.slice(0, 5) as t (t.id)}
-        <a class="item" href="/task/{t.id}"
-          onclick={(e) => { if (navigate(`/task/${t.id}`)) e.preventDefault(); }}>
-          <div class="l1"><span class={t.status}>{t.status}</span> <span>#{t.id}</span> {t.repo}#{t.issue}</div>
-          <div class="l2">
-            @{t.agent}
-            {#if t.kind === 'agent-review' || t.kind === 'rework'} · {t.kind}{/if}
-            {#if (t.round ?? 1) > 1} · round {t.round}{/if}
-            {#if t.parent_id} · from #{t.parent_id}{/if}
-            {#if t.model} · <span class="model">{t.model}</span>{/if}
-            {#if ctxText(t)} · <span class="ctx">{ctxText(t)}</span>{/if}
-            · {t.created_at}
-          </div>
-          {#if t.error}<div class="err">{t.error}</div>{/if}
-        </a>
+        <TaskRow t={t} />
       {/each}
     {:else}
       <div class="item"><div class="l2">no tasks yet</div></div>
@@ -75,7 +58,7 @@
       {#each runs.slice(0, 8) as r (r.id)}
         <a class="item" href={`https://${location.hostname}:3000/${r.repo}/actions/runs/${r.id}`}>
           <div class="l1">
-            <span class={pill(r).cls}>{pill(r).text}</span>
+            <span class={runPill(r).cls}>{runPill(r).text}</span>
             <span>#{r.id}</span> {r.repo} · {r.head_branch}
           </div>
           <div class="l2">

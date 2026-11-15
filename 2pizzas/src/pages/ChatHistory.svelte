@@ -4,6 +4,7 @@
   import { getJson } from '../lib/api.mjs';
   import { parseLine } from '../lib/hl.mjs';
   import EndedChat from '../components/EndedChat.svelte';
+  import Loading from '../components/Loading.svelte';
 
   // /chat/r<rowid> — read-only transcript of a dead session (rowid is the
   // only globally-unique session key; bare ids shadow older runs)
@@ -24,5 +25,5 @@
 {:else if hist}
   <EndedChat session={hist.session} blocks={hist.blocks} />
 {:else}
-  <p class="meta">loading…</p>
+  <Loading />
 {/if}

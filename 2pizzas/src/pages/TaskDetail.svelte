@@ -4,6 +4,7 @@
   import { navigate } from '../lib/router.mjs';
   import { ctxText } from '../lib/fmt.mjs';
   import TaskLog from '../components/TaskLog.svelte';
+  import Loading from '../components/Loading.svelte';
 
   let { taskId } = $props();
   let task = $state(null);
@@ -29,7 +30,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if !task}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <a class="back" href="/tasks" onclick={(e) => { if (navigate('/tasks')) e.preventDefault(); }}>← back to tasks</a>
   <div class="pagehead">

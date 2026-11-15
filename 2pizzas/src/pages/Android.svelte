@@ -1,7 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   import { getJson } from '../lib/api.mjs';
+  import { runPill } from '../lib/fmt.mjs';
   import { giteaRepoHref } from '../lib/hl.mjs';
+  import Loading from '../components/Loading.svelte';
 
   let data = $state(null);
   let err = $state('');
@@ -11,19 +13,12 @@
       .then((d) => { data = d; err = ''; })
       .catch((e) => { err = e.message; }));
 
-  const pill = (r) => {
-    if (['queued', 'waiting', 'pending', 'running'].includes(r.status)) return { cls: 'running', text: r.status };
-    if (r.conclusion === 'success') return { cls: 'success', text: 'success' };
-    if (r.conclusion === 'failure') return { cls: 'failure', text: 'failure' };
-    if (r.conclusion === 'cancelled') return { cls: 'queued', text: 'cancelled' };
-    return { cls: 'queued', text: r.status || '—' };
-  };
 </script>
 
 {#if err}
   <p class="err">{err}</p>
 {:else if !data}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   {#if data.err}<p class="err">{data.err}</p>{/if}
   <div class="list">
@@ -31,7 +26,7 @@
       {#each data.runs as r (r.id)}
         <a class="item" href={giteaRepoHref(r.repo, `actions/runs/${r.id}`)}>
           <div class="l1">
-            <span class={pill(r).cls}>{pill(r).text}</span>
+            <span class={runPill(r).cls}>{runPill(r).text}</span>
             <span>#{r.id}</span> {r.repo} · {r.head_branch}
           </div>
           <div class="l2">

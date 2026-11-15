@@ -3,6 +3,7 @@
   import { live } from '../lib/live.mjs';
   import { getJson } from '../lib/api.mjs';
   import { giteaRepoHref } from '../lib/hl.mjs';
+  import Loading from '../components/Loading.svelte';
 
   let data = $state(null);
   let err = $state('');
@@ -28,7 +29,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if !data}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <p>
     global webhook:

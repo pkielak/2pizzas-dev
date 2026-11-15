@@ -4,6 +4,7 @@
   import { getJson, postJson } from '../lib/api.mjs';
   import BackendCard from '../components/BackendCard.svelte';
   import ProbeResult from '../components/ProbeResult.svelte';
+  import Loading from '../components/Loading.svelte';
 
   let data = $state(null);
   let err = $state('');
@@ -75,7 +76,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if !data}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <h2>selection</h2>
   <div class="card">
@@ -116,26 +117,18 @@
     <table class="btable">
       <thead><tr><th>agent</th><th>model config</th><th>baked models</th></tr></thead>
       <tbody>
-        <tr>
-          <td>pi</td><td>models.json (baked)</td>
-          <td>
-            {#each Object.entries(data.bakedModels?.pi ?? {}) as [p, ids]}
-              <code>{p} · {ids.length}</code>
-              {#if stale(data.bakedModels.pi, p)}<span class="badge badge-warn" title="the live model list has models missing from this image — ./setup.sh --rebuild">stale</span>{/if}
-            {/each}
-            {#if !Object.keys(data.bakedModels?.pi ?? {}).length}—{/if}
-          </td>
-        </tr>
-        <tr>
-          <td>opencode</td><td>opencode.json (baked)</td>
-          <td>
-            {#each Object.entries(data.bakedModels?.opencode ?? {}) as [p, ids]}
-              <code>{p} · {ids.length}</code>
-              {#if stale(data.bakedModels.opencode, p)}<span class="badge badge-warn" title="the live model list has models missing from this image — ./setup.sh --rebuild">stale</span>{/if}
-            {/each}
-            {#if !Object.keys(data.bakedModels?.opencode ?? {}).length}—{/if}
-          </td>
-        </tr>
+        {#each [['pi', 'models.json (baked)'], ['opencode', 'opencode.json (baked)']] as [agent, cfg]}
+          <tr>
+            <td>{agent}</td><td>{cfg}</td>
+            <td>
+              {#each Object.entries(data.bakedModels?.[agent] ?? {}) as [p, ids]}
+                <code>{p} · {ids.length}</code>
+                {#if stale(data.bakedModels[agent], p)}<span class="badge badge-warn" title="the live model list has models missing from this image — ./setup.sh --rebuild">stale</span>{/if}
+              {/each}
+              {#if !Object.keys(data.bakedModels?.[agent] ?? {}).length}—{/if}
+            </td>
+          </tr>
+        {/each}
       </tbody>
     </table>
   </div>

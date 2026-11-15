@@ -43,8 +43,6 @@
   <main class:app={$currentRoute?.app}>
     {#if $currentRoute}
       <svelte:component this={$currentRoute.component} {...$currentRoute.props} />
-    {:else}
-      <p class="meta">this page has not been migrated to the SPA yet</p>
     {/if}
   </main>
 </div>

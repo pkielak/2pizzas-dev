@@ -3,6 +3,7 @@
   import { live } from '../lib/live.mjs';
   import { getJson } from '../lib/api.mjs';
   import { navigate } from '../lib/router.mjs';
+  import Loading from '../components/Loading.svelte';
 
   let d = $state(null);
   let err = $state('');
@@ -194,7 +195,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if !d}
-  <p class="meta">loading…</p>
+  <Loading />
 {:else}
   <div id="zrow" style="display:flex;justify-content:flex-end;gap:6px;margin:0 0 8px">
     <button id="zIn" title="zoom in" style="width:34px;height:30px;font-size:16px;line-height:1;font-weight:900;cursor:pointer;background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);box-shadow:2px 2px 0 var(--shadow)">+</button>

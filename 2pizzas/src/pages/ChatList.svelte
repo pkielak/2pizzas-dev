@@ -72,8 +72,8 @@
 <h2>past sessions</h2>
 <div class="list">
   {#each past as r (r.rowid)}
-    <div class="item" style="display:flex;align-items:center;gap:8px">
-      <a class="item" style="flex:1;text-decoration:none;color:inherit" href="/chat/r{r.rowid}"
+    <div class="item chatrow">
+      <a class="chatlink" href="/chat/r{r.rowid}"
          onclick={(e) => { if (navigate(`/chat/r${r.rowid}`)) e.preventDefault(); }}>
         <div class="l1">@{r.agent} <span>#{r.id}</span> <span class="badge">ended</span></div>
         <div class="l2">

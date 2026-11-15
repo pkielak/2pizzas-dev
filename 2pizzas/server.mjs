@@ -576,8 +576,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── Svelte SPA (built by vite — see vite.config.mjs / Dockerfile ui stage) ──
-  // Migrated routes serve the SPA shell; everything else below still renders
-  // server-side from ui/*.mjs until it migrates. Static assets live under
+  // Every route serves the SPA shell (ui/ keeps only the theme CSS for the
+  // 401 unlock form + the /api/stats JSON data). Static assets live under
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
