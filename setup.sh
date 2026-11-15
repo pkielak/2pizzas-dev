@@ -347,23 +347,34 @@ if [[ -f $PI_MODELS ]]; then
   fi
 fi
 IDS_JSON='{}'
+CTX_JSON='{}'
 while IFS= read -r b; do
   burl=$(jq -r '.url' <<<"$b"); bkey=$(jq -r '.apiKey' <<<"$b"); bdef=$(jq -r '.defaultModel // empty' <<<"$b")
-  ids=$(curl -sf --max-time 3 ${bkey:+-H "Authorization: Bearer $bkey"} "$burl/v1/models" 2>/dev/null | jq -c '[.data[].id]' || true)
+  models_json=$(curl -sf --max-time 3 ${bkey:+-H "Authorization: Bearer $bkey"} "$burl/v1/models" 2>/dev/null || true)
+  ids=$(jq -c '[.data[].id]' <<<"${models_json:-{}}" 2>/dev/null || true)
   [[ -n $ids ]] || ids='[]'
   [[ -n $bdef ]] && ids=$(jq -c --arg d "$bdef" 'if index($d) then . else [$d] + . end' <<<"$ids")
+  # per-model context window: the backend's own n_ctx (llama.cpp router —
+  # the window the model is ACTUALLY loaded with), else 65536. Baking a
+  # window smaller than the real one makes pi plateau at the fake limit
+  # (compaction is baked off) → "clean" no-action runs; the UI then shows
+  # usage stuck at a round % of the router-reported window.
+  ctx=$(jq -c '[.data[] | {key: .id, value: (.meta.n_ctx // 0)}] | from_entries' <<<"${models_json:-{}}" 2>/dev/null || true)
+  [[ -n $ctx ]] || ctx='{}'
   [[ -n ${ids//[[:space:]]/} && $ids != "[]" ]] || warn "backend $(jq -r .id <<<"$b"): no model list (unreachable + no defaultModel) — the agent images will have no models for it"
   IDS_JSON=$(jq -n --argjson acc "$IDS_JSON" --arg k "$(jq -r .id <<<"$b")" --argjson v "$ids" '$acc + {($k): $v}')
+  CTX_JSON=$(jq -n --argjson acc "$CTX_JSON" --arg k "$(jq -r .id <<<"$b")" --argjson v "$ctx" '$acc + {($k): $v}')
 done < <(jq -c '.backends[]' inference.json)
 
-jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$IDS_JSON" '
-  {providers: ($backends | map({key: .id, value: {
+jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$IDS_JSON" --argjson ctx "$CTX_JSON" '
+  {providers: ($backends | map(.id as $bid | {key: $bid, value: {
       baseUrl: (.url | rtrimstr("/") + "/v1"),
       api: "openai-completions",
       apiKey: (if .apiKey == "" then "no-key" else .apiKey end),
-      models: (($ids[.id] // []) | map({id:., contextWindow:65536}))
+      # unloaded models report n_ctx 0 — max() keeps 65536 as the floor
+      models: (($ids[$bid] // []) | map({id:., contextWindow: ([($ctx[$bid][.] // 0), 65536] | max)}))
   }}) | from_entries)}' > "$PI_MODELS"
-ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + (.value.models | length | tostring)] | join(", ")' "$PI_MODELS")"
+ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + ([.value.models[] | .id + "/" + (.contextWindow | tostring)] | join(", "))] | join(", ")' "$PI_MODELS")")
 
 FIRST_ID=$(jq -r '.backends[0].id' inference.json)
 # honour the pinned defaultModel when set (matches pickModel's precedence),
