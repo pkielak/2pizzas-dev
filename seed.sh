@@ -159,8 +159,8 @@ fi
 # Write access per repo is still gated by collaborator grants (/chat UI).
 if token_usable "${AGENT_CHAT_TOKEN:-}"; then echo "AGENT_CHAT_TOKEN: ok"; skip
 else
-  val=$(gen_token "$CHAT_USER" "2pizzas-$CHAT_USER" write:repository)
-  set_env AGENT_CHAT_TOKEN "$val"; echo "AGENT_CHAT_TOKEN: generated (write:repository) → written to .env"
+  val=$(gen_token "$CHAT_USER" "2pizzas-$CHAT_USER" write:repository,read:issue,write:issue)
+  set_env AGENT_CHAT_TOKEN "$val"; echo "AGENT_CHAT_TOKEN: generated (write:repository,read:issue,write:issue) → written to .env"
 fi
 
 # ── 4. repos ───────────────────────────────────────────────────────

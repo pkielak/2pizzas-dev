@@ -8,9 +8,13 @@ import { liveBroadcast } from './live.mjs';
 // ── enqueue ──────────────────────────────────────────────────────────────────
 
 // never react to our own agents: per-agent users, the dormant legacy "bot",
-// and the chat user (all of them also stamp the via:agent marker)
+// and the review user (all of them also stamp the via:agent marker).
+// NOTE: the chat user is NOT here — chat acts as a supervisor that delegates
+// work by commenting @agent on issues/PRs, which MUST trigger tasks.
+// Loop prevention is handled by the <!-- via:agent --> marker on all agent
+// replies (post-comment.sh stamps it), and MENTIONS only match work agents.
 const AGENT_SENDERS = new Set([
-  CFG.botLogin, CFG.chatLogin, CFG.review.login,
+  CFG.botLogin, CFG.review.login,
   ...Object.values(CFG.agents).map((a) => a.login),
   ...CFG.dormantLogins,
 ]);
