@@ -125,11 +125,12 @@ a.item:hover .l2,a.item:hover .meta,.item.chatrow:hover .l2,.item.chatrow:hover 
 .grantbtn{margin-left:auto;background:var(--surface);border:2px solid var(--line);color:var(--ink);border-radius:0;padding:4px 12px;cursor:pointer;font-size:11.5px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
 .grantbtn:hover{background:var(--cheese);color:var(--cheese-ink);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}
 /* status pill badges */
-.queued,.running,.success,.failure{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border:2px solid transparent;border-radius:0;white-space:nowrap;background:var(--surface)}
+.queued,.running,.success,.failure,.canceled{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border:2px solid transparent;border-radius:0;white-space:nowrap;background:var(--surface)}
 .queued{color:var(--muted-2);border-color:var(--faint)}
 .running{color:var(--cheese-ink);border-color:var(--line);background:var(--cheese)}
 .success{color:var(--olives-dark);border-color:var(--olives);background:#e4efe5}
 .failure{color:var(--sauce-dark);border-color:var(--sauce);background:#fbe3e3}
+.canceled{color:var(--muted-2);border-color:var(--faint);text-decoration:line-through}
 /* live indicator (pulsing dot) — shared by task + chat streaming views */
 .live{display:inline-flex;align-items:center;gap:6px;color:var(--sauce-dark);font-size:12px;font-weight:800;text-transform:uppercase;margin-left:4px}
 .live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--sauce);animation:pulse 1.2s ease-in-out infinite}

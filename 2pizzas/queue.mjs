@@ -74,38 +74,61 @@ export function enqueueRework(review, concerns) {
   liveBroadcast('tasks');
 }
 
-// ── failure handling: retry once + infra agent ───────────────────────────────
+// ── failure handling ─────────────────────────────────────────────────────────
 
-// Infra-class failures: the stack died UNDER the agent (dockerd restart →
-// SIGTERM 143, OOM/host kill → 137, SIGINT 130, docker/host errors) — not the
-// agent's fault. Agent-class failures (bad model run, no-action, review
-// issues) are NOT retried and do NOT wake the infra agent.
-// Infra-class: the stack died UNDER the agent (dockerd restart → SIGTERM 143,
-// OOM/host kill → 137, SIGINT 130, docker/host errors) OR a host-unreachable
-// git clone (exit 128 + a connection/resolve failure in the LOG). A bare
-// "exited with code 128" is NOT infra-class on its own — that can be a legit
-// auth/repo failure; the connection signature is what makes it a stack issue.
-const INFRA_ERR = /(exited with code (130|137|143)\b|docker: |no such host|ECONNREFUSED|connection (refused|timed out)|couldn't connect to server|could not resolve host|failed to connect to)/i;
+// No-action (the agent finished cleanly but pushed nothing and replied to
+// nothing): model behavior, NOT a stack problem — retry up to 2 times, then
+// post a give-up comment and stop. The infra agent is never woken for it.
+// Any other failure gets ONE retry (a killed review was 90% done — don't
+// lose it); if the retry also fails, the infra agent is woken to investigate
+// the root cause (bad prompt, model misconfig, missing tool, stack problem).
+// The retried_of column links every retry to its victim.
+const NO_ACTION = /took no action|no-action/i;
 
 export function onTaskFailure(t, msg) {
   if (t.kind === 'agent-infra') return; // never auto-chase the infra agent
-  // a host-unreachable git clone surfaces as "agent exited with code 128" in
-  // e.message, but the connection detail ("Couldn't connect to server") is in
-  // the LOG — scan the tail too, so the infra agent gets woken for it
-  const logTail = readLog(t.id).slice(-4000);
-  if (!INFRA_ERR.test(msg) && !INFRA_ERR.test(logTail)) return;
-  // 1. retry the victim once (a killed review was 90% done — don't lose it).
-  //    Same fields, so the review chain links off the retry as usual; the
-  //    retried_of guard makes this idempotent.
+  if (NO_ACTION.test(msg)) {
+    // consecutive no-action failures up the retry chain, including t itself
+    let n = 1, cur = t;
+    for (;;) {
+      const orig = cur.retried_of != null
+        ? db.prepare('SELECT * FROM tasks WHERE id=?').get(cur.retried_of) : null;
+      if (!orig) break;
+      if (NO_ACTION.test(orig.error ?? '')) n++;
+      cur = orig;
+    }
+    if (n <= 2) { // n attempts so far → n-1 retries used; allow 2
+      db.prepare(
+        `INSERT INTO tasks (repo, issue, agent, kind, cpath, line, body, parent_id, round, pr, retried_of)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(t.repo, t.issue, t.agent, t.kind, t.cpath, t.line, t.body, t.parent_id, t.round, t.pr, t.id);
+      console.log(`[failure] task ${t.id} no-action (attempt ${n}) → retry enqueued`);
+      kick();
+      liveBroadcast('tasks');
+      return;
+    }
+    const id = t.agent === 'review' ? CFG.review : CFG.agents[t.agent]; // post as the task's agent user
+    apiPost(`/repos/${t.repo}/issues/${t.issue}/comments`, {
+      body: `[2pizzas] Giving up: the agent took no visible action ${n} times in a row (no commit, no PR, no reply). A human should take over.\n\n${MARKER}`,
+    }, { token: id.token }).catch((e) => console.error(`[failure] task ${t.id}: give-up comment: ${e.message}`));
+    console.log(`[failure] task ${t.id} no-action ${n}× → gave up, comment posted`);
+    return;
+  }
+  // First failure: retry once. Same fields, so the review chain links off
+  // the retry as usual; the retried_of guard makes this idempotent.
   if (t.retried_of == null) {
     db.prepare(
       `INSERT INTO tasks (repo, issue, agent, kind, cpath, line, body, parent_id, round, pr, retried_of)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(t.repo, t.issue, t.agent, t.kind, t.cpath, t.line, t.body, t.parent_id, t.round, t.pr, t.id);
-    console.log(`[failure] task ${t.id} infra-class (${msg}) → retry enqueued`);
+    console.log(`[failure] task ${t.id} (${msg}) → retry enqueued`);
+    kick();
+    liveBroadcast('tasks');
+    return;
   }
-  // 2. wake the infra agent to fix the stack
-  enqueueInfra(t, msg).catch((e) => console.error(`[infra] task ${t.id}: ${e.message}`));
+  // Retry also failed: escalation to the infra agent is PARKED (buggy trigger,
+  // no-action incidents) — log it for a human instead.
+  console.log(`[failure] task ${t.id} failed twice (${msg}) — infra escalation parked, human should look`);
 }
 
 // One infra task per cooldown window: a single dockerd stop can kill several
@@ -135,7 +158,7 @@ export async function enqueueInfra(failed, errMsg) {
   db.prepare(`INSERT INTO tasks (repo, issue, agent, kind, body, parent_id)
               VALUES (?, ?, 'infra', 'agent-infra', ?, ?)`)
     .run(CFG.infraRepo, issue.number, ctx, failed.id);
-  console.log(`[infra] task ${failed.id} → infra agent enqueued (${CFG.infraRepo}#${issue.id})`);
+  console.log(`[infra] task ${failed.id} → infra agent enqueued (${CFG.infraRepo}#${issue.number})`);
   kick();
   liveBroadcast('tasks');
 }

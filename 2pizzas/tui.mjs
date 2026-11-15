@@ -150,7 +150,7 @@ const state = {
 let pollTimer = null;
 let detailOpen = false;   // a detail view is open → stop list polling
 
-const statusColor = { success: P.olives, failure: P.sauce, running: P.cheese, queued: C.dim };
+const statusColor = { success: P.olives, failure: P.sauce, running: P.cheese, queued: C.dim, canceled: C.dim };
 
 // ── list views ───────────────────────────────────────────────────────────────
 

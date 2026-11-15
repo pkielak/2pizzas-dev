@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { getJson } from '../lib/api.mjs';
+  import { getJson, postJson } from '../lib/api.mjs';
   import { navigate } from '../lib/router.mjs';
   import { ctxText } from '../lib/fmt.mjs';
   import TaskLog from '../components/TaskLog.svelte';
@@ -25,6 +25,9 @@
 
   // the SSE stream reported the task settled → swap to the static log
   const settle = () => load(true);
+
+  const stop = () => postJson(`/api/tasks/${taskId}/stop`, {}).then(() => load(true)).catch((e) => { err = e.message; });
+  const retry = () => postJson(`/api/tasks/${taskId}/retry`, {}).then((d) => { if (d.newTaskId) navigate(`/task/${d.newTaskId}`); else load(true); }).catch((e) => { err = e.message; });
 </script>
 
 {#if err}
@@ -36,6 +39,11 @@
   <div class="pagehead">
     <span class={task.status}>{task.status}</span>
     {#if streaming}<span class="live">live</span>{/if}
+    {#if streaming}
+      <button class="btn danger" onclick={stop}>stop task</button>
+    {:else if task.status === 'failure' || task.status === 'canceled'}
+      <button class="btn" onclick={retry}>retry task</button>
+    {/if}
   </div>
   <p class="meta">
     {task.repo}#{task.issue} · @{task.agent}

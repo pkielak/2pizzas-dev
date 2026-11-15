@@ -111,5 +111,6 @@ export const MARKER = '<!-- via:agent -->';
 export const MENTIONS = [
   { agent: 'pi', re: new RegExp(`@${CFG.agents.pi.login}\\b`) },
   { agent: 'opencode', re: new RegExp(`@${CFG.agents.opencode.login}\\b`) },
-  { agent: 'infra', re: new RegExp(`@${CFG.agents.infra.login}\\b`) },
+  // infra PARKED (buggy trigger + no-action incidents): @infra is inert until
+  // the entry is restored — image/user/token all stay in place.
 ];

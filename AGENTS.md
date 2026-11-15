@@ -51,18 +51,19 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   `[2pizzas] ref:` / `[2pizzas] pr:` log lines carry the pushed refs + PR
   number into the chain. Don't drop those marker lines, the review-body
   markers, or the verdict parse in `afterTask()`.
-- **Infra agent** (`agent-sandbox:infra`, `@infra` on the infra repo):
-  repairs the stack itself. It is the ONLY agent that runs on **runc** with
-  the host **docker socket** + the live infra repo bind-mounted read-only
-  (`INFRA_HOST_REPO` → `/infra-src`; the bootstrap clones a container-local
-  copy, so host `.git` is never touched). `onTaskFailure()` classifies
-  failures: infra-class (exit 143/137/130, docker/host errors) → the victim
-  is **retried once** (`tasks.retried_of`) AND an `agent-infra` task is
-  enqueued on a freshly opened incident issue (one per
-  `INFRA_COOLDOWN_MINUTES` window — later failures append to the existing
-  issue). Infra tasks never chase themselves. Infra code changes go to a
-  branch+PR and are reviewed by the normal chain; ops actions (rebuild,
-  `up -d`) it executes directly.
+- **Infra agent — PARKED** (`agent-sandbox:infra`, `@infra` on the infra
+  repo): designed to repair the stack itself — the ONLY agent that runs on
+  **runc** with the host **docker socket** + the live infra repo
+  bind-mounted read-only (`INFRA_HOST_REPO` → `/infra-src`; the bootstrap
+  clones a container-local copy, so host `.git` is never touched). Currently
+  **parked** (buggy trigger, no-action incidents): the `@infra` mention is
+  removed from `MENTIONS` and `onTaskFailure()` no longer calls
+  `enqueueInfra()` — image/user/token/`enqueueInfra()` all stay in place,
+  revival = restoring those two call sites. Failure policy instead: ANY
+  failure is retried once (`tasks.retried_of`); no-action failures (agent
+  finished without commit/PR/reply) are retried up to 2 times, then a
+  give-up comment is posted as the agent user; a double failure just logs a
+  line for a human. Never auto-chase `agent-infra` tasks.
 - **Per-agent Gitea identities.** Each work agent is its OWN Gitea user
   (`pi`, `opencode`, `infra`) with a write token (`PI_TOKEN` etc.) —
   native `@` autocomplete in the Gitea UI + per-agent commit/PR/comment
@@ -146,7 +147,13 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   truncate+write), applies to the next task without a restart; a "not baked"
   badge marks backends missing from the agent images (`GET
   /api/backends/baked`) until `./setup.sh --rebuild`),
-  per-task logs in `data-2pizzas/logs/<id>.log`, `GET /api/tasks`. There is also a
+  per-task logs in `data-2pizzas/logs/<id>.log`, `GET /api/tasks`. Tasks are
+  controllable on demand: `POST /api/tasks/:id/stop` cancels a queued/running
+  task (job containers are named `tea-task-<id>` / `tea-infra-<id>` and get
+  `docker rm -f`; the task ends `canceled` with `error='canceled on demand'`
+  and pump skips failure handling for it) and `POST /api/tasks/:id/retry`
+  re-queues a `failure`/`canceled` task (same INSERT as the auto-retry,
+  `retried_of` set) — both have buttons on the `/task/:id` page. There is also a
   zero-dependency terminal TUI (`2pizzas/tui.mjs`, run with plain `node`) over the
   same API for SSH sessions: tasks/backends/chats tabs, live SSE task-log tail,
   chat with input; `GET /api/backends` (JSON list, apiKey redacted) is its backend
@@ -287,7 +294,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `2pizzas/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
 | `2pizzas/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
-| `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
+| `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list AND each backend's live per-model `n_ctx` as `contextWindow`, 65536 floor — a baked window smaller than the real one makes pi plateau at the fake limit → "clean" no-action runs) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
 | `uninstall.sh` | inverse of setup.sh — tears down the stack behind a confirm: `docker compose down` (project `gitea` + `gitea_gitea` net), leftover `tea-chat-*` containers, built images (`agent-sandbox:*`, `gitea-android`, `gitea-pages`, 2pizzas); host data dirs only with `--purge`. Flags `--yes` / `--purge` / `--keep-images`. Never touches the git checkout or the host `ufw` rule |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
 | `agents-actions/` | template repo content (README-only now) |
@@ -449,18 +456,25 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
   an opaque agent error — `checkBakedSync()` in `inference.mjs` catches this
   up front and logs `[2pizzas] WARNING: … run ./setup.sh --rebuild` in the
   task log; don't remove that check.
-- **pi 0.82+ has auto-compaction ON by default** and runs it in
+- **The baked `contextWindow` must match the window the model is ACTUALLY
+  loaded with.** pi 0.82+ has auto-compaction ON by default and runs it in
   `_handlePostAgentRun()` — i.e. it emits `compaction_start`/`compaction_end`
   to the `--mode json` stream AFTER the `agent_end` line (a full extra
   summarization LLM call at the end of a one-shot run — pure downside, it can
   never fire mid-task). It's baked OFF in
   `agent-sandbox/pi/pi-settings/settings.json` (`"compaction":
-  {"enabled": false}`). Don't re-enable it.
-  Related trap: `pi --model llama.cpp/<id>` for an id MISSING from the baked
-  `models.json` silently inherits `contextWindow` from the FIRST model in the
-  provider list (`buildFallbackModel`) — a 131K task on a model that resolves
-  to a 65K window trips the compaction threshold (`ctx > window − 16384`).
-  Keep `models.json` in sync with the host model set.
+  {"enabled": false}`). Don't re-enable it. With compaction off, hitting the
+  window just STOPS the run: the stream ends "cleanly" (`agent_settled`, no
+  error) → the bootstrap sees no commit/PR/reply → no-action failure, and the
+  UI shows usage plateauing at a round % of the real window. setup.sh bakes
+  the LIVE per-model `n_ctx` from the backend's `/v1/models` (65536 floor) —
+  a hardcoded 65536 against a 128K router load is exactly this trap (the
+  "plateaus at 50%" incident). Related trap: `pi --model llama.cpp/<id>` for
+  an id MISSING from the baked `models.json` silently inherits
+  `contextWindow` from the FIRST model in the provider list
+  (`buildFallbackModel`) — a 131K task on a model that resolves to a 65K
+  window trips the compaction threshold (`ctx > window − 16384`). Keep
+  `models.json` in sync with the host model set.
 - **pi (0.82.x) does not interpolate env vars in `apiKey`** despite the docs —
   the key must be baked into `models.json` at image build time.
   0.82+ also needs Node >= 22.19 (base image is on 22) and bakes
@@ -501,6 +515,7 @@ revived it should run through 2pizzas, not a dedicated runner.
 | backends | `curl -X POST :3001/api/backends -d '{"id":"x","url":"https://…"}'` → row appears in `inference.json` (in place) + the `/backends` page (with a "not baked" badge until `./setup.sh --rebuild`); `DELETE /api/backends/:id` removes it (the last one is protected). Reachability: `./2pizzas/probe.sh <url>` (or the "test" buttons) → `ok` + model list, or `NOT reachable` + the loopback hint |
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
-| infra agent | `@infra` on an issue in `INFRA_REPO` → task runs (runc, `docker ps` works inside); a task killed with 143/137 → retry task + `agent-infra` task on a new incident issue within the cooldown |
+| task stop/retry | `POST /api/tasks/<id>/stop` on a running task → `canceled` + `docker rm -f tea-task-<id>`; `POST /api/tasks/<id>/retry` on a failed task → new queued task with `retried_of` |
+| infra agent (parked) | `@infra` is inert; a task that fails twice logs `[failure] … infra escalation parked` — no `agent-infra` task is created |
 | `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
 | end-to-end | full loop: `@pi` comment → task `success` → `pi` reply with `<!-- via:agent -->` on the issue |

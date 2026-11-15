@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   cpath       TEXT,
   line        INTEGER,
   body        TEXT,
-  status      TEXT NOT NULL DEFAULT 'queued',  -- queued|running|success|failure
+  status      TEXT NOT NULL DEFAULT 'queued',  -- queued|running|success|failure|canceled
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   started_at  TEXT,
   finished_at TEXT,

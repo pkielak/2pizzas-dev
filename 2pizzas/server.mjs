@@ -76,7 +76,7 @@ import { managedRepos } from './repos.mjs';
 import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, bakedModelTables, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
-import { liveAdd, liveRemove } from './live.mjs';
+import { liveAdd, liveRemove, liveBroadcast } from './live.mjs';
 import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive, chatRepos } from './chat.mjs';
 import { THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { androidRuns } from './gitea.mjs';
@@ -84,7 +84,8 @@ import { statsData } from './ui/stats.mjs';
 
 // importing these for their side effects: pump interval, poll interval,
 // theme discovery, chat orphan reaping + idle killer
-import { activeCount } from './tasks.mjs';
+import { activeCount, cancelTask } from './tasks.mjs';
+import { kick } from './kick.mjs';
 import './poll.mjs';
 import './live.mjs';
 
@@ -366,6 +367,35 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/healthz') return send(200, 'application/json', JSON.stringify({ ok: true, active: activeCount(), repos: managedRepos() }));
   if (url.pathname === '/api/tasks') {
     return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 100').all()));
+  }
+  // POST /api/tasks/<id>/retry — manually re-run a failed task
+  const taskRetryMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/retry$/);
+  if (taskRetryMatch && req.method === 'POST') {
+    const id = +taskRetryMatch[1];
+    const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+    if (!t) return send(404, 'application/json', JSON.stringify({ error: `no task ${id}` }));
+    if (t.status !== 'failure' && t.status !== 'canceled')
+      return send(400, 'application/json', JSON.stringify({ error: `task ${id} is '${t.status}', not 'failure'/'canceled'` }));
+    db.prepare(
+      `INSERT INTO tasks (repo, issue, agent, kind, cpath, line, body, parent_id, round, pr, retried_of)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(t.repo, t.issue, t.agent, t.kind, t.cpath, t.line, t.body, t.parent_id, t.round, t.pr, t.id);
+    const newId = db.prepare('SELECT last_insert_rowid() id').get().id;
+    kick();
+    liveBroadcast('tasks');
+    return send(200, 'application/json', JSON.stringify({ ok: true, newTaskId: newId }));
+  }
+  // POST /api/tasks/<id>/stop — cancel a queued/running task on demand
+  const taskStopMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/stop$/);
+  if (taskStopMatch && req.method === 'POST') {
+    const id = +taskStopMatch[1];
+    try {
+      await cancelTask(id);
+      send(200, 'application/json', '{"ok":true}');
+    } catch (e) {
+      send(400, 'application/json', JSON.stringify({ error: e.message }));
+    }
+    return;
   }
   if (url.pathname === '/api/stats' && req.method === 'GET')
     return send(200, 'application/json', JSON.stringify(statsData()));

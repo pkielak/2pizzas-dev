@@ -8,6 +8,7 @@ import { db, readLog, logPath } from './db.mjs';
 import { apiGet, apiPost } from './gitea.mjs';
 import { pickModel, checkBakedSync } from './inference.mjs';
 import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt, infraPrompt } from './prompts.mjs';
+import { execFileP } from './util.mjs';
 import { enqueueReview, enqueueRework, onTaskFailure } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
 import { liveBroadcast } from './live.mjs';
@@ -15,7 +16,7 @@ import { redact } from './redact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export const running = new Map(); // task id -> { log }
+export const running = new Map(); // task id -> { log, child }
 let active = 0;
 export const activeCount = () => active;
 
@@ -29,7 +30,7 @@ const identity = (t) => (t.agent === 'review' ? CFG.review : CFG.agents[t.agent]
 async function runTask(t) {
   const logfile = logPath(t.id);
   const log = { text: '', file: logfile };
-  running.set(t.id, log);
+  running.set(t.id, { log, child: null });
   // redact(): agents echo secrets in their bash tool calls (export
   // AGENT_TOKEN=…) — scrub every 2pizzas-held secret before it hits the log
   const say = (s) => { const r = redact(s); log.text += r; fs.appendFileSync(logfile, r); };
@@ -247,7 +248,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         ? ['--name', `tea-infra-${t.id}`,
            '-v', `${CFG.infraHostRepo}:/infra-src:ro`,
            '-v', '/var/run/docker.sock:/var/run/docker.sock']
-        : []),
+        : ['--name', `tea-task-${t.id}`]),
       '--add-host=gitea:host-gateway',
       '--add-host=host.docker.internal:host-gateway',
         // agent-review runs on the READ-ONLY token for everything (clone +
@@ -264,6 +265,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         CFG.images[t.agent], 'sh', '-c', 'sh -c "$(printf %s "$BOOTSTRAP_B64" | base64 -d)"',
     ];
     const child = spawn('docker', dockerArgs);
+    running.get(t.id).child = child; // cancelTask() kills the container by name
       const onOut = (d) => {
         const s = d.toString();
         say(s);
@@ -288,6 +290,30 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
     if (tokens != null) db.prepare('UPDATE tasks SET tokens=? WHERE id=?').run(tokens, t.id);
     running.delete(t.id);
   }
+}
+
+// ── on-demand stop ─────────────────────────────────────────────────────────
+
+// Queued → just mark it. Running → `docker rm -f` the NAMED job container
+// (killing the docker CLI client alone leaves the container running). The
+// resulting non-zero exit reaches pump(), which sees the id in `canceled`
+// and skips failure handling (no retry, no infra agent).
+const canceled = new Set();
+
+export async function cancelTask(id) {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  if (!t) throw new Error(`no task ${id}`);
+  if (t.status !== 'queued' && t.status !== 'running')
+    throw new Error(`task ${id} is '${t.status}', not queued/running`);
+  canceled.add(id);
+  db.prepare("UPDATE tasks SET status='canceled', finished_at=datetime('now'), error='canceled on demand' WHERE id=?").run(id);
+  fs.appendFileSync(logPath(id), `\n[2pizzas] task ${id} canceled on demand\n`);
+  if (t.status === 'running') {
+    const name = t.agent === 'infra' ? `tea-infra-${id}` : `tea-task-${id}`;
+    await execFileP('docker', ['rm', '-f', name], { timeout: 15000 }).catch(() => {}); // not up yet / already gone
+  }
+  liveBroadcast('tasks');
+  kick();
 }
 
 // ── review chain (after a task finishes successfully) ───────────────────────
@@ -333,15 +359,29 @@ export async function pump() {
   active++;
   try {
     await runTask(t);
-    db.prepare(`UPDATE tasks SET status='success', finished_at=datetime('now') WHERE id=?`).run(t.id);
-    liveBroadcast('tasks');
-    try { await afterTask(t); }
-    catch (e) { console.error(`[after] task ${t.id}: ${e.message}`); }
+    if (canceled.has(t.id)) {
+      // race: the container was killed between the SELECT above and the
+      // docker run starting — the run "succeeded" but the task stays canceled
+      canceled.delete(t.id);
+      liveBroadcast('tasks');
+    } else {
+      db.prepare(`UPDATE tasks SET status='success', finished_at=datetime('now') WHERE id=?`).run(t.id);
+      liveBroadcast('tasks');
+      try { await afterTask(t); }
+      catch (e) { console.error(`[after] task ${t.id}: ${e.message}`); }
+    }
   } catch (e) {
-    db.prepare(`UPDATE tasks SET status='failure', finished_at=datetime('now'), error=? WHERE id=?`)
-      .run(String(e.message).slice(0, 2000), t.id);
-    liveBroadcast('tasks');
-    onTaskFailure(t, e.message); // infra-class → retry once + wake the infra agent
+    if (canceled.has(t.id)) {
+      // cancelTask() already marked it 'canceled' — the killed container
+      // surfaces here as a non-zero exit; NOT a failure
+      canceled.delete(t.id);
+      liveBroadcast('tasks');
+    } else {
+      db.prepare(`UPDATE tasks SET status='failure', finished_at=datetime('now'), error=? WHERE id=?`)
+        .run(String(e.message).slice(0, 2000), t.id);
+      liveBroadcast('tasks');
+      onTaskFailure(t, e.message); // no-action → 2 retries then give up; else retry + infra
+    }
   } finally {
     active--;
     kick(); // a slot just freed — start the next queued task now
