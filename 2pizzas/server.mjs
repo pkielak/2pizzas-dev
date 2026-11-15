@@ -73,7 +73,7 @@ import { CFG, isHostLocal } from './config.mjs';
 import { db, logPath } from './db.mjs';
 import { execFileP, dockerNames, pagesStatus } from './util.mjs';
 import { managedRepos } from './repos.mjs';
-import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
+import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderIds, bakedModelTables, addBackend, updateBackend, deleteBackend, moveBackend, probeBackend } from './inference.mjs';
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove } from './live.mjs';
@@ -388,9 +388,9 @@ const server = http.createServer(async (req, res) => {
   // backend's model list (null = unreachable)
   if (url.pathname === '/api/backends/full' && req.method === 'GET') {
     const backends = readRegistry();
-    const [picked, piDef, baked] = await Promise.all([pickModel(), piDefaultModel(), bakedProviderIds()]);
+    const [picked, piDef, baked, bakedModels] = await Promise.all([pickModel(), piDefaultModel(), bakedProviderIds(), bakedModelTables()]);
     const models = await Promise.all(backends.map((b) => backendModels(b).catch(() => null)));
-    return send(200, 'application/json', JSON.stringify({ backends, models, picked, piDefault: piDef, baked, images: CFG.images }));
+    return send(200, 'application/json', JSON.stringify({ backends, models, picked, piDefault: piDef, baked, bakedModels, images: CFG.images }));
   }
   // list backends as JSON (apiKey redacted) — the /backends page renders the
   // registry server-side, but API clients (the TUI) need a plain list

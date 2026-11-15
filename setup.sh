@@ -201,18 +201,18 @@ if timeout 3 systemctl is-active ufw >/dev/null 2>&1; then
   BRIDGE_SUBNET=$(docker network inspect gitea_gitea --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null) || true
   warn "ufw is active — without FORWARD to the Docker bridges the stack is silently broken (containers can't reach the host: published ports, embedded DNS, and job-container git clones all fail)"
   if yesno "apply ufw rules now? (FORWARD routes + interface-scoped port allows; needs $SUDO)" y; then
-    local ok_all=1
+    ok_all=1
     # FORWARD routes (Docker bridge traffic)
     $SUDO ufw route allow in on any to "${BRIDGE_SUBNET:-172.18.0.0/16}" || ok_all=0
     $SUDO ufw route allow in on any to 172.17.0.0/16 || ok_all=0
     # Interface-scoped port allows (compose binds 0.0.0.0; ufw scopes reachability)
-    local PORTS="22,3000,3001,3002,3004,3443,3444,6767"
+    PORTS="22,3000,3001,3002,3004,3443,3444,6767"
     $SUDO ufw allow in on lo to any port $PORTS proto tcp || ok_all=0
     if ip link show tailscale0 >/dev/null 2>&1; then
       $SUDO ufw allow in on tailscale0 to any port $PORTS proto tcp || ok_all=0
     fi
     # LAN interface (first non-lo, non-tailscale interface with a global addr)
-    local LAN_IF=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $2}' | head -1) || true
+    LAN_IF=$(ip -4 -o addr show scope global 2>/dev/null | grep -v ' tailscale0 ' | awk '{print $2}' | head -1) || true
     if [[ -n $LAN_IF ]]; then
       $SUDO ufw allow in on "$LAN_IF" to any port $PORTS proto tcp || ok_all=0
     fi
@@ -366,7 +366,13 @@ jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$I
 ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + (.value.models | length | tostring)] | join(", ")' "$PI_MODELS")"
 
 FIRST_ID=$(jq -r '.backends[0].id' inference.json)
-FIRST_MODEL=$(jq -r --arg k "$FIRST_ID" '((.[$k] // [null])[0]) // "unknown"' <<<"$IDS_JSON")
+# honour the pinned defaultModel when set (matches pickModel's precedence),
+# else the first live-listed model
+FIRST_DEF=$(jq -r '.backends[0].defaultModel // empty' inference.json)
+FIRST_MODEL=$(jq -r --arg k "$FIRST_ID" --arg d "$FIRST_DEF" '
+  (.[$k] // []) as $ids
+  | (if $d != "" and ($ids | index($d) != null) then $d else ($ids[0] // null) end)
+  // "unknown"' <<<"$IDS_JSON")
 jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$IDS_JSON" --arg m "$FIRST_ID/$FIRST_MODEL" '
   {model: $m,
    provider: ($backends | map({key: .id, value: {
@@ -504,7 +510,11 @@ else
     ok "built $tag"
   }
 
-  build_img 2pizzas           ./2pizzas
+  # compose tags this image gitea-2pizzas (no explicit image: in the
+  # compose file) — a plain `docker build -t 2pizzas` would leave the
+  # running container on the old image
+  runq "building 2pizzas" docker compose build 2pizzas || exit 1
+  ok "built 2pizzas"
   build_img gitea-pages:latest ./pages
   build_img agent-sandbox:base  agent-sandbox
   # LLAMA_BASE_URL is only used by pi's bundled llama.cpp extension provider

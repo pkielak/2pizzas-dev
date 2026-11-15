@@ -33,6 +33,18 @@
     } catch (e) { alert(e.message); }
   };
 
+  // "stale" = the live model list of a baked provider has models the image
+  // doesn't carry yet (./setup.sh --rebuild needed). The baked DEFAULT is
+  // deliberately not shown — 2pizzas always passes --model per task, so the
+  // only thing that matters is the baked model LIST.
+  const stale = (table, prov) => {
+    const i = data.backends.findIndex((b) => b.id === prov);
+    const live = i >= 0 ? data.models[i] : null;
+    if (!live) return false;
+    const baked = new Set(table[prov] ?? []);
+    return live.some((m) => !baked.has(m.id));
+  };
+
   const probeAdd = async () => {
     testing = true;
     probe = null;
@@ -73,7 +85,7 @@
 
   <h2>backends</h2>
   {#each data.backends as b, i (b.id)}
-    <BackendCard b={b} ms={data.models[i]} index={i} count={data.backends.length} baked={data.baked} piDef={data.piDefault} onChanged={load} />
+    <BackendCard b={b} ms={data.models[i]} index={i} count={data.backends.length} baked={data.baked} onChanged={load} />
   {/each}
 
   <h2>add a backend</h2>
@@ -102,15 +114,27 @@
       images: {data.images.pi} · {data.images.opencode} — model lists are baked from <code>inference.json</code> at build time
     </div>
     <table class="btable">
-      <thead><tr><th>agent</th><th>model config</th><th>default</th></tr></thead>
+      <thead><tr><th>agent</th><th>model config</th><th>baked models</th></tr></thead>
       <tbody>
         <tr>
           <td>pi</td><td>models.json (baked)</td>
-          <td>{#if data.piDefault}<code>{data.piDefault.provider}/{data.piDefault.id}</code>{:else}—{/if}</td>
+          <td>
+            {#each Object.entries(data.bakedModels?.pi ?? {}) as [p, ids]}
+              <code>{p} · {ids.length}</code>
+              {#if stale(data.bakedModels.pi, p)}<span class="badge badge-warn" title="the live model list has models missing from this image — ./setup.sh --rebuild">stale</span>{/if}
+            {/each}
+            {#if !Object.keys(data.bakedModels?.pi ?? {}).length}—{/if}
+          </td>
         </tr>
         <tr>
           <td>opencode</td><td>opencode.json (baked)</td>
-          <td><code>{data.backends[0]?.id}/{data.models[0]?.[0]?.id ?? '—'}</code></td>
+          <td>
+            {#each Object.entries(data.bakedModels?.opencode ?? {}) as [p, ids]}
+              <code>{p} · {ids.length}</code>
+              {#if stale(data.bakedModels.opencode, p)}<span class="badge badge-warn" title="the live model list has models missing from this image — ./setup.sh --rebuild">stale</span>{/if}
+            {/each}
+            {#if !Object.keys(data.bakedModels?.opencode ?? {}).length}—{/if}
+          </td>
         </tr>
       </tbody>
     </table>

@@ -2,7 +2,7 @@
   import { getJson } from '../lib/api.mjs';
   import ProbeResult from './ProbeResult.svelte';
 
-  let { b, ms, index, count, baked, piDef, onChanged } = $props();
+  let { b, ms, index, count, baked, onChanged } = $props();
   let editing = $state(false);
   let url = $state(b.url);
   let key = $state(b.apiKey ?? '');
@@ -11,7 +11,6 @@
   let testing = $state(false);
 
   const notBaked = !baked.includes(b.id);
-  const isPiDefault = b.id === piDef?.provider && b.defaultModel === piDef.id;
 
   const openEdit = () => {
     url = b.url;
@@ -65,7 +64,6 @@
   <div class="l1">
     {b.id}
     <span class="meta">priority {b.priority}</span>
-    {#if isPiDefault}<span class="badge badge-success">★ pi default</span>{/if}
     {#if b.apiKey}<span class="badge badge-info">keyed</span>{/if}
     {#if notBaked}<span class="badge badge-warn" title="not in the baked agent images — run ./setup.sh --rebuild; until then tasks cannot use this backend">not baked</span>{/if}
     <span style="flex:1"></span>

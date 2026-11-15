@@ -175,8 +175,16 @@ export async function checkBakedSync(agent, sel) {
 // provider IDs present in the baked agent image configs right now (for the
 // "not baked — run ./setup.sh --rebuild" badge in the UI)
 export async function bakedProviderIds() {
+  const t = await bakedModelTables();
+  return [...new Set([...Object.keys(t.pi), ...Object.keys(t.opencode)])];
+}
+
+// per-agent baked model tables: { pi: {provider: [ids]}, opencode: {...} }
+// (the /backends "agents" frame — shows what the images actually carry)
+export async function bakedModelTables() {
   const { pi, oc } = await bakedProviders();
-  return [...new Set([...Object.keys(pi ?? {}), ...Object.keys(oc ?? {})])];
+  const conv = (t) => Object.fromEntries(Object.entries(t ?? {}).map(([p, s]) => [p, [...s]]));
+  return { pi: conv(pi), opencode: conv(oc) };
 }
 
 // ── registry mutations (UI: /api/backends) ─────────────────────────
