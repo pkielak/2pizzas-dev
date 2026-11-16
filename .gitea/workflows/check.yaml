@@ -1,0 +1,31 @@
+name: Check
+
+# Development gate on every PR (agent-created included): bash -n,
+# shellcheck (parser errors), node --check, jq, and compose config over
+# all tracked files. The static twin of setup.sh's runtime bake checks —
+# catches the boring stuff (a setup.sh syntax error, a broken
+# models.json.example) at review time, not in production.
+# Runs on my-runner (runc, normal egress).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (pinned)
+
+      - name: Install shellcheck + node
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends shellcheck nodejs
+
+      - name: Run check.sh
+        run: ./check.sh

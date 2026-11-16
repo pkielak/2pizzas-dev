@@ -294,9 +294,10 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `2pizzas/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
 | `2pizzas/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
-| `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list AND each backend's live per-model `n_ctx` as `contextWindow`, 65536 floor — a baked window smaller than the real one makes pi plateau at the fake limit → "clean" no-action runs) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android` |
+| `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list AND each backend's live per-model `n_ctx` as `contextWindow`, 65536 floor — a baked window smaller than the real one makes pi plateau at the fake limit → "clean" no-action runs) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android`. Self-checks its own syntax at start (`bash -n` — a mid-file syntax error would otherwise abort the wizard AFTER partial changes) and VERIFIES THE BAKE of `agent-sandbox:pi` after build (baked `LLAMA_BASE_URL` must be routable + match `inference.json`, `LLAMA_API_KEY` non-empty, baked `models.json` == generated one — hard fail with a `--rebuild` hint, since a bare `docker build` silently bakes the broken Dockerfile defaults), probes backend reachability+auth from the image's own vantage, and runs a full runsc pi smoke (trivial prompt → `agent_settled`, no `finalError`) on fresh builds |
 | `uninstall.sh` | inverse of setup.sh — tears down the stack behind a confirm: `docker compose down` (project `gitea` + `gitea_gitea` net), leftover `tea-chat-*` containers, built images (`agent-sandbox:*`, `gitea-android`, `gitea-pages`, 2pizzas); host data dirs only with `--purge`. Flags `--yes` / `--purge` / `--keep-images`. Never touches the git checkout or the host `ufw` rule |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
+| `check.sh` | development gate (local + CI via `check.yaml`): `bash -n` over every tracked `.sh`, shellcheck parser-errors (if installed), `node --check` over every `.mjs`, `jq` over every `.json`/`.json.example`, `docker compose config -q` — the static twin of setup.sh's runtime bake checks; missing tools are skipped with a note |
 | `agents-actions/` | template repo content (README-only now) |
 | `runner/config.yaml` | my-runner: `ubuntu-latest` label (ordinary CI only) — shared by android-runner |
 | `runner/android/Dockerfile` | `gitea-android:latest` job image: JDK 21 + Android SDK + warm `~/.gradle` (label `android`) |
@@ -305,7 +306,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `agent-sandbox/infra/Dockerfile` | `agent-sandbox:infra` = pi + docker-cli (runc + docker socket, see infra agent) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model providers (baked from `inference.json`, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
-| `.gitea/workflows/` | ordinary CI workflows — `mirror-to-github.yaml`, `security-scan.yaml` (gitleaks + semgrep gate on every PR) — run on my-runner |
+| `.gitea/workflows/` | ordinary CI workflows — `mirror-to-github.yaml`, `check.yaml` (check.sh dev gate on every PR), `security-scan.yaml` (gitleaks + semgrep gate on every PR) — run on my-runner |
 | `pages/` | static pages server (`Dockerfile`, `nginx.conf`, `entrypoint.sh`): syncs a repo's `gh-pages` branch and serves it on `:3002` (stand-in for Gitea Pages, which 1.27 lacks) |
 
 ## Useful commands
@@ -314,6 +315,9 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 # One-command setup + its inverse (teardown, confirm-gated)
 ./setup.sh            # wizard: preflight → configs → .env → images → up → seed → verify
 ./uninstall.sh        # down the stack + remove built images; --purge also deletes data dirs
+
+# Dev gate (shell/js/json/compose static checks — also runs on every PR)
+./check.sh
 
 # Bootstrap (idempotent — users/tokens/repos/runner/webhooks; re-runnable)
 ./seed.sh
@@ -520,6 +524,7 @@ revived it should run through 2pizzas, not a dedicated runner.
 
 | Changed | Verify with |
 |---|---|
+| any shell/js/json/compose edit | `./check.sh` (the PR gate: `bash -n` / shellcheck / `node --check` / `jq` / compose config) |
 | compose / `.env` | `docker compose config -q` + recreate the service + `docker exec <container> printenv VAR` |
 | `2pizzas/server.mjs` | `node --check`, then `docker compose build 2pizzas && up -d`, `curl :3001/healthz` |
 | webhook delivery | post `@pi` on a throwaway issue; `docker logs gitea-2pizzas` shows `[webhook] … → enqueued`, task goes to `success` in the UI |
