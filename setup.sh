@@ -25,6 +25,10 @@
 #
 set -euo pipefail
 cd "$(dirname "$0")"
+# self-check: bash parses this file as it runs, so a syntax error ANYWHERE
+# in it aborts the wizard mid-run — after partial changes (models.json
+# regenerated, images half-built). Catch it before touching anything.
+bash -n "$0"
 
 # ── options ─────────────────────────────────────────────────────────
 NONINTERACTIVE=0 REBUILD=0 SKIP_BUILD=0 WANT_ANDROID=ask DEPLOY=0
@@ -374,7 +378,7 @@ jq -n --argjson backends "$(jq -c '.backends' inference.json)" --argjson ids "$I
       # unloaded models report n_ctx 0 — max() keeps 65536 as the floor
       models: (($ids[$bid] // []) | map({id:., contextWindow: ([($ctx[$bid][.] // 0), 65536] | max)}))
   }}) | from_entries)}' > "$PI_MODELS"
-ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + ([.value.models[] | .id + "/" + (.contextWindow | tostring)] | join(", "))] | join(", ")' "$PI_MODELS")")
+ok "baked $PI_MODELS — $(jq -r '[.providers | to_entries[] | .key + ": " + ([.value.models[] | .id + "/" + (.contextWindow | tostring)] | join(", "))] | join(", ")' "$PI_MODELS")"
 
 FIRST_ID=$(jq -r '.backends[0].id' inference.json)
 # honour the pinned defaultModel when set (matches pickModel's precedence),
@@ -528,11 +532,70 @@ else
   ok "built 2pizzas"
   build_img gitea-pages:latest ./pages
   build_img agent-sandbox:base  agent-sandbox
-  # LLAMA_BASE_URL is only used by pi's bundled llama.cpp extension provider
-  # — pass the url of the backend with that id (else the first one)
+  # LLAMA_BASE_URL + LLAMA_API_KEY are only used by pi's bundled llama.cpp
+  # extension provider (it OVERRIDES the models.json provider — url AND
+  # key come from these envs, not from models.json) — pass the url + key
+  # of the backend with that id (else the first one)
   LLAMA_BAKE_URL=$(jq -r '[.backends[] | select(.id == "llama.cpp")] | .[0].url // empty' inference.json)
   [[ -n $LLAMA_BAKE_URL ]] || LLAMA_BAKE_URL=$LLAMA_URL
-  build_img agent-sandbox:pi    agent-sandbox/pi  --build-arg "LLAMA_BASE_URL=$LLAMA_BAKE_URL"
+  LLAMA_BAKE_KEY=$(jq -r '[.backends[] | select(.id == "llama.cpp")] | .[0].apiKey // empty' inference.json)
+  pi_present=0; docker image inspect agent-sandbox:pi >/dev/null 2>&1 && pi_present=1
+  build_img agent-sandbox:pi    agent-sandbox/pi  --build-arg "LLAMA_BASE_URL=$LLAMA_BAKE_URL" --build-arg "LLAMA_API_KEY=$LLAMA_BAKE_KEY"
+
+  # ── verify the pi image's BAKE, not the build command ──────────────
+  # A bare `docker build` (no build-args) silently bakes the Dockerfile
+  # defaults (localhost:8080 + empty key) — inside the runsc sandbox that
+  # URL is the sandbox's OWN loopback, so every pi task fails "agent
+  # exited with code 1" with an empty stream. Hard-fail on a broken bake.
+  baked=$(docker run --rm --entrypoint sh agent-sandbox:pi -c 'printf "%s\n%s" "${LLAMA_BASE_URL:-}" "${LLAMA_API_KEY:-}"')
+  burl=$(sed -n 1p <<<"$baked"); bkey=$(sed -n 2p <<<"$baked")
+  case "$burl" in
+    ""|*://127.*|*://localhost*)
+      err "agent-sandbox:pi bakes LLAMA_BASE_URL=${burl:-<empty>} — a bare docker build (no --build-arg) produced this image"
+      err "  → ./setup.sh --rebuild"
+      exit 1 ;;
+  esac
+  if [[ $burl != "$LLAMA_BAKE_URL" ]]; then
+    err "agent-sandbox:pi bakes LLAMA_BASE_URL=$burl but inference.json has $LLAMA_BAKE_URL — stale image"
+    err "  → ./setup.sh --rebuild"
+    exit 1
+  fi
+  if [[ -z $bkey ]]; then
+    err "agent-sandbox:pi has no LLAMA_API_KEY baked — pi's llama.cpp extension sends \"local\" and every request 401s"
+    err "  → ./setup.sh --rebuild"
+    exit 1
+  fi
+  if [[ -n $(cat "$PI_MODELS" 2>/dev/null) && \
+       "$(docker run --rm --entrypoint cat agent-sandbox:pi /root/.pi/agent/models.json 2>/dev/null)" != "$(cat "$PI_MODELS")" ]]; then
+    err "agent-sandbox:pi models.json is stale (differs from the generated $PI_MODELS)"
+    err "  → ./setup.sh --rebuild"
+    exit 1
+  fi
+  ok "agent-sandbox:pi bake verified (LLAMA_BASE_URL + key + models.json)"
+  # reachability + auth FROM the image's own vantage (no LLM call)
+  if docker run --rm --entrypoint sh agent-sandbox:pi -c \
+      'curl -sf --max-time 10 -H "Authorization: Bearer $LLAMA_API_KEY" "${LLAMA_BASE_URL%/}/v1/models" >/dev/null'; then
+    ok "llama backend reachable + auth OK from agent-sandbox:pi"
+  else
+    warn "llama backend NOT reachable/auth from agent-sandbox:pi — router down or key mismatch; agent tasks will fail until fixed"
+  fi
+  # full pi smoke — the exact task path (extension → url/key → stream),
+  # only on a fresh build (a trivial prompt; ~30-60s on the 27B)
+  pi_just_built=0
+  if [[ $REBUILD == 1 || $pi_present == 0 ]]; then pi_just_built=1; fi
+  if [[ $pi_just_built == 1 ]]; then
+    pi_model=$(jq -r '[.backends[] | select(.id == "llama.cpp")] | .[0].defaultModel // empty' inference.json)
+    if [[ -n $pi_model ]]; then
+      pi_stream=$(docker run --rm --runtime=runsc --entrypoint sh agent-sandbox:pi \
+        -c "cd /root && echo 'Reply with exactly: OK' | pi --mode json --model llama.cpp/$pi_model 2>&1" | tail -6) || true
+      if grep -q '"type":"agent_settled"' <<<"$pi_stream" && ! grep -q '"finalError"' <<<"$pi_stream"; then
+        ok "pi smoke test (llama.cpp/$pi_model) — settled, no finalError"
+      else
+        warn "pi smoke test FAILED — stream tail:"
+        printf '%s\n' "$pi_stream" | sed 's/^/    /'
+      fi
+    fi
+  fi
   build_img agent-sandbox:opencode agent-sandbox/opencode
   build_img agent-sandbox:review   agent-sandbox/review
   build_img agent-sandbox:infra    agent-sandbox/infra

@@ -10,6 +10,12 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.82.1
 # run dies instantly with "Provider is not configured: llama.cpp".
 ARG LLAMA_BASE_URL=http://localhost:8080
 ENV LLAMA_BASE_URL=${LLAMA_BASE_URL}
+# the extension resolves the API key as credential ?? $LLAMA_API_KEY ??
+# "local" — bake the router's key too, else every request 401s and pi
+# dies with a connection/auth error (a plain `docker build` without both
+# args silently breaks the image).
+ARG LLAMA_API_KEY=
+ENV LLAMA_API_KEY=${LLAMA_API_KEY}
 
 # models.json contains the API key and is gitignored.
 # Create it from models.json.example if missing.

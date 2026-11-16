@@ -334,7 +334,8 @@ curl -s http://127.0.0.1:3001/api/tasks | jq
 
 # Agent job images
 docker build -t agent-sandbox:base agent-sandbox
-docker build -t agent-sandbox:pi agent-sandbox/pi
+docker build -t agent-sandbox:pi agent-sandbox/pi \
+  --build-arg LLAMA_BASE_URL=<llama backend url> --build-arg LLAMA_API_KEY=<key>  # a bare build silently breaks the image (gotcha below)
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
 docker build -t agent-sandbox:ops agent-sandbox/ops
 docker build -t agent-sandbox:infra agent-sandbox/infra
@@ -478,8 +479,19 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
 - **pi (0.82.x) does not interpolate env vars in `apiKey`** despite the docs —
   the key must be baked into `models.json` at image build time.
   0.82+ also needs Node >= 22.19 (base image is on 22) and bakes
-  `LLAMA_BASE_URL` into `agent-sandbox:pi` — without it the bundled
-  llama.cpp extension provider fails auth with "Provider is not configured".
+  `LLAMA_BASE_URL` + `LLAMA_API_KEY` into `agent-sandbox:pi` — pi's
+  bundled llama.cpp extension provider OVERRIDES the `llama.cpp` provider
+  in models.json (the models.json baseUrl/apiKey are only model
+  definitions): the real server url comes from `LLAMA_BASE_URL` and the
+  key from `credential ?? $LLAMA_API_KEY ?? "local"`. Without the URL the
+  run dies with "Provider is not configured: llama.cpp"; with a wrong URL
+  (the Dockerfile default is `http://localhost:8080` — inside the runsc
+  sandbox that's the sandbox's OWN loopback) pi gets `Connection error.`
+  on every request; without the key every request 401s. A bare
+  `docker build -t agent-sandbox:pi agent-sandbox/pi` (no build-args)
+  silently bakes both defaults → every pi task fails "agent exited with
+  code 1" with an empty stream. Always build with both build-args
+  (setup.sh does — `./setup.sh --rebuild`).
 - **User-controlled content in shell**: always pass it via env vars / quoted
   heredocs, never unquoted interpolation of comment bodies.
 - **Repo creation via API needs `write:user` scope** — use `ADMIN_TOKEN`, not
