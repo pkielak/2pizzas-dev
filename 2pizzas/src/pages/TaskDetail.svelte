@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getJson, postJson } from '../lib/api.mjs';
   import { navigate } from '../lib/router.mjs';
-  import { ctxText } from '../lib/fmt.mjs';
+  import { ctxText, fmtTok } from '../lib/fmt.mjs';
   import TaskLog from '../components/TaskLog.svelte';
   import Loading from '../components/Loading.svelte';
 
@@ -11,12 +11,18 @@
   let log = $state('');
   let streaming = $state(false);
   let err = $state('');
+  // live token readout parsed from the streaming log (the filter emits a
+  // `[2pizzas] usage:` line per turn, so this climbs as the run progresses)
+  let liveTokens = $state(null);
+
+  const onUsage = (_model, tokens) => { liveTokens = tokens; };
 
   const load = (withLog = false) =>
     getJson(`/api/task/${taskId}`)
       .then((t) => {
         task = t;
         streaming = ['queued', 'running'].includes(t.status);
+        liveTokens = null; // a settled task carries its own stored tokens
         if (withLog) return getJson(`/api/task/${taskId}/log`).then((d) => { log = d.log; });
       })
       .catch((e) => { err = e.message; });
@@ -39,6 +45,7 @@
   <div class="pagehead">
     <span class={task.status}>{task.status}</span>
     {#if streaming}<span class="live">live</span>{/if}
+    {#if streaming && liveTokens != null}<span class="livetok">≈ {fmtTok(liveTokens)} tok</span>{/if}
     {#if streaming}
       <button class="btn danger" onclick={stop}>stop task</button>
     {:else if task.status === 'failure' || task.status === 'canceled'}
@@ -66,7 +73,7 @@
     {#if task.error}<br><span class="err">{task.error}</span>{/if}
   </p>
   {#if streaming}
-    <TaskLog taskId={taskId} onDone={settle} />
+    <TaskLog taskId={taskId} onDone={settle} onUsage={onUsage} />
   {:else}
     <div class="console">{log}</div>
   {/if}

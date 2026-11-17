@@ -269,8 +269,11 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
       const onOut = (d) => {
         const s = d.toString();
         say(s);
-        const m = /\[2pizzas\] usage: model=\S+ tokens=(\d+)/.exec(tail + s); // filter's end-of-stream marker
-        if (m) tokens = +m[1];
+        // the filter emits a usage marker per turn — keep the LAST one seen
+        // (taking the first match across an unlucky chunk boundary would pin
+        // tokens to an earlier, smaller turn's value)
+        const mm = [...(tail + s).matchAll(/\[2pizzas\] usage: model=\S+ tokens=(\d+)/g)];
+        if (mm.length) tokens = +mm[mm.length - 1][1];
         tail = s.length > 80 ? s.slice(-80) : s;
       };
       child.stdout.on('data', onOut);

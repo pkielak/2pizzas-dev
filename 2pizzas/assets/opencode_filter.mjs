@@ -14,6 +14,12 @@
 let buf = '';
 let lastTokens = null;
 let failed = false;
+// emit a live `[2pizzas] usage:` marker on every step_finish so the UI's
+// live tail shows a token count that climbs as the run progresses (2pizzas
+// stores the LAST one it sees, which equals the final total)
+const emitUsage = (t) => {
+  if (t != null) process.stdout.write(`\n[2pizzas] usage: model=${process.env.OPENCODE_MODEL ?? 'unknown'} tokens=${t}\n`);
+};
 process.stdin.on('data', (d) => {
   buf += d.toString();
   let i;
@@ -34,6 +40,7 @@ process.stdin.on('data', (d) => {
         out = `${j.part?.text ?? ''}\n`;
       } else if (j.type === 'step_finish') {
         lastTokens = j.part?.tokens?.total ?? null;
+        emitUsage(lastTokens);
       } else if (j.type === 'error') {
         failed = true;
         out = `\n[opencode] ERROR: ${j.error?.data?.message ?? j.error?.name ?? 'unknown error'}\n`;

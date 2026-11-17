@@ -70,6 +70,10 @@ main{min-width:0;padding:16px;padding-top:64px;max-width:960px}
 .pgtitle{margin:0;font-size:11.5px;font-weight:800;line-height:1;color:var(--muted-2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* full-height app layout (chat): header top, messages fill, input pinned bottom */
 main.app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+/* page-transition wrapper: invisible on normal pages, but must carry the
+   full-height flex stretch for the chat app layout (see main.app above) */
+.pagein{min-width:0}
+main.app>.pagein{display:flex;flex-direction:column;flex:1;min-height:0}
 .chatapp{flex:1;min-height:0;display:flex;flex-direction:column;max-width:960px;width:100%;margin:0 auto}
 .sidebar{position:fixed;top:0;left:0;height:100vh;width:200px;z-index:30;background:var(--bg);border-right:2px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .18s ease-out}
 .sidebar.open{transform:none}
@@ -124,6 +128,7 @@ a.item:hover .l2,a.item:hover .meta,.item.chatrow:hover .l2,.item.chatrow:hover 
 .del:hover{color:var(--sauce)}
 .grantbtn{margin-left:auto;background:var(--surface);border:2px solid var(--line);color:var(--ink);border-radius:0;padding:4px 12px;cursor:pointer;font-size:11.5px;font-weight:800;text-transform:uppercase;box-shadow:3px 3px 0 var(--shadow)}
 .grantbtn:hover{background:var(--cheese);color:var(--cheese-ink);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--shadow)}
+.grantbtn.revoke:hover{background:#fbe3e3;color:var(--sauce-dark)}
 /* status pill badges */
 .queued,.running,.success,.failure,.canceled{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border:2px solid transparent;border-radius:0;white-space:nowrap;background:var(--surface)}
 .queued{color:var(--muted-2);border-color:var(--faint)}
@@ -135,6 +140,8 @@ a.item:hover .l2,a.item:hover .meta,.item.chatrow:hover .l2,.item.chatrow:hover 
 .live{display:inline-flex;align-items:center;gap:6px;color:var(--sauce-dark);font-size:12px;font-weight:800;text-transform:uppercase;margin-left:4px}
 .live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--sauce);animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+/* live token readout — a monospace chip that climbs while a task runs */
+.livetok{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;font-weight:700;color:var(--cheese-ink);background:var(--cheese);border:2px solid var(--line);border-radius:0;padding:1px 8px;white-space:nowrap}
 /* page header: title row + meta */
 .pagehead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
 .pagehead h1{margin:0}
@@ -187,10 +194,58 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
 input,select{background:var(--surface);border:2px solid var(--line);border-radius:0;color:var(--ink);padding:7px 10px;font-size:13px;font-family:inherit}
 input:focus,select:focus{outline:none;box-shadow:3px 3px 0 var(--sauce)}
 input::placeholder{color:var(--faint)}
+/* ── polish: visible focus + gentle transitions (kept square/brutal) ───── */
+:focus-visible{outline:3px solid var(--sauce);outline-offset:1px}
+a.item,.item.chatrow,.btn,.grantbtn,.navl,.del,.back,.access{
+  transition:background .12s ease,color .12s ease,transform .08s ease,box-shadow .08s ease
+}
+/* refine hierarchy: tighten section spacing, soften the muted steps */
+.l2{line-height:1.55}
+.err{line-height:1.45}
+/* color-coded access state (green = access, red = none) */
+.badge-danger{background:#fbe3e3;color:var(--sauce-dark);border-color:var(--sauce)}
+.access{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--line);border-radius:0;padding:1px 8px 1px 7px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.access::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.access.on{background:#e4efe5;color:var(--olives-dark);border-color:var(--olives)}
+.access.off{background:#fbe3e3;color:var(--sauce-dark);border-color:var(--sauce)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--faint);border:1px solid var(--line);flex:none}
+.dot.ok{background:var(--olives);border-color:var(--olives)}
+.dot.bad{background:var(--sauce);border-color:var(--sauce)}
+/* ── contextual right sidebar ────────────────────────────────────────── */
+.rsb{display:none}
+.rsb h3{margin:0 0 8px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2)}
+.rsb .list{box-shadow:none;border-width:2px}
+.rsb .item{padding:8px 11px}
+.rsb .l1{font-size:12.5px}
+.rsb .l2{font-size:11.5px}
+.rsb .sbrow{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:12.5px;border-bottom:1px solid var(--track)}
+.rsb .sbrow:last-child{border-bottom:none}
+.rsb .sbk{color:var(--muted-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rsb .sbn{margin-left:auto;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:nowrap}
+.rsb .sblinks a{display:block;text-decoration:none;color:var(--ink);font-weight:700;font-size:12.5px;padding:6px 8px;margin-top:4px;border:2px solid var(--line);background:var(--surface)}
+.rsb .sblinks a:hover{background:var(--cheese);color:var(--cheese-ink)}
+.rsb .note{color:var(--muted);font-size:11.5px;line-height:1.5}
+.rsb .sbbtns{display:flex;gap:8px;margin-top:8px}
+/* right sidebar appears only on wide screens AND when the route has a
+   panel (.rsb-on) — the full-height chat session hides it */
+@media (min-width:1200px){
+  .layout.rsb-on .rsb{display:flex;position:fixed;top:48px;right:0;bottom:0;width:264px;flex-direction:column;gap:16px;overflow-y:auto;background:var(--bg);border-left:2px solid var(--line);padding:18px 14px}
+  .layout.rsb-on main{margin-right:264px}
+}
 @media (min-width:768px){
   .sidebar{transform:none}
   #navToggle,#backdrop{display:none}
   #topbar{left:200px}
   main{margin-left:200px;padding:68px 32px 28px}
   main.app{padding:68px 24px 12px}
+}
+/* loading indicator — centered in the space BETWEEN the sidebars (fixed to
+   the viewport vertically; the horizontal offset accounts for the 200px left
+   sidebar always, and the 264px right sidebar when .rsb-on). (vw-64)/2 = 50%-32px */
+.loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none}
+@media (min-width:768px){
+  .loading{left:calc(50% + 100px)}
+}
+@media (min-width:1200px){
+  .layout.rsb-on .loading{left:calc(50% - 32px)}
 }

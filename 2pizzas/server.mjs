@@ -621,7 +621,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/ui' || url.pathname.startsWith('/ui/')) {
     const file = uiFile(url.pathname);
     if (!file) return send(404, 'text/plain', 'not found');
-    const t = file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html';
+    const t = file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html';
     return send(200, t, fs.readFileSync(file));
   }
   if (SPA_ROUTES.some((re) => re.test(url.pathname)))

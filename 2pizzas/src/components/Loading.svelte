@@ -10,12 +10,9 @@
 </div>
 
 <style>
-  /* centered in the viewport (right of the desktop sidebar) — the box stays
-     content-sized; the page has no content yet, so there is nothing to scroll */
-  .loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:5;display:flex;align-items:center;gap:10px;margin:0;padding:12px 16px;background:var(--surface);border:2px solid var(--line);box-shadow:4px 4px 0 var(--shadow);pointer-events:none}
-  @media (min-width:768px){
-    .loading{left:calc(50% + 100px)}
-  }
+  /* box stays content-sized; position/centering lives in theme.css so it
+     can account for BOTH sidebars (left always, right when .rsb-on) */
+  .loading{display:flex;align-items:center;gap:10px;margin:0;padding:12px 16px;background:var(--surface);border:2px solid var(--line);box-shadow:4px 4px 0 var(--shadow)}
   .loading i{width:12px;height:12px;border:2px solid var(--line);animation:ld .9s ease-in-out infinite}
   .loading i:nth-child(1){background:var(--sauce)}
   .loading i:nth-child(2){background:var(--cheese);animation-delay:.15s}

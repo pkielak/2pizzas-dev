@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- neobrutalist square: cheese bg, hard border, hard shadow -->
+  <rect x="10" y="10" width="50" height="50" fill="#1c1c1c"/>
+  <rect x="4" y="4" width="50" height="50" fill="#f5c842" stroke="#1c1c1c" stroke-width="4"/>
+  <!-- tomato base -->
+  <circle cx="29" cy="29" r="17" fill="#d5382c" stroke="#1c1c1c" stroke-width="3"/>
+  <!-- pepperoni -->
+  <circle cx="23" cy="24" r="4.5" fill="#8c231c"/>
+  <circle cx="35" cy="22" r="4" fill="#8c231c"/>
+  <circle cx="28" cy="35" r="4" fill="#8c231c"/>
+</svg>

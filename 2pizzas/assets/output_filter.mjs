@@ -6,6 +6,14 @@
 // live view) stream line by line.
 let buf = '';
 let lastMsg = null; // last assistant message (carries final usage + model)
+// emit the same `[2pizzas] usage:` marker after every assistant turn so the
+// UI's live tail can show a token count that updates DURING the run (2pizzas
+// stores the LAST one it sees, which equals the final total)
+const emitUsage = (msg) => {
+  const u = msg?.usage;
+  if (u && u.totalTokens != null)
+    process.stdout.write(`\n[2pizzas] usage: model=${msg.model ?? 'unknown'} tokens=${u.totalTokens}\n`);
+};
 process.stdin.on('data', (d) => {
   buf += d.toString();
   let i;
@@ -30,6 +38,7 @@ process.stdin.on('data', (d) => {
         out = `\n  \u2717 ${j.toolName ?? 'tool'} failed\n`;
       } else if (j.type === 'message_end' && j.message?.role === 'assistant') {
         lastMsg = j.message;
+        emitUsage(j.message);
       }
     } catch { /* not JSON — ignore */ }
     if (out) process.stdout.write(out);
@@ -37,9 +46,7 @@ process.stdin.on('data', (d) => {
 });
 process.stdin.on('end', () => {
   // final usage marker — parsed by 2pizzas into the task row (UI shows ctx usage)
-  const u = lastMsg?.usage;
-  if (u && u.totalTokens != null) {
-    process.stdout.write(`\n[2pizzas] usage: model=${lastMsg.model ?? 'unknown'} tokens=${u.totalTokens}\n`);
-  }
+  // (equals the last per-turn live line, kept so a bare stream still records it)
+  emitUsage(lastMsg);
   process.exit(0);
 });

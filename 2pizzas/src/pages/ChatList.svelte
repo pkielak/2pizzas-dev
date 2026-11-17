@@ -101,9 +101,13 @@
       {#each repos.repos as r}
         <div class="item">
           <div class="l1">
-            {r}{#if repos.grants[r]} <span class="meta">· write since {repos.grants[r]}</span>{/if}
-            <button class="grantbtn" onclick={() => toggleGrant(r, !repos.grants[r])}>
-              {repos.grants[r] ? 'revoke write' : 'grant write'}
+            {r}
+            {#if repos.grants[r]}<span class="meta">· write since {repos.grants[r]}</span>{/if}
+            <span class="access {repos.grants[r] ? 'on' : 'off'}" title={repos.grants[r] ? 'chat user can write here' : 'chat user is read-only here'}>
+              {repos.grants[r] ? 'access' : 'no access'}
+            </span>
+            <button class="grantbtn" class:revoke={repos.grants[r]} onclick={() => toggleGrant(r, !repos.grants[r])}>
+              {repos.grants[r] ? 'revoke' : 'grant'}
             </button>
           </div>
         </div>

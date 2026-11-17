@@ -2,7 +2,7 @@
   // Live SSE tail of a running task's log. The EventSource lives in a
   // $effect whose cleanup closes it — no dangling connections on
   // navigation (the old page leaked one per innerHTML swap).
-  let { taskId, onDone } = $props();
+  let { taskId, onDone, onUsage } = $props();
   let pre = $state(null);
   let stick = true; // follow the bottom unless the user scrolls up
 
@@ -18,6 +18,9 @@
     es.onopen = () => { if (pre) pre.textContent = ''; };
     es.onmessage = (e) => {
       if (pre) {
+        // the filter's final usage marker — surface it live in the header
+        const m = e.data.match(/^\[2pizzas\] usage: model=(\S+) tokens=(\d+)/);
+        if (m) onUsage?.(m[1], +m[2]);
         pre.textContent += e.data + '\n';
         if (stick) pre.scrollTop = pre.scrollHeight;
       }
