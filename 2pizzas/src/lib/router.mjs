@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import Stats from '../pages/Stats.svelte';
+import Funky from '../pages/Funky.svelte';
 import Tasks from '../pages/Tasks.svelte';
 import TaskDetail from '../pages/TaskDetail.svelte';
 import ChatList from '../pages/ChatList.svelte';
@@ -18,6 +19,7 @@ import Home from '../pages/Home.svelte';
 // (defaults to the title); `app` = full-height chat layout.
 const routes = [
   { re: /^\/stats$/, component: Stats, title: () => 'stats' },
+  { re: /^\/funky$/, component: Funky, title: () => 'funky' },
   { re: /^\/backends$/, component: Backends, title: () => 'backends' },
   { re: /^\/settings$/, component: Settings, title: () => 'settings' },
   { re: /^\/repos$/, component: Repos, title: () => 'repos' },

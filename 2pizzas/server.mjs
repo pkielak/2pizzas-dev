@@ -37,6 +37,7 @@
  *   GET  /android      latest builds on the android-runner (label `android`)
  *   GET  /pages        gh-pages sites (last deployed commit per site)
  *   GET  /stats        usage stats (tasks, tokens, models, daily activity)
+ *   GET  /funky        funky stats — satirical roast-metrics (ui/funky.mjs)
  *   GET  /backends     agents + inference providers (current setup)
  *   GET  /api/backends              list backends (no apiKey — for API clients/TUI)
  *   POST   /api/backends              add backend {id,url,apiKey,defaultModel}
@@ -81,6 +82,7 @@ import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbo
 import { THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { androidRuns } from './gitea.mjs';
 import { statsData } from './ui/stats.mjs';
+import { funkyData } from './ui/funky.mjs';
 
 // importing these for their side effects: pump interval, poll interval,
 // theme discovery, chat orphan reaping + idle killer
@@ -399,6 +401,12 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/stats' && req.method === 'GET')
     return send(200, 'application/json', JSON.stringify(statsData()));
+  // GET /api/funky — the /funky page: roast-metrics from Gitea + the task DB.
+  // 200 with {err} (not 5xx) so the page can render the diagnostic inline
+  if (url.pathname === '/api/funky' && req.method === 'GET') {
+    try { return send(200, 'application/json', JSON.stringify(await funkyData())); }
+    catch (e) { return send(200, 'application/json', JSON.stringify({ err: e.message })); }
+  }
   // ── inference backends (inference.json — see inference.mjs) ──
   const readJson = (rq) => new Promise((resolve, reject) => {
     let body = '';
@@ -611,7 +619,7 @@ const server = http.createServer(async (req, res) => {
   // /ui/ (the vite `base`), so they never collide with /assets/*.
   const UI_DIST = path.join(path.dirname(new URL(import.meta.url).pathname), 'ui', 'dist');
   // must stay in sync with SPA routes in src/lib/router.mjs
-  const SPA_ROUTES = [/^\/stats$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/, /^\/settings$/, /^\/repos$/, /^\/android$/, /^\/pages$/, /^\/infra$/, /^\/$/];
+  const SPA_ROUTES = [/^\/stats$/, /^\/funky$/, /^\/tasks$/, /^\/task\/\d+$/, /^\/chat$/, /^\/chat\/\d+$/, /^\/chat\/r\d+$/, /^\/backends$/, /^\/settings$/, /^\/repos$/, /^\/android$/, /^\/pages$/, /^\/infra$/, /^\/$/];
   const uiFile = (reqPath) => {
     const rel = reqPath === '/ui' ? 'index.html' : reqPath.slice(4);
     const file = path.normalize(path.join(UI_DIST, rel));

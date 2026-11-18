@@ -14,7 +14,8 @@
   const nav = [
     ['/', 'home'], ['/infra', 'infra'], ['/tasks', 'tasks'], ['/chat', 'chat'],
     ['/android', 'android'], ['/pages', 'pages'], ['/repos', 'repos'],
-    ['/stats', 'stats'], ['/settings', 'settings'], ['/backends', 'backends'],
+    ['/stats', 'stats'], ['/funky', 'funky'], ['/settings', 'settings'],
+    ['/backends', 'backends'],
   ];
 
   $effect(() => {

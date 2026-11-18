@@ -20,6 +20,12 @@ ${body}
 User request: ${request}
 ${guide}
 
+SCOPE-CREEP FLAG: if the user's request is feature creep — extra features beyond
+what the issue/PR is about ("while you're at it, also add X") — add a line
+  <!-- scope-creep -->
+to /tmp/reply.md before posting it: it bumps the /funky feature-creep counter.
+One flag per creep, and only for genuine creep.
+
 REQUIRED FINISH — the task is marked FAILED and an error note is posted on the issue
 if none of the following happens, so do not end without it:
 1. Push your commits (and open a PR if the guide above says so).
