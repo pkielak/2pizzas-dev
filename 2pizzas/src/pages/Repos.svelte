@@ -51,11 +51,13 @@
         <div class="l2">{r.tot} tasks ({r.ok} ok / {r.bad} failed) · last activity: {r.last ?? '—'}</div>
       </a>
     {/each}
+    <div class="item">
+      <div class="l2">
+        repos self-enroll: mention <code>@pi</code>, <code>@opencode</code> or <code>@infra</code> on an issue in ANY repo —
+        2pizzas persists it and grants the agent users write access automatically. <code>AGENTD_REPOS</code> in .env
+        pins repos (no ✕); the ✕ removes a self-enrolled repo (its collaborator grants stay in Gitea — remove them there
+        too if you want them gone)
+      </div>
+    </div>
   </div>
-  <p class="meta">
-    repos self-enroll: mention <code>@pi</code>, <code>@opencode</code> or <code>@infra</code> on an issue in ANY repo —
-    2pizzas persists it and grants the agent users write access automatically. <code>AGENTD_REPOS</code> in .env
-    pins repos (no ✕); the ✕ removes a self-enrolled repo (its collaborator grants stay in Gitea — remove them there
-    too if you want them gone)
-  </p>
 {/if}

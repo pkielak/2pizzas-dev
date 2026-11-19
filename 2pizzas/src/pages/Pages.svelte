@@ -38,10 +38,12 @@
         <div class="l2">no sites — set PAGES_SITES in .env (repo:port:container per pages service)</div>
       </div>
     {/if}
+    <div class="item">
+      <div class="l2">
+        each site is a <code>pages/</code> compose service serving a repo's <code>gh-pages</code> branch (CI pushes the
+        branch, the server syncs every 60s). add one: new compose service (see <code>browser-llm-bench-pages</code>) →
+        append <code>repo:port:container</code> to PAGES_SITES → <code>docker compose up -d 2pizzas</code>
+      </div>
+    </div>
   </div>
-  <p class="meta">
-    each site is a <code>pages/</code> compose service serving a repo's <code>gh-pages</code> branch (CI pushes the
-    branch, the server syncs every 60s). add one: new compose service (see <code>browser-llm-bench-pages</code>) →
-    append <code>repo:port:container</code> to PAGES_SITES → <code>docker compose up -d 2pizzas</code>
-  </p>
 {/if}

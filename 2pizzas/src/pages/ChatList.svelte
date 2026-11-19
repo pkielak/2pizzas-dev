@@ -4,7 +4,9 @@
   import { getJson, postJson } from '../lib/api.mjs';
   import { authUrl } from '../lib/chatauth.mjs';
   import { navigate } from '../lib/router.mjs';
+  import Loading from '../components/Loading.svelte';
 
+  let loaded = $state(false);
   let active = $state([]);
   let past = $state([]);
   let repos = $state(null);
@@ -19,6 +21,7 @@
       active = rows.filter((r) => r.active);
       past = rows.filter((r) => !r.active);
       repos = await getJson(authUrl('/api/chat/repos'));
+      loaded = true;
       err = '';
     } catch (e) { err = e.message; }
   };
@@ -45,7 +48,9 @@
 
 {#if err}
   <p class="err">{err}</p>
-{/if}
+{:else if !loaded}
+  <Loading />
+{:else}
 
 <form id="newchat">
   <button type="button" onclick={() => start()}>start chat</button>
@@ -86,15 +91,29 @@
   {:else}
     <div class="item"><div class="l2">none yet</div></div>
   {/each}
+  <div class="item">
+    <div class="l2">
+      each chat is a long-lived gVisor sandbox with one agent.
+      {#if repos?.hasToken}
+        it has Gitea access as <code>{repos.chatLogin}</code> (write where granted in <i>gitea access</i>)
+      {:else}
+        no Gitea token — it chats and can read the 2pizzas task API, but cannot push or post.
+      {/if}
+      chats die on 2pizzas restart or after {repos?.idleMin ?? 30} min idle — their transcripts stay
+      readable above.
+    </div>
+  </div>
 </div>
 
 {#if repos?.hasToken}
   <h2>gitea access — user <code>{repos.chatLogin}</code></h2>
-  <p class="meta">
-    chat agents act as the separate <code>{repos.chatLogin}</code> Gitea user
-    (audit separation from task work). read works everywhere; grant write per repo:
-  </p>
   <div class="list">
+    <div class="item">
+      <div class="l2">
+        chat agents act as the separate <code>{repos.chatLogin}</code> Gitea user
+        (audit separation from task work). read works everywhere; grant write per repo:
+      </div>
+    </div>
     {#if repos.repoError}
       <div class="item"><div class="l2">repo list unavailable: <span class="err">{repos.repoError}</span></div></div>
     {:else if repos.repos.length}
@@ -117,14 +136,4 @@
     {/if}
   </div>
 {/if}
-
-<p class="meta">
-  each chat is a long-lived gVisor sandbox with one agent.
-  {#if repos?.hasToken}
-    it has Gitea access as <code>{repos.chatLogin}</code> (write where granted above)
-  {:else}
-    no Gitea token — it chats and can read the 2pizzas task API, but cannot push or post.
-  {/if}
-  chats die on 2pizzas restart or after {repos?.idleMin ?? 30} min idle — their transcripts stay
-  readable under <i>past sessions</i>.
-</p>
+{/if}

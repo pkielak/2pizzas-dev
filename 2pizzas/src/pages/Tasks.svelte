@@ -3,8 +3,9 @@
   import { live } from '../lib/live.mjs';
   import { getJson } from '../lib/api.mjs';
   import TaskRow from '../components/TaskRow.svelte';
+  import Loading from '../components/Loading.svelte';
 
-  let tasks = $state([]);
+  let tasks = $state(null);
   let err = $state('');
 
   const load = () =>
@@ -19,9 +20,12 @@
 
 {#if err}
   <p class="err">{err}</p>
+{:else if !tasks}
+  <Loading />
+{:else}
+  <div class="list">
+    {#each tasks as t (t.id)}
+      <TaskRow t={t} />
+    {/each}
+  </div>
 {/if}
-<div class="list">
-  {#each tasks as t (t.id)}
-    <TaskRow t={t} />
-  {/each}
-</div>

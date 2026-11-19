@@ -180,9 +180,11 @@
   :global(#notes li){margin:3px 0}
   /* mobile: the viewing area gets ALL remaining space — the page becomes a
      100dvh column: button row · diagram (flex:1, centered) · legend+notes
-     at the bottom */
+     at the bottom. overflow-y:auto (not hidden): on short screens the
+     column can be taller than 100dvh — hidden clipped the legend/notes off
+     with no way to reach them */
   @media (max-width:767px){
-    :global(main){height:100dvh;overflow:hidden;padding:64px 16px 0;display:flex;flex-direction:column}
+    :global(main){height:100dvh;overflow-y:auto;padding:64px 16px 0;display:flex;flex-direction:column}
     :global(#zrow){flex:none}
     :global(#diagWrap){flex:1;min-height:0}
     :global(#diagWrap svg){width:100%;height:100%}

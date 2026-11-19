@@ -40,9 +40,11 @@
         <div class="l2">no android builds yet — jobs opt in with <code>runs-on: android</code></div>
       </div>
     {/if}
+    <div class="item">
+      <div class="l2">
+        built on <code>android-runner</code> (label <code>android</code>, image <code>gitea-android:latest</code>: JDK 21 +
+        Android SDK + warm ~/.gradle) — separate from <code>my-runner</code> (ordinary CI)
+      </div>
+    </div>
   </div>
-  <p class="meta">
-    built on <code>android-runner</code> (label <code>android</code>, image <code>gitea-android:latest</code>: JDK 21 +
-    Android SDK + warm ~/.gradle) — separate from <code>my-runner</code> (ordinary CI)
-  </p>
 {/if}
