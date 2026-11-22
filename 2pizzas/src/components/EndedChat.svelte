@@ -5,7 +5,7 @@
 
   // read-only transcript of an ended session — shared by the /chat/r<rowid>
   // route and the live view's dead-session handover
-  let { session, blocks, onContinue } = $props();
+  let { session, blocks, logMissing, logError, onContinue } = $props();
 </script>
 
 <div class="chatapp">
@@ -21,7 +21,12 @@
   </div>
   <div id="msgs">
     {#if blocks.length}
+      {#if logError}
+        <div class="merr">transcript incomplete — {logError}</div>
+      {/if}
       <TranscriptBlocks blocks={blocks} />
+    {:else if logMissing || logError}
+      <div class="merr">transcript unavailable — {logError || 'log file missing'}</div>
     {:else}
       <div class="msettle">empty session</div>
     {/if}

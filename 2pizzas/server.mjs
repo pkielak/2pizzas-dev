@@ -274,7 +274,8 @@ const server = http.createServer(async (req, res) => {
       ? chatSessionByRowid(+chatHistoryMatch[2])
       : chatSessionRow(+chatHistoryMatch[2]);
     if (!row) return send(404, 'application/json', JSON.stringify({ error: 'no such session' }));
-    return send(200, 'application/json', JSON.stringify({ session: row, lines: chatHistory(row) }));
+    const { lines, logMissing, logError } = chatHistory(row);
+    return send(200, 'application/json', JSON.stringify({ session: row, lines, logMissing, logError }));
   }
   // grant/revoke the "chat" user write access to a repo (collaborator API)
   if (url.pathname === '/api/chat/grant' && req.method === 'POST') {

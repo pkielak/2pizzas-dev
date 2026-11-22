@@ -30,10 +30,13 @@ export const hlText = (raw) => {
   return out + esc(raw.slice(last));
 };
 
-// one transcript line (parsed event JSON or plain marker text) → a block
+// one transcript line (event JSON string or plain marker text) → a block
 // object for TranscriptBlocks.svelte. Returns null for live-only events
-// (they never reach the persisted log).
+// (they never reach the persisted log). Tolerates an already-parsed
+// object (defensive — the /history API and the SSE stream both send raw
+// strings; a format drift must not silently blank the transcript).
 export const parseLine = (line) => {
+  if (typeof line !== 'string') line = JSON.stringify(line);
   let e;
   try { e = JSON.parse(line); }
   catch { return typeof line === 'string' && line.startsWith('[2pizzas]') ? { kind: 'settle', text: line } : null; }

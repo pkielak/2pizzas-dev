@@ -224,7 +224,10 @@ function openChat(id, row) {
         jget(state.detail.rowid ? `/api/chat/r${state.detail.rowid}/history` : `/api/chat/${id}/history`).then((h) => {
           if (state.detail?.kind === 'chat') {
             state.detail.lines = h.lines || [];
-            state.detail.errNote = h.session?.end_reason || 'ended';
+            // a session that was never saved must not read as a plain ending
+            state.detail.errNote = (!state.detail.lines.length && (h.logMissing || h.logError))
+              ? `transcript unavailable — ${h.logError || 'log file missing'}`
+              : (h.session?.end_reason || 'ended');
             render();
           }
         }).catch(() => {});
@@ -293,8 +296,8 @@ function chatCmd(d, cmd) {
   }
 }
 
-// chat lines are JSON event objects (stringified in the SSE stream, parsed
-// objects from /history) or raw marker strings
+// chat lines are raw strings — JSON event strings (SSE stream and /history
+// both return the log's raw lines) or plain [2pizzas] marker strings
 function chatLine(l) {
   if (typeof l !== 'string') l = JSON.stringify(l);
   let e; try { e = JSON.parse(l); } catch { return [{ pre: C.dim, text: l }]; }

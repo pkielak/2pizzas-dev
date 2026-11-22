@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS managed_repos (
   PRIMARY KEY (owner, name)
 );
 `);
-for (const col of ['tokens INTEGER', 'session_dir TEXT', 'parent_session INTEGER']) {
+for (const col of ['tokens INTEGER', 'session_dir TEXT', 'parent_session INTEGER',
+  'log_error TEXT']) { // first transcript-save failure (shown in the ended-session window)
   try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`); } catch { /* already present */ }
 } // live dbs from before these columns
 for (const col of ['body TEXT', 'model TEXT', 'model_ctx INTEGER', 'tokens INTEGER',

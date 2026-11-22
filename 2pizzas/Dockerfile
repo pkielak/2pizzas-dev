@@ -21,7 +21,7 @@ RUN apk add --no-cache docker-cli
 WORKDIR /app
 COPY . ./
 COPY --from=ui /app/ui/dist ./ui/dist
-RUN mkdir -p /data/work /data/logs
+RUN mkdir -p /data/work /data/logs /data/chats
 
 VOLUME /data
 EXPOSE 3001

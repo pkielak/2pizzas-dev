@@ -15,7 +15,7 @@
   onMount(async () => {
     try {
       const h = await getJson(authUrl(`/api/chat/r${rowid}/history`));
-      hist = { session: h.session, blocks: (h.lines || []).map(parseLine).filter(Boolean) };
+      hist = { session: h.session, blocks: (h.lines || []).map(parseLine).filter(Boolean), logMissing: h.logMissing, logError: h.logError };
     } catch (e) { err = e.message; }
   });
 </script>
@@ -23,7 +23,7 @@
 {#if err}
   <p class="err">{err}</p>
 {:else if hist}
-  <EndedChat session={hist.session} blocks={hist.blocks} />
+  <EndedChat session={hist.session} blocks={hist.blocks} logMissing={hist.logMissing} logError={hist.logError} />
 {:else}
   <Loading />
 {/if}

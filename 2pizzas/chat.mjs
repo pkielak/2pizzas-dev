@@ -96,9 +96,33 @@ const chatSay = (c, ev) => {
   const line = redact(typeof ev === 'string' ? ev : JSON.stringify(ev));
   c.lines.push(line);
   if (c.lines.length > 2000) c.lines.shift();
-  try { fs.appendFileSync(c.logFile, line + '\n'); } catch { /* non-fatal */ }
+  try { fs.appendFileSync(c.logFile, line + '\n'); }
+  catch (e) { chatSaveFailure(c, e.message); }
   for (const res of [...c.clients]) {
     try { res.write(`data: ${line}\n\n`); }
+    catch { c.clients.delete(res); }
+  }
+};
+
+// the log IS the transcript — a failed save means the session will not be
+// preserved. The user must see it IN THE CHAT WINDOW (a silently-failing log
+// was the #1 cause of "empty" past sessions). Notify once per distinct
+// error and record it on the session row so the ended-session page shows
+// the same message. (Not via chatSay — that would write the log again and
+// re-enter this handler.)
+const chatSaveFailure = (c, msg) => {
+  const note = `transcript save failed: ${msg}`;
+  if (c.logErrorNote === note) return;
+  c.logErrorNote = note;
+  console.error(`[chat] ${c.logFile}: ${note}`);
+  try { db.prepare('UPDATE chat_sessions SET log_error=? WHERE rowid=?').run(note, c.rowid); }
+  catch { /* non-fatal */ }
+  const errLine = JSON.stringify({ type: 'error',
+    message: `${note} — this session will NOT be preserved after it ends` });
+  c.lines.push(errLine);
+  if (c.lines.length > 2000) c.lines.shift();
+  for (const res of [...c.clients]) {
+    try { res.write(`data: ${errLine}\n\n`); }
     catch { c.clients.delete(res); }
   }
 };
@@ -287,18 +311,28 @@ export const chatRowLive = (r) => {
 };
 
 // transcript of a (dead) session from its log file: the log IS the
-// server-authoritative transcript (chatSay writes every settled event)
+// server-authoritative transcript (chatSay writes every settled event).
+// Lines are returned RAW (the exact log strings) — the clients parse them
+// (the web parseLine() and the TUI chatLine() both JSON.parse per line,
+// same as the SSE stream path). Returning pre-parsed objects here broke
+// the web transcript: parseLine() does JSON.parse(line) on an object,
+// which coerces to "[object Object]", throws, and drops EVERY json event
+// (user_message/text_block/tool_call/…) — the past-session page rendered
+// only the plain [2pizzas] marker lines and looked empty (issue #21).
 export const chatHistory = (row) => {
-  if (!row || !row.log_file) return [];
+  if (!row || !row.log_file) return { lines: [], logMissing: true, logError: 'no log file recorded for this session' };
   let text = '';
-  try { text = fs.readFileSync(row.log_file, 'utf8'); } catch { return []; }
+  try { text = fs.readFileSync(row.log_file, 'utf8'); }
+  catch (e) { console.warn(`[chat] log file missing: ${row.log_file}: ${e.message}`); return { lines: [], logMissing: true, logError: row.log_error || 'log file missing' }; }
   const lines = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let e; try { e = JSON.parse(line); } catch { e = line; }
-    lines.push(e);
-  }
-  return lines;
+  for (const line of text.split('\n')) if (line.trim()) lines.push(line);
+  // a session that had traffic but an empty log was NEVER saved — say so in
+  // the window instead of "empty session" (covers rows from before the
+  // log_error column existed)
+  if (!lines.length && (row.log_error || (row.messages || 0) > 0))
+    return { lines, logMissing: true,
+      logError: row.log_error || `log file is empty although the session had ${row.messages} message${row.messages === 1 ? '' : 's'} — saving failed` };
+  return { lines, logMissing: false, logError: row.log_error || false };
 };
 
 // The chat agent's extra context: it acts as a SUPERVISOR that delegates work
@@ -387,7 +421,18 @@ export async function createChat(agent, resumeFromRowid) {
     }
   }
   fs.mkdirSync(c.sessionDir, { recursive: true });
-  fs.mkdirSync(path.dirname(c.logFile), { recursive: true });
+  const logDir = path.dirname(c.logFile);
+  fs.mkdirSync(logDir, { recursive: true });
+  // verify the log dir is writable (silent appendFileSync failures are the #1
+  // cause of "empty session" transcripts — make it visible at startup)
+  const testFile = path.join(logDir, '.write-test');
+  try {
+    fs.writeFileSync(testFile, '');
+  } catch (e) {
+    console.error(`[chat] log directory not writable: ${logDir}: ${e.message}`);
+  } finally {
+    try { fs.unlinkSync(testFile); } catch { /* best-effort cleanup */ }
+  }
   chats.set(id, c);
   // rowid scopes later UPDATEs — chatSeq ids restart per run, so a bare
   // WHERE id=? would hit older rows sharing the same id
