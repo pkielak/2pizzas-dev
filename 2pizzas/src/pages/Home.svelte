@@ -56,7 +56,7 @@
   <div class="list">
     {#if runs.length}
       {#each runs.slice(0, 8) as r (r.id)}
-        <a class="item" href={`https://${location.hostname}:3000/${r.repo}/actions/runs/${r.id}`}>
+        <a class="item" href={`http://${location.hostname}:3000/${r.repo}/actions/runs/${r.id}`} target="_blank" rel="noopener">
           <div class="l1">
             <span class={runPill(r).cls}>{runPill(r).text}</span>
             <span>#{r.id}</span> {r.repo} · {r.head_branch}
@@ -77,13 +77,26 @@
   <div class="list">
     {#if sites.length}
       {#each sites as s (s.repo + ':' + s.port)}
-        <a class="item" href={`https://${location.hostname}:${s.port}/`}>
-          <div class="l1">{s.repo} <span class="meta">:{s.port}</span></div>
-          <div class="l2">
-            {#if s.commit}{s.commit.h} · {s.commit.at} · {s.commit.s}
-            {:else}<span class="err">not synced ({s.err ?? 'no checkout'})</span>{/if}
+        {#if s.https_port}
+          <div class="item chatrow">
+            <a class="chatlink" href={`http://${location.hostname}:${s.port}/`} target="_blank" rel="noopener">
+              <div class="l1">{s.repo} <span class="meta">:{s.port}</span></div>
+              <div class="l2">
+                {#if s.commit}{s.commit.h} · {s.commit.at} · {s.commit.s}
+                {:else}<span class="err">not synced ({s.err ?? 'no checkout'})</span>{/if}
+              </div>
+            </a>
+            <a class="badge badge-success" href={`https://${location.hostname}:${s.https_port}/`} target="_blank" rel="noopener" title={`open over https (:${s.https_port})`}>https</a>
           </div>
-        </a>
+        {:else}
+          <a class="item" href={`http://${location.hostname}:${s.port}/`} target="_blank" rel="noopener">
+            <div class="l1">{s.repo} <span class="meta">:{s.port}</span></div>
+            <div class="l2">
+              {#if s.commit}{s.commit.h} · {s.commit.at} · {s.commit.s}
+              {:else}<span class="err">not synced ({s.err ?? 'no checkout'})</span>{/if}
+            </div>
+          </a>
+        {/if}
       {/each}
     {:else}
       <div class="item"><div class="l2">no sites configured</div></div>

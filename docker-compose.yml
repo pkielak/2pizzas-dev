@@ -191,7 +191,10 @@ services:
       - AGENTD_REPOS=${AGENTD_REPOS}   # managed repos — single source of truth in .env
       - LLAMA_CPP_URL=${LLAMA_CPP_URL} # llama.cpp router — 2pizzas runs pi on a loadable model
       - ADMIN_TOKEN=${ADMIN_TOKEN}     # admin-scope token — /android (actions runs API)
-      # /pages sidebar: repo:port:container per pages/ service instance
+      # /pages sidebar: repo:port:container[:https_port] per pages/ service
+      # instance (4th field = host TLS port, optional override — the UI
+      # auto-detects the port from the container's 8443 mapping; the link
+      # goes live once a real cert is in pages/certs/)
       - PAGES_SITES=${PAGES_SITES:-}
       # optional gate for the /chat pages+API (the UI is tailnet-reachable)
       - CHAT_TOKEN=${CHAT_TOKEN:-}

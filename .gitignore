@@ -20,6 +20,8 @@ postgres/
 # Local working clone (not part of this repo's content)
 browser-llm-bench/
 
-# Local TLS material for the pages HTTPS listeners (self-signed, per-machine)
-pages/certs/
+# Local TLS material for the pages HTTPS listeners (per-machine) — the
+# directory stays tracked via its README (discoverability), the pems don't
+pages/certs/*
+!pages/certs/README.md
 

@@ -27,6 +27,26 @@ sync() {
 
 sync || echo "pages: initial clone failed (will retry)"
 
+# --- assemble the final nginx config -------------------------------------
+# Base is HTTP-only (8080). The 8443 TLS block is wired in only when a REAL
+# (CA-signed) cert pair is mounted (./pages/certs → /etc/nginx/certs). No
+# certs → empty include → the site runs HTTP-only (the default, and no
+# startup trap from a dangling ssl server block).
+#
+# Only real certs are supported — e.g. a Tailscale tailnet cert for the
+# machine's magic-DNS name. A self-signed pair would never be trusted for
+# that name (the browser warns), so there is no auto-self-sign path here.
+CERT_DIR=/etc/nginx/certs
+SSL_INCLUDE=/etc/nginx/ssl-server.conf
+
+if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/key.pem" ]; then
+  # real certs mounted → use the baked 8443 block as-is
+  cp /etc/nginx/nginx-ssl.conf "$SSL_INCLUDE"
+else
+  # no certs → HTTP-only: empty include = no TLS server block
+  : > "$SSL_INCLUDE"
+fi
+
 nginx -g 'daemon off;' &
 while :; do
   sleep "$INTERVAL"
