@@ -196,6 +196,18 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
 .muser{background:var(--cheese);color:var(--cheese-ink);border:2px solid var(--line);border-radius:0;box-shadow:3px 3px 0 var(--shadow);padding:9px 13px;margin:9px 0;white-space:pre-wrap;font-size:13px}
 .muser::before{content:"you";display:block;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:var(--sauce-dark);margin-bottom:3px}
 .mtext{border-left:4px solid var(--ink);padding:4px 13px;margin:9px 0;font-size:13px;line-height:1.5}
+/* typing cursor on the last (un-settled) streaming text block */
+.mtext.streaming::after{content:"▍";margin-left:2px;color:var(--sauce);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+/* thinking block — collapsible (native <details>, collapsed by default),
+   dimmed so it reads apart from the answer text */
+.mthinking{margin:9px 0;border-left:3px solid var(--faint);padding-left:10px}
+.mthinking summary{cursor:pointer;font-size:11px;font-weight:800;color:var(--muted-2);text-transform:uppercase;letter-spacing:.05em;user-select:none;list-style:none}
+.mthinking summary::before{content:"▸ ";color:var(--faint)}
+.mthinking[open] summary::before{content:"▾ ";}
+.mthinking summary:hover{color:var(--ink)}
+.mthinking[open] summary{margin-bottom:6px}
+.mthinking-body{font-size:12.5px;line-height:1.5;color:var(--muted);white-space:pre-wrap;word-break:break-word;padding:6px 0}
 .mtool{color:var(--muted);font-size:12px;margin:6px 0;word-break:break-word;border-left:3px solid var(--line);padding-left:10px}
 .mtool code{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .cmdchip{display:inline-block;background:var(--cheese);color:var(--cheese-ink);border:2px solid var(--line);border-radius:0;box-shadow:2px 2px 0 var(--shadow);padding:2px 8px;margin:2px 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;font-weight:700;cursor:default}
@@ -204,7 +216,15 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
 .mref{font-size:12.5px;margin:8px 0;border-left:3px solid var(--olives);padding-left:10px;word-break:break-all}
 .mtext a.glref,.mref a{color:var(--sauce-dark);text-decoration:underline}
 .mcompacted{color:var(--faint);font-size:11px;font-weight:700;text-transform:uppercase;margin:12px 0;text-align:center}
-.mstatus{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:8px 0;opacity:.85}
+.mstatus{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:8px 0;opacity:.85;animation:statusIn .25s ease-out}
+@keyframes statusIn{from{opacity:0;transform:translateY(3px)}to{opacity:.85;transform:none}}
+/* new message blocks fade + slide in (replays on every (re)connect rebuild)
+   — the status line re-keys on change, so it pulses on each status swap */
+#msgs>*{animation:blockIn .25s ease-out}
+@keyframes blockIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* thinking-phase marker line in task consoles — dimmed + italic (the log
+   carries only the marker, never the thoughts themselves) */
+.console .think{color:#8f8f8f;font-style:italic}
 .mend{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:12px 0;text-align:center;border-top:2px solid var(--line);padding-top:10px}
 .chatin{display:flex;gap:8px;align-items:stretch;flex:none;margin-top:4px}
 .ctxline{flex:none;margin-top:6px;min-height:1em}

@@ -8,7 +8,13 @@
   {#if b.kind === 'user'}
     <div class="muser">{b.text}</div>
   {:else if b.kind === 'text'}
-    <div class="mtext">{@html hlText(b.text)}</div>
+    <div class="mtext" class:streaming={!b.settled}>{@html hlText(b.text)}</div>
+  {:else if b.kind === 'thinking'}
+    <!-- transient (live-lane only) — collapsed by default, native <details> -->
+    <details class="mthinking">
+      <summary>thinking</summary>
+      <div class="mthinking-body">{b.text}</div>
+    </details>
   {:else if b.kind === 'tool'}
     <div class="mtool">⚙ <b>{b.name}</b> <code>{b.arg}</code></div>
   {:else if b.kind === 'ref'}

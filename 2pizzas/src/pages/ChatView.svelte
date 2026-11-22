@@ -34,6 +34,19 @@
     return last && last.kind === 'text' && !last.settled ? last : null;
   };
 
+  // the delta-built (un-settled) THINKING block, if the last block is one —
+  // thinking arrives as a transient live lane (never logged/replayed), so
+  // each phase builds a fresh collapsible block and is finalized the moment
+  // the next phase (text/tool/settle) starts
+  const curThinking = () => {
+    const last = blocks[blocks.length - 1];
+    return last && last.kind === 'thinking' && !last.settled ? last : null;
+  };
+  const settleThinking = () => {
+    const t = curThinking();
+    if (t) t.settled = true;
+  };
+
   const handle = (line) => {
     let e;
     try { e = JSON.parse(line); }
@@ -44,12 +57,13 @@
     }
     // transcript events (user_message, text_block, tool_call, settle,
     // gitea_ref, compacted, error) are REPLAYED on (re)connect — they
-    // rebuild the full conversation; live events (text_delta, thinking,
+    // rebuild the full conversation; live events (text_delta, thinking_delta,
     // working, tool_end, auto_retry, compaction, ctx) are not replayed —
-    // they only drive the status line + incremental text
+    // they only drive the status line + incremental text/thinking
     if (e.type === 'user_message') {
       blocks.push({ kind: 'user', text: e.message });
     } else if (e.type === 'text_delta') {
+      settleThinking();
       let t = curText();
       if (!t) {
         if (!e.delta || !e.delta.trim()) return; // don't start a block for whitespace-only deltas
@@ -62,6 +76,7 @@
       // settled block: finalize the delta-built block (same text — a visual
       // no-op) and mark it settled so the next live delta starts a FRESH
       // block; replay clients get it whole
+      settleThinking();
       let t = curText();
       if (!t) t = { kind: 'text', text: '', settled: false };
       t.text = e.text;
@@ -69,12 +84,22 @@
     } else if (e.type === 'gitea_ref') {
       blocks.push({ kind: 'ref', refKind: e.kind, number: e.number, url: e.url });
     } else if (e.type === 'tool_call') {
+      settleThinking();
       blocks.push({ kind: 'tool', name: e.name, arg: String(e.arg).slice(0, 200) });
       status = `running ${e.name}…`;
     } else if (e.type === 'tool_end') status = 'thinking…';
-    else if (e.type === 'thinking') status = 'thinking…';
+    else if (e.type === 'thinking_delta') {
+      let t = curThinking();
+      if (!t) {
+        if (!e.delta || !e.delta.trim()) return; // don't start a block for whitespace-only deltas
+        t = { kind: 'thinking', text: '', settled: false };
+        blocks.push(t);
+      }
+      t.text += e.delta;
+      status = 'thinking…';
+    }
     else if (e.type === 'working') status = 'working…';
-    else if (e.type === 'settle') { status = ''; blocks.push({ kind: 'settle', text: 'settled' }); }
+    else if (e.type === 'settle') { status = ''; settleThinking(); blocks.push({ kind: 'settle', text: 'settled' }); }
     else if (e.type === 'auto_retry') status = `retrying (${e.attempt}/${e.max})…`;
     else if (e.type === 'compaction') status = 'compacting context…';
     else if (e.type === 'compacted') blocks.push({ kind: 'compacted' });
@@ -172,7 +197,7 @@
     </div>
     <div id="msgs" bind:this={box} onscroll={onscroll}>
       <TranscriptBlocks blocks={blocks} />
-      {#if status}<div class="mstatus">{status}</div>{/if}
+      {#if status}<div class="mstatus" key={status}>{status}</div>{/if}
       {#if ended}
         <div class="mend">session ended — <a href="/chat" onclick={(e) => { if (navigate('/chat')) e.preventDefault(); }}>back to chats</a> (transcript kept under past sessions)</div>
       {/if}

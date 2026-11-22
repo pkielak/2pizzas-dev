@@ -307,7 +307,7 @@ function chatLine(l) {
   // transient status line (renderChat keeps only the LAST one).
   const status = {
     working: '… working',
-    thinking: '… thinking',
+    thinking_delta: '… thinking',
     compaction: e.phase === 'start' ? `… compacting (${e.reason || 'threshold'})` : null,
     auto_retry: `… retrying (${e.attempt}/${e.max})`,
     tool_end: '… tool finished',

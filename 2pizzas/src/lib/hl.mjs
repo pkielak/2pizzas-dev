@@ -30,6 +30,15 @@ export const hlText = (raw) => {
   return out + esc(raw.slice(last));
 };
 
+// console/log line → escaped HTML; the pi filter's thinking-phase marker
+// ("  └ thinking") gets a dimmed span so thinking lines read apart from the
+// rest of the log
+export const hlConsoleLine = (line) => {
+  const esc = String(line).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  return /^\s*└ thinking\b/.test(line) ? `<span class="think">${esc}</span>` : esc;
+};
+export const hlConsole = (raw) => String(raw).split('\n').map(hlConsoleLine).join('\n');
+
 // one transcript line (event JSON string or plain marker text) → a block
 // object for TranscriptBlocks.svelte. Returns null for live-only events
 // (they never reach the persisted log). Tolerates an already-parsed

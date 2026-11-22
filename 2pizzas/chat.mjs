@@ -184,7 +184,9 @@ const piLine = (c, raw) => {
     case 'message_update': {
       const d = e.assistantMessageEvent || {};
       if (d.type === 'text_delta') return chatLive(c, { type: 'text_delta', delta: d.delta });
-      if (d.type === 'thinking_delta') return chatLive(c, { type: 'thinking' }); // status only — never log the thoughts
+      // thinking text rides the TRANSIENT lane (clients only — never logged,
+      // never replayed): live clients accumulate it in a collapsible block
+      if (d.type === 'thinking_delta') return chatLive(c, { type: 'thinking_delta', delta: d.delta });
       return;
     }
     case 'message_end': {

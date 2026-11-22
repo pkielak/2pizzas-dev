@@ -3,6 +3,7 @@
   import { getJson, postJson } from '../lib/api.mjs';
   import { navigate } from '../lib/router.mjs';
   import { ctxText, fmtTok } from '../lib/fmt.mjs';
+  import { hlConsole } from '../lib/hl.mjs';
   import TaskLog from '../components/TaskLog.svelte';
   import Loading from '../components/Loading.svelte';
 
@@ -75,6 +76,6 @@
   {#if streaming}
     <TaskLog taskId={taskId} onDone={settle} onUsage={onUsage} />
   {:else}
-    <div class="console">{log}</div>
+    <div class="console">{@html hlConsole(log)}</div>
   {/if}
 {/if}
