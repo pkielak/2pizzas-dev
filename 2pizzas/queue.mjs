@@ -1,5 +1,5 @@
 import { CFG, MARKER, MENTIONS } from './config.mjs';
-import { db, readLog } from './db.mjs';
+import { db } from './db.mjs';
 import { apiPost } from './gitea.mjs';
 import { isManaged } from './repos.mjs';
 import { kick } from './kick.mjs';
@@ -78,15 +78,15 @@ export function enqueueRework(review, concerns) {
 
 // No-action (the agent finished cleanly but pushed nothing and replied to
 // nothing): model behavior, NOT a stack problem — retry up to 2 times, then
-// post a give-up comment and stop. The infra agent is never woken for it.
+// post a give-up comment and stop.
 // Any other failure gets ONE retry (a killed review was 90% done — don't
-// lose it); if the retry also fails, the infra agent is woken to investigate
-// the root cause (bad prompt, model misconfig, missing tool, stack problem).
+// lose it); if the retry also fails, a line is logged for a human to
+// investigate the root cause (bad prompt, model misconfig, missing tool,
+// stack problem).
 // The retried_of column links every retry to its victim.
 const NO_ACTION = /took no action|no-action/i;
 
 export function onTaskFailure(t, msg) {
-  if (t.kind === 'agent-infra') return; // never auto-chase the infra agent
   if (NO_ACTION.test(msg)) {
     // consecutive no-action failures up the retry chain, including t itself
     let n = 1, cur = t;
@@ -126,39 +126,6 @@ export function onTaskFailure(t, msg) {
     liveBroadcast('tasks');
     return;
   }
-  // Retry also failed: escalation to the infra agent is PARKED (buggy trigger,
-  // no-action incidents) — log it for a human instead.
-  console.log(`[failure] task ${t.id} failed twice (${msg}) — infra escalation parked, human should look`);
-}
-
-// One infra task per cooldown window: a single dockerd stop can kill several
-// tasks at once — later failures in the window append to the existing
-// incident issue instead of storming one agent per task.
-export async function enqueueInfra(failed, errMsg) {
-  if (!CFG.infraHostRepo) {
-    console.log('[infra] INFRA_HOST_REPO not set — infra agent skipped');
-    return;
-  }
-  const ctx = `Task ${failed.id} (${failed.kind}, @${failed.agent}) on ${failed.repo}#${failed.issue} failed:\n${errMsg}\n\nLog tail:\n\`\`\`\n${readLog(failed.id).slice(-2000)}\n\`\`\``;
-  const last = db.prepare(`SELECT id, issue, created_at FROM tasks WHERE kind = 'agent-infra' ORDER BY id DESC LIMIT 1`).get();
-  const tok = { token: CFG.agents.infra.token }; // 2pizzas posts as the infra user
-  if (last && Date.now() - Date.parse(last.created_at.replace(' ', 'T') + 'Z') < CFG.infraCooldownMs) {
-    await apiPost(`/repos/${CFG.infraRepo}/issues/${last.issue}/comments`, {
-      body: `Another task failed in the same window:\n\n${ctx}\n\n${MARKER}`,
-    }, tok);
-    console.log(`[infra] task ${failed.id} → appended to incident issue #${last.issue}`);
-    return;
-  }
-  const issue = await apiPost(`/repos/${CFG.infraRepo}/issues`, {
-    title: `[2pizzas] infra incident: task ${failed.id} failed — ${errMsg.slice(0, 80)}`,
-    body: ctx,
-  }, tok);
-  // issue.number, NOT issue.id — the API returns the global db id in .id,
-  // but task.issue is the per-repo number (comments/PRs address it)
-  db.prepare(`INSERT INTO tasks (repo, issue, agent, kind, body, parent_id)
-              VALUES (?, ?, 'infra', 'agent-infra', ?, ?)`)
-    .run(CFG.infraRepo, issue.number, ctx, failed.id);
-  console.log(`[infra] task ${failed.id} → infra agent enqueued (${CFG.infraRepo}#${issue.number})`);
-  kick();
-  liveBroadcast('tasks');
+  // Retry also failed — log it for a human to investigate.
+  console.log(`[failure] task ${t.id} failed twice (${msg}) — human should look`);
 }

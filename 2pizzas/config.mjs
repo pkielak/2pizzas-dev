@@ -36,12 +36,11 @@ export const CFG = {
   // ONLY (it posts the review verdicts). The legacy single "bot" user is
   // dormant on old instances; fresh instances never create it.
   // Agent names are configurable (setup.sh agent identities section) — the
-  // internal keys (pi, opencode, infra) map to docker images and stay stable;
+  // internal keys (pi, opencode) map to docker images and stay stable;
   // the login is the Gitea username (lore name or technical name).
   agents: {
     pi: { login: process.env.AGENT_WORK1_NAME || 'pi', email: `${process.env.AGENT_WORK1_NAME || 'pi'}@localhost`, token: process.env.AGENT_WORK1_TOKEN || '' },
     opencode: { login: process.env.AGENT_WORK2_NAME || 'opencode', email: `${process.env.AGENT_WORK2_NAME || 'opencode'}@localhost`, token: process.env.AGENT_WORK2_TOKEN || '' },
-    infra: { login: process.env.AGENT_INFRA_NAME || 'infra', email: `${process.env.AGENT_INFRA_NAME || 'infra'}@localhost`, token: process.env.AGENT_INFRA_TOKEN || '' },
   },
   review: {
     login: process.env.AGENT_REVIEW_NAME || 'review',
@@ -59,16 +58,8 @@ export const CFG = {
     pi: process.env.AGENT_IMAGE_PI || 'agent-sandbox:pi',
     opencode: process.env.AGENT_IMAGE_OPENCODE || 'agent-sandbox:opencode',
     review: process.env.AGENT_IMAGE_REVIEW || 'agent-sandbox:review',
-    infra: process.env.AGENT_IMAGE_INFRA || 'agent-sandbox:infra',
   },
   reviewMaxRounds: +(process.env.REVIEW_MAX_ROUNDS || 3),
-  // @infra agent: repairs the stack itself. The only agent that runs on runc
-  // with the host docker socket + the infra repo bind-mounted (see tasks.mjs).
-  // Auto-enqueued on infra-class failures (cooldown: one incident per window);
-  // @infra on the infra repo works it manually.
-  infraRepo: process.env.INFRA_REPO || 'owner/2pizzas-dev',
-  infraHostRepo: process.env.INFRA_HOST_REPO || '', // host path of the infra repo
-  infraCooldownMs: +(process.env.INFRA_COOLDOWN_MINUTES || 15) * 60_000,
   // legacy sender — old instances have comments/commits by the dormant
   // "bot" user; keep it on the no-self-react list (fresh instances: no such user)
   botLogin: 'bot',
@@ -111,6 +102,4 @@ export const MARKER = '<!-- via:agent -->';
 export const MENTIONS = [
   { agent: 'pi', re: new RegExp(`@${CFG.agents.pi.login}\\b`) },
   { agent: 'opencode', re: new RegExp(`@${CFG.agents.opencode.login}\\b`) },
-  // infra PARKED (buggy trigger + no-action incidents): @infra is inert until
-  // the entry is restored — image/user/token all stay in place.
 ];

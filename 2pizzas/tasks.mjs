@@ -7,7 +7,7 @@ import { CFG, MARKER } from './config.mjs';
 import { db, readLog, logPath } from './db.mjs';
 import { apiGet, apiPost } from './gitea.mjs';
 import { pickModel, checkBakedSync } from './inference.mjs';
-import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt, infraPrompt } from './prompts.mjs';
+import { stripMention, commentPrompt, reviewPrompt, agentReviewPrompt, reworkPrompt } from './prompts.mjs';
 import { execFileP } from './util.mjs';
 import { enqueueReview, enqueueRework, onTaskFailure } from './queue.mjs';
 import { setKick, kick } from './kick.mjs';
@@ -47,14 +47,8 @@ async function runTask(t) {
       t.kind === 'rework'
         ? t.body ?? ''                                    // the reviewer's concerns
         : stripMention(t.body ?? '', parent?.agent ?? t.agent);
-    const isInfra = t.agent === 'infra';
-    if (isInfra && !CFG.infraHostRepo)
-      throw new Error('INFRA_HOST_REPO not set — cannot run the infra agent');
-
     const prompt =
-      t.agent === 'infra'
-        ? infraPrompt({ issue: t.issue, request })
-        : t.kind === 'review'
+      t.kind === 'review'
           ? reviewPrompt({ issue: t.issue, request, cpath: t.cpath, line: t.line })
           : t.kind === 'agent-review'
             ? agentReviewPrompt({
@@ -164,20 +158,7 @@ fi
     const delim = () => `EOF_${crypto.randomBytes(6).toString('hex')}`;
     const dPrompt = delim(), dPost = delim(), dJq = delim(), dOc = delim();
     // (dJq: the name is historical — it now carries the node filter)
-    // infra: the live infra repo is bind-mounted read-only at /infra-src;
-    // clone a container-local COPY from it (edits must not touch the host
-    // repo's .git) and repoint origin at the bot-authenticated remote so
-    // pushes attribute to the bot.
-    const cloneSection = isInfra
-      ? `echo '$ infra repo (live copy bind-mounted at /infra-src)'
-# the host repo is owned by the host user, not the container's root
-git config --global --add safe.directory /infra-src
-git config --global --add safe.directory /infra-src/.git
-git clone -q /infra-src repo
-cd repo
-git remote set-url origin "$CLONE_URL"
-`
-      : `echo '$ git clone ${t.repo}'
+    const cloneSection = `echo '$ git clone ${t.repo}'
 git clone -q "$CLONE_URL" repo
 cd repo
 `;
@@ -208,8 +189,8 @@ ${dPrompt}
 PROMPT="$(cat /tmp/prompt.txt)"
 export PROMPT
 echo ''
-echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandbox'}${modelSel ? `, model ${modelSel.provider}/${modelSel.id}` : ''})'
-` + ((t.agent === 'pi' || t.agent === 'infra') // infra is pi-based
+echo '$ ${t.agent} agent (runsc sandbox${modelSel ? `, model ${modelSel.provider}/${modelSel.id}` : ''})'
+` + (t.agent === 'pi'
       ? `bash -o pipefail -c \'pi -p --mode json --model "${modelSel.provider}/${modelSel.id}" "$PROMPT" | tee /tmp/agent-out.jsonl | node .2pizzas/output_filter.mjs\'\n` +
         // pi >= 0.82: the SESSION-end event is `agent_settled` — emitted in
         // prompt()'s finally, AFTER `agent_end` and all post-run processing
@@ -231,24 +212,17 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
         '  exit 1\nfi\necho "[2pizzas] agent finished OK"') + enforce;
     const b64 = Buffer.from(bootstrap).toString('base64');
 
-    say(`$ docker run --rm ${isInfra ? '(runc + host docker socket) ' : '--runtime=runsc '}${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
+    say(`$ docker run --rm --runtime=runsc ${CFG.images[t.agent]} (bootstrap + ${t.agent})\n\n`);
 
-    // 3. run the agent in a fresh container. Every agent runs in the gVisor
-    // sandbox EXCEPT infra: it repairs the stack, so it runs on runc with the
-    // host docker socket + the live infra repo mounted read-only (the docker
-    // socket is the trust boundary — same as 2pizzas itself).
+    // 3. run the agent in a fresh container, in the gVisor sandbox.
     await new Promise((resolve, reject) => {
     const dockerArgs = [
       'run', '--rm',
       // cap the job container so it can't eat the cores reserved for
       // llama.cpp (setup.sh CPU plan: host cores = llama + ~4 for agents)
       '--cpus', CFG.agentCpus,
-      ...(isInfra ? [] : ['--runtime=runsc']),
-      ...(isInfra
-        ? ['--name', `tea-infra-${t.id}`,
-           '-v', `${CFG.infraHostRepo}:/infra-src:ro`,
-           '-v', '/var/run/docker.sock:/var/run/docker.sock']
-        : ['--name', `tea-task-${t.id}`]),
+      '--runtime=runsc',
+      '--name', `tea-task-${t.id}`,
       '--add-host=gitea:host-gateway',
       '--add-host=host.docker.internal:host-gateway',
         // agent-review runs on the READ-ONLY token for everything (clone +
@@ -300,7 +274,7 @@ echo '$ ${t.agent} agent (${isInfra ? 'runc + host docker socket' : 'runsc sandb
 // Queued → just mark it. Running → `docker rm -f` the NAMED job container
 // (killing the docker CLI client alone leaves the container running). The
 // resulting non-zero exit reaches pump(), which sees the id in `canceled`
-// and skips failure handling (no retry, no infra agent).
+// and skips failure handling (no retry).
 const canceled = new Set();
 
 export async function cancelTask(id) {
@@ -312,8 +286,7 @@ export async function cancelTask(id) {
   db.prepare("UPDATE tasks SET status='canceled', finished_at=datetime('now'), error='canceled on demand' WHERE id=?").run(id);
   fs.appendFileSync(logPath(id), `\n[2pizzas] task ${id} canceled on demand\n`);
   if (t.status === 'running') {
-    const name = t.agent === 'infra' ? `tea-infra-${id}` : `tea-task-${id}`;
-    await execFileP('docker', ['rm', '-f', name], { timeout: 15000 }).catch(() => {}); // not up yet / already gone
+    await execFileP('docker', ['rm', '-f', `tea-task-${id}`], { timeout: 15000 }).catch(() => {}); // not up yet / already gone
   }
   liveBroadcast('tasks');
   kick();
@@ -383,7 +356,7 @@ export async function pump() {
       db.prepare(`UPDATE tasks SET status='failure', finished_at=datetime('now'), error=? WHERE id=?`)
         .run(String(e.message).slice(0, 2000), t.id);
       liveBroadcast('tasks');
-      onTaskFailure(t, e.message); // no-action → 2 retries then give up; else retry + infra
+      onTaskFailure(t, e.message); // no-action → 2 retries then give up; else one retry, then a line for a human
     }
   } finally {
     active--;

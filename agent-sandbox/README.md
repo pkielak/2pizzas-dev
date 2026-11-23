@@ -2,8 +2,7 @@
 
 The Gitea agent job images. 2pizzas runs every agent task as a one-shot
 `docker run --rm --runtime=runsc agent-sandbox:<agent>` container (gVisor
-sandboxed); the `review` and `infra` variants have special boundaries —
-see below.
+sandboxed); the `review` variant has a special boundary — see below.
 
 ## Image tree
 
@@ -16,7 +15,6 @@ Dockerfile            agent-sandbox:base — ubuntu 24.04, node 22, git, jq, tea
 ├── opencode/         agent-sandbox:opencode — opencode agent
 │   └── opencode-config/  opencode.json — BAKED AT BUILD TIME
 ├── review/           agent-sandbox:review   — opencode + baked code-review skill
-├── infra/            agent-sandbox:infra    — pi + docker-cli (runc, docker socket)
 └── ops/              agent-sandbox:ops      — pi + docker-cli (parked; see root AGENTS.md)
 ```
 
@@ -30,8 +28,6 @@ Dockerfile            agent-sandbox:base — ubuntu 24.04, node 22, git, jq, tea
 - **`review` is read-only by token, not by prompt.** It clones with
   `REVIEW_TOKEN` (read scope) and never receives the write token — it
   physically cannot push or post. 2pizzas posts the review comment itself.
-- **`infra` is the only agent on runc** with the host docker socket mounted —
-  it repairs the stack itself. The docker socket is the trust boundary.
 - **Deterministic scanners** (gitleaks, semgrep) run in the `security-scan.yaml`
   CI workflow and inside the reviewer's `code-review` skill.
 
@@ -42,7 +38,6 @@ docker build -t agent-sandbox:base agent-sandbox
 docker build -t agent-sandbox:pi agent-sandbox/pi
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
 docker build -t agent-sandbox:review agent-sandbox/review
-docker build -t agent-sandbox:infra agent-sandbox/infra
 # smoke test
 docker run --rm --entrypoint sh agent-sandbox:pi -c 'pi --version'
 ```

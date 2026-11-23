@@ -167,8 +167,6 @@ services:
       - AGENT_WORK1_TOKEN=${AGENT_WORK1_TOKEN:-}
       - AGENT_WORK2_NAME=${AGENT_WORK2_NAME:-opencode}
       - AGENT_WORK2_TOKEN=${AGENT_WORK2_TOKEN:-}
-      - AGENT_INFRA_NAME=${AGENT_INFRA_NAME:-infra}
-      - AGENT_INFRA_TOKEN=${AGENT_INFRA_TOKEN:-}
       - AGENT_REVIEW_NAME=${AGENT_REVIEW_NAME:-review}
       - AGENT_REVIEW_TOKEN=${AGENT_REVIEW_TOKEN:-}       # READ — reviewer clone (can't push)
       - AGENT_REVIEW_POST_TOKEN=${AGENT_REVIEW_POST_TOKEN:-}  # WRITE — 2pizzas posts verdicts
@@ -177,13 +175,6 @@ services:
       - AGENT_DORMANT_LOGINS=${AGENT_DORMANT_LOGINS:-}
       - AGENT_IMAGE_REVIEW=${AGENT_IMAGE_REVIEW:-agent-sandbox:review}
       - REVIEW_MAX_ROUNDS=${REVIEW_MAX_ROUNDS:-3}
-      # @infra agent: repairs the stack (runc + host docker socket + the infra
-      # repo bind-mounted read-only; see 2pizzas/tasks.mjs). Auto-enqueued on
-      # infra-class failures; @infra on the infra repo works it manually.
-      - AGENT_IMAGE_INFRA=${AGENT_IMAGE_INFRA:-agent-sandbox:infra}
-      - INFRA_REPO=${INFRA_REPO}
-      - INFRA_HOST_REPO=${INFRA_HOST_REPO:-}
-      - INFRA_COOLDOWN_MINUTES=${INFRA_COOLDOWN_MINUTES:-15}
       - GITEA_API=http://gitea:3000/api/v1
       # job/chat containers reach Gitea via host.docker.internal (= the bridge
       # gateway) — Gitea binds 0.0.0.0 so the gateway IP is always covered

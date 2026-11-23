@@ -20,14 +20,10 @@
 
 <text x="440" y="70" font-size="15" font-weight="700" fill="#d2d4d8">@review</text>
 <text x="440" y="88" font-size="12" fill="#999">agent-sandbox:review</text><text x="440" y="104" font-size="12" fill="#999">read-only · idle</text><text x="440" y="120" font-size="12" fill="#999">gitleaks + semgrep</text></g>
-<g class="blk"><rect x="615" y="40" width="160" height="100" rx="10" fill="#1c1e20" stroke="#30363b"/>
+<g class="blk bad"><rect x="615" y="40" width="160" height="100" rx="10" fill="#1c1e20" stroke="#30363b"/>
 
-<text x="635" y="70" font-size="15" font-weight="700" fill="#d2d4d8">@infra</text>
-<text x="635" y="88" font-size="12" fill="#999">agent-sandbox:infra</text><text x="635" y="104" font-size="12" fill="#999">runc · docker socket</text></g>
-<g class="blk bad"><rect x="810" y="40" width="160" height="100" rx="10" fill="#1c1e20" stroke="#30363b"/>
-
-<text x="830" y="70" font-size="15" font-weight="700" fill="#d2d4d8">chat containers</text>
-<text x="830" y="88" font-size="12" fill="#999">long-lived runsc</text><text x="830" y="104" font-size="12" fill="#999">chat user · 0 active</text></g>
+<text x="635" y="70" font-size="15" font-weight="700" fill="#d2d4d8">chat containers</text>
+<text x="635" y="88" font-size="12" fill="#999">long-lived runsc</text><text x="635" y="104" font-size="12" fill="#999">chat user · 0 active</text></g>
 
 <a href="#gitea" style="text-decoration:none"><g class="blk ok"><rect x="30" y="250" width="240" height="110" rx="10" fill="#1c1e20" stroke="#30363b"/>
 
@@ -70,12 +66,12 @@
 <text x="862" y="222" font-size="12.5" fill="#8b949e" text-anchor="start">llm /v1</text>
 
 <!-- convergence band: solid 6px block (y 178–184), three 2px rects touching -->
-<rect x="107" y="178" width="786" height="2" fill="#3fb950" opacity=".8"/>
-<rect x="107" y="180" width="786" height="2" fill="#58a6ff" opacity=".8"/>
-<rect x="107" y="182" width="786" height="2" fill="#bc8cff" opacity=".8"/>
+<rect x="107" y="178" width="746" height="2" fill="#3fb950" opacity=".8"/>
+<rect x="107" y="180" width="746" height="2" fill="#58a6ff" opacity=".8"/>
+<rect x="107" y="182" width="746" height="2" fill="#bc8cff" opacity=".8"/>
 
 <!-- tri-color drops from top of band (y=178) down to agent bottoms (y=140) -->
-<rect x="107" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="109" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="111" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="302" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="304" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="306" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="497" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="499" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="501" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="692" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="694" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="696" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="887" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="889" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="891" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/>
+<rect x="107" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="109" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="111" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="302" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="304" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="306" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="497" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="499" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="501" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/><rect x="692" y="140" width="2" height="38" fill="#3fb950" opacity=".7"/><rect x="694" y="140" width="2" height="40" fill="#58a6ff" opacity=".7"/><rect x="696" y="140" width="2" height="42" fill="#bc8cff" opacity=".7"/>
 <text x="325" y="220" font-size="12.5" fill="#8b949e" text-anchor="middle">runsc one-shot / long-lived (chat)</text>
 
 <!-- gitea → runners + pages (CI bus, y=410) -->

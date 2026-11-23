@@ -54,7 +54,7 @@
  *   POST /api/chat/<id>/message   {message}
  *   POST /api/chat/<id>/abort
  *   DELETE /api/chat/<id>
- *   GET  /api/tasks    JSON task list
+ *   GET  /api/tasks    JSON task list (?limit=N, default 100, max 1000)
  *   GET  /healthz
  *
  * Reliability:
@@ -369,7 +369,10 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/healthz') return send(200, 'application/json', JSON.stringify({ ok: true, active: activeCount(), repos: managedRepos() }));
   if (url.pathname === '/api/tasks') {
-    return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 100').all()));
+    // ?limit=N (default 100, capped at 1000) — the task history is unbounded,
+    // so callers that want more than the default page ask for it explicitly
+    const lim = Math.min(Math.max(parseInt(url.searchParams.get('limit'), 10) || 100, 1), 1000);
+    return send(200, 'application/json', JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT ?').all(lim)));
   }
   // POST /api/tasks/<id>/retry — manually re-run a failed task
   const taskRetryMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/retry$/);
@@ -513,7 +516,7 @@ const server = http.createServer(async (req, res) => {
       ? CFG.pagesSites.map((s) => s.split(':')[2]).map(up).every((u) => u === true)
       : null;
     return send(200, 'application/json', JSON.stringify({
-      agents: { pi: CFG.agents.pi.login, opencode: CFG.agents.opencode.login, review: CFG.review.login, infra: CFG.agents.infra.login },
+      agents: { pi: CFG.agents.pi.login, opencode: CFG.agents.opencode.login, review: CFG.review.login },
       busy: [...new Set(busy)],
       docker: running === null ? null : {
         gitea: up('gitea') && up('gitea-db-1'),

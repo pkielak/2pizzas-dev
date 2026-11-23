@@ -51,29 +51,23 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   `[2pizzas] ref:` / `[2pizzas] pr:` log lines carry the pushed refs + PR
   number into the chain. Don't drop those marker lines, the review-body
   markers, or the verdict parse in `afterTask()`.
-- **Infra agent — PARKED** (`agent-sandbox:infra`, `@infra` on the infra
-  repo): designed to repair the stack itself — the ONLY agent that runs on
-  **runc** with the host **docker socket** + the live infra repo
-  bind-mounted read-only (`INFRA_HOST_REPO` → `/infra-src`; the bootstrap
-  clones a container-local copy, so host `.git` is never touched). Currently
-  **parked** (buggy trigger, no-action incidents): the `@infra` mention is
-  removed from `MENTIONS` and `onTaskFailure()` no longer calls
-  `enqueueInfra()` — image/user/token/`enqueueInfra()` all stay in place,
-  revival = restoring those two call sites. Failure policy instead: ANY
-  failure is retried once (`tasks.retried_of`); no-action failures (agent
-  finished without commit/PR/reply) are retried up to 2 times, then a
-  give-up comment is posted as the agent user; a double failure just logs a
-  line for a human. Never auto-chase `agent-infra` tasks.
+- **Failure policy.** ANY failure is retried once (`tasks.retried_of`);
+  no-action failures (agent finished without commit/PR/reply) are retried
+  up to 2 times, then a give-up comment is posted as the agent user; a
+  double failure just logs a line for a human. (The former `@infra`
+  auto-escalation agent was REMOVED — image, user, token and
+  `enqueueInfra()` are gone; if stack repair automation is ever wanted it
+  needs a rethink from scratch.)
 - **Per-agent Gitea identities.** Each work agent is its OWN Gitea user
-  (`pi`, `opencode`, `infra`) with a write token (`PI_TOKEN` etc.) —
+  (`pi`, `opencode`) with a write token (`PI_TOKEN` etc.) —
   native `@` autocomplete in the Gitea UI + per-agent commit/PR/comment
   attribution. The `review` user carries TWO tokens: `REVIEW_TOKEN`
   (read:repository — the reviewer container clones with it and physically
   cannot push) and `REVIEW_POST_TOKEN` (write — held by 2pizzas ONLY, posts
   the review verdicts as `review`). The legacy single `bot` user is dormant
   on old instances (kept for history attribution); fresh instances never
-  create it. Managed repos get collaborator grants for all four agent users
-  (write: pi/opencode/infra, read: review) — seed.sh for env-listed repos,
+  create it. Managed repos get collaborator grants for all three agent users
+  (write: pi/opencode, read: review) — seed.sh for env-listed repos,
   2pizzas at startup + on self-enrollment. `enqueue()` ignores comments by
   any agent user (plus dormant `bot` + `chat`).
 - **Inference is backend-agnostic.** The backend registry is
@@ -105,7 +99,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 - **New managed repo = self-enrolling.** An `@agent` mention on an
   unmanaged repo opts it in: 2pizzas persists it in the `managed_repos`
   sqlite table and grants the agent users collaborator access itself
-  (write for pi/opencode/infra, read for review — same API calls as seed.sh). No `.env`, no reseed, no restart. `AGENTD_REPOS` is an
+  (write for pi/opencode, read for review — same API calls as seed.sh). No `.env`, no reseed, no restart. `AGENTD_REPOS` is an
   optional seed/pin list (env repos can't be removed from the UI; the ✕ on
   `/repos` only removes self-enrolled ones — `DELETE /api/repos/:owner/:name`).
   The global webhook covers new repos automatically.
@@ -149,7 +143,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   /api/backends/baked`) until `./setup.sh --rebuild`),
   per-task logs in `data-2pizzas/logs/<id>.log`, `GET /api/tasks`. Tasks are
   controllable on demand: `POST /api/tasks/:id/stop` cancels a queued/running
-  task (job containers are named `tea-task-<id>` / `tea-infra-<id>` and get
+  task (job containers are named `tea-task-<id>` and get
   `docker rm -f`; the task ends `canceled` with `error='canceled on demand'`
   and pump skips failure handling for it) and `POST /api/tasks/:id/retry`
   re-queues a `failure`/`canceled` task (same INSERT as the auto-retry,
@@ -300,7 +294,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `2pizzas/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
 | `2pizzas/assets/output_filter.mjs` | filters pi's `--mode json` stream into the SAME compact chat transcript events as `chat.mjs`'s piLine (text_block / tool_call / gitea_ref / settle / compacted / error + live text_delta/thinking_delta/working/tool_end/auto_retry) — a task log IS a parseable transcript the UI renders through TranscriptBlocks (node, NOT jq — jq buffers piped output) |
 | `2pizzas/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
-| `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
+| `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
 | `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list AND each backend's live per-model `n_ctx` as `contextWindow`, 65536 floor — a baked window smaller than the real one makes pi plateau at the fake limit → "clean" no-action runs) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android`. Self-checks its own syntax at start (`bash -n` — a mid-file syntax error would otherwise abort the wizard AFTER partial changes) and VERIFIES THE BAKE of `agent-sandbox:pi` after build (baked `LLAMA_BASE_URL` must be routable + match `inference.json`, `LLAMA_API_KEY` non-empty, baked `models.json` == generated one — hard fail with a `--rebuild` hint, since a bare `docker build` silently bakes the broken Dockerfile defaults), probes backend reachability+auth from the image's own vantage, and runs a full runsc pi smoke (trivial prompt → `agent_settled`, no `finalError`) on fresh builds |
 | `uninstall.sh` | inverse of setup.sh — tears down the stack behind a confirm: `docker compose down` (project `gitea` + `gitea_gitea` net), leftover `tea-chat-*` containers, built images (`agent-sandbox:*`, `gitea-android`, `gitea-pages`, 2pizzas); host data dirs only with `--purge`. Flags `--yes` / `--purge` / `--keep-images`. Never touches the git checkout or the host `ufw` rule |
 | `sync-template.sh` | prune-only: removes superseded agent workflow files from template repos |
@@ -310,7 +304,6 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `runner/android/Dockerfile` | `gitea-android:latest` job image: JDK 21 + Android SDK + warm `~/.gradle` (label `android`) |
 | `agent-sandbox/**/Dockerfile` | agent job images (`agent-sandbox:base` → `:pi` / `:opencode` / `:ops` / `:review`) |
 | `agent-sandbox/review/skills/code-review/SKILL.md` | the reviewer's baked review skill (opencode skill dir) |
-| `agent-sandbox/infra/Dockerfile` | `agent-sandbox:infra` = pi + docker-cli (runc + docker socket, see infra agent) |
 | `agent-sandbox/pi/pi-settings/models.json` | pi's model providers (baked from `inference.json`, gitignored) |
 | `agent-sandbox/opencode/opencode-config/opencode.json` | opencode's model provider (gitignored) |
 | `.gitea/workflows/` | ordinary CI workflows — `mirror-to-github.yaml`, `check.yaml` (check.sh dev gate on every PR), `security-scan.yaml` (gitleaks + semgrep gate on every PR) — run on my-runner |
@@ -349,7 +342,6 @@ docker build -t agent-sandbox:pi agent-sandbox/pi \
   --build-arg LLAMA_BASE_URL=<llama backend url> --build-arg LLAMA_API_KEY=<key>  # a bare build silently breaks the image (gotcha below)
 docker build -t agent-sandbox:opencode agent-sandbox/opencode
 docker build -t agent-sandbox:ops agent-sandbox/ops
-docker build -t agent-sandbox:infra agent-sandbox/infra
 docker run --rm --entrypoint sh agent-sandbox:pi -c '<smoke test>'
 
 # Android job image (android-runner, label `android`)
@@ -434,9 +426,9 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
 - **Loop prevention** is the `<!-- via:agent -->` marker (posted by
   `2pizzas/assets/post-comment.sh`, checked by `enqueue()`). Don't remove it
   from either side.
-- **Agents post as their own users** (`pi`/`opencode`/`infra`/`review`; old
-  instances also have the dormant `bot`), and older comments may be from the
-  admin user — don't write actor-based logic; use the marker.
+- **Agents post as their own users** (`pi`/`opencode`/`review`; old
+  instances also have dormant `infra` and `bot` users), and older comments
+  may be from the admin user — don't write actor-based logic; use the marker.
 - **opencode non-interactive runs auto-REJECT permission prompts** (writing
   outside the workspace, e.g. `/tmp/reply.md`, silently fails and the agent
   stops). The bootstrap therefore runs `opencode run --auto` — safe because
@@ -527,6 +519,18 @@ The `@ops` agent and `ops-assist.yaml` were removed (see git history,
 "ops agent parked"). The `agent-ops` runner label no longer exists. If it is
 revived it should run through 2pizzas, not a dedicated runner.
 
+## Version tracking
+
+- **Gitea is pinned to 1.27.2** (compose `gitea:` image). Track the next
+  stable release (v28.x as of 2026-11 — Gitea moved to the new versioning
+  scheme). A bump is NOT a drop-in: the 1.27 workarounds baked into this
+  repo — system webhooks inserted via psql (1.27 has no API for global
+  webhooks), the missing `pull_request_review_comment` webhook event (the
+  poll fallback covers inline comments), and the `pages` service standing
+  in for the absent native Pages — should each be re-tested against the
+  new version before/while bumping the pin, and seed.sh's webhook insert
+  simplified if the API lands.
+
 ## Verification after changes
 
 | Changed | Verify with |
@@ -540,6 +544,5 @@ revived it should run through 2pizzas, not a dedicated runner.
 | agent image | rebuild, `docker run --rm --entrypoint sh agent-sandbox:<a> -c '<agent> --version'` |
 | review chain | work task that pushes → `agent-review` task appears (read-only clone) → review comment with `<!-- review:pass/fail -->` on the issue; `fail` → `rework` task (round 2); chain caps at `REVIEW_MAX_ROUNDS` |
 | task stop/retry | `POST /api/tasks/<id>/stop` on a running task → `canceled` + `docker rm -f tea-task-<id>`; `POST /api/tasks/<id>/retry` on a failed task → new queued task with `retried_of` |
-| infra agent (parked) | `@infra` is inert; a task that fails twice logs `[failure] … infra escalation parked` — no `agent-infra` task is created |
 | `pages/` | `docker compose build pages && up -d pages`, `curl -I http://localhost:3002/` (200 + app HTML; updates within ~60s of a gh-pages push) |
 | end-to-end | full loop: `@pi` comment → task `success` → `pi` reply with `<!-- via:agent -->` on the issue |

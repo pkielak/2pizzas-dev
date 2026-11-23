@@ -27,10 +27,9 @@ ADMIN_USER="${ADMIN_USER:-admin}"
 # Agent names are read from .env (set by setup.sh agent identities section).
 AGENT_WORK1_NAME="${AGENT_WORK1_NAME:-pi}"
 AGENT_WORK2_NAME="${AGENT_WORK2_NAME:-opencode}"
-AGENT_INFRA_NAME="${AGENT_INFRA_NAME:-infra}"
 AGENT_REVIEW_NAME="${AGENT_REVIEW_NAME:-review}"
 AGENT_CHAT_NAME="${AGENT_CHAT_NAME:-chat}"
-AGENT_USERS="$AGENT_WORK1_NAME $AGENT_WORK2_NAME $AGENT_INFRA_NAME $AGENT_REVIEW_NAME"
+AGENT_USERS="$AGENT_WORK1_NAME $AGENT_WORK2_NAME $AGENT_REVIEW_NAME"
 CHAT_USER="$AGENT_CHAT_NAME"   # separate login for the /chat agents — audit separation from task work
 HOST="${GITEA_URL#http://}"; HOST="${HOST%/}"
 ADMIN_REPO="2pizzas-dev"
@@ -129,12 +128,12 @@ for k in GITEA_TOKEN ADMIN_TOKEN; do
   fi
 done
 # Per-agent tokens — each work agent clones/pushes/posts AS ITS OWN Gitea
-# user, so history attributes the work to pi/opencode/infra. Scopes:
+# user, so history attributes the work to pi/opencode. Scopes:
 # write:repository (clone/push/PR) + read/write:issue (the issue API is
 # scope-gated separately — reading issues/comments and posting replies).
 AGENT_SCOPES="write:repository,read:issue,write:issue"
-declare -A agent_tok_user=( [AGENT_WORK1_TOKEN]="$AGENT_WORK1_NAME" [AGENT_WORK2_TOKEN]="$AGENT_WORK2_NAME" [AGENT_INFRA_TOKEN]="$AGENT_INFRA_NAME" )
-for k in AGENT_WORK1_TOKEN AGENT_WORK2_TOKEN AGENT_INFRA_TOKEN; do
+declare -A agent_tok_user=( [AGENT_WORK1_TOKEN]="$AGENT_WORK1_NAME" [AGENT_WORK2_TOKEN]="$AGENT_WORK2_NAME" )
+for k in AGENT_WORK1_TOKEN AGENT_WORK2_TOKEN; do
   if token_usable "${!k:-}"; then echo "$k: ok"; skip
   else
     val=$(gen_token "${agent_tok_user[$k]}" "2pizzas-${agent_tok_user[$k]}" "$AGENT_SCOPES")

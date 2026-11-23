@@ -53,7 +53,7 @@
     {/each}
     <div class="item">
       <div class="l2">
-        repos self-enroll: mention <code>@pi</code>, <code>@opencode</code> or <code>@infra</code> on an issue in ANY repo —
+        repos self-enroll: mention <code>@pi</code> or <code>@opencode</code> on an issue in ANY repo —
         2pizzas persists it and grants the agent users write access automatically. <code>AGENTD_REPOS</code> in .env
         pins repos (no ✕); the ✕ removes a self-enrolled repo (its collaborator grants stay in Gitea — remove them there
         too if you want them gone)

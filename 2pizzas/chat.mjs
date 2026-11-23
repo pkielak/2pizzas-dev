@@ -338,7 +338,7 @@ export const chatHistory = (row) => {
 };
 
 // The chat agent's extra context: it acts as a SUPERVISOR that delegates work
-// to the coding agents (pi, opencode, infra) by creating issues/PRs and
+// to the coding agents (pi, opencode) by creating issues/PRs and
 // commenting @agent on them. The existing 2pizzas pipeline (webhook → task
 // → agent run → review chain) handles everything after the mention.
 // The Gitea section is only present when CHAT_GITEA_TOKEN is configured —
@@ -352,7 +352,6 @@ Your job is to COORDINATE work by delegating to coding agents — NOT to write c
 2. Add a COMMENT on that issue/PR mentioning the appropriate agent:
    - @${CFG.agents.pi.login} — general coding tasks, bug fixes, features
    - @${CFG.agents.opencode.login} — alternative coding agent (use if @${CFG.agents.pi.login} is unavailable or for a second opinion)
-   - @${CFG.agents.infra.login} — infrastructure/ops tasks (only on the infra repo)
 
 The agent will pick up the comment, do the work, push commits, and a review
 chain runs automatically. You do NOT need to write code, push branches, or

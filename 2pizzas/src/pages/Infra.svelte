@@ -25,8 +25,7 @@
     { x: 30, y: 40, w: 160, h: 100, title: '@' + d.agents.pi, lines: ['agent-sandbox:pi', busy('pi') ? 'task in flight' : 'idle'], ok: busy('pi') ? true : null },
     { x: 225, y: 40, w: 160, h: 100, title: '@' + d.agents.opencode, lines: ['agent-sandbox:opencode', busy('opencode') ? 'task in flight' : 'idle'], ok: busy('opencode') ? true : null },
     { x: 420, y: 40, w: 160, h: 100, title: '@' + d.agents.review, lines: ['agent-sandbox:review', busy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], ok: busy('review') ? true : null },
-    { x: 615, y: 40, w: 160, h: 100, title: '@' + d.agents.infra, lines: ['agent-sandbox:infra', busy('infra') ? 'task in flight' : 'runc · docker socket'], ok: busy('infra') ? true : null },
-    { x: 810, y: 40, w: 160, h: 100, title: 'chat containers', lines: ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], ok: chatN === null ? null : chatN > 0 },
+    { x: 615, y: 40, w: 160, h: 100, title: 'chat containers', lines: ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], ok: chatN === null ? null : chatN > 0 },
     // FOUNDATIONS (middle row)
     { x: 30, y: 250, w: 240, h: 110, title: 'Gitea', lines: ['server :3000 · postgres db', `${d.managedN} managed repo${d.managedN === 1 ? '' : 's'} · agent + chat users`], ok: d.docker ? d.docker.gitea : null, href: giteaUrl() },
     { x: 380, y: 250, w: 240, h: 110, title: '2pizzas', lines: ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], ok: d.docker?.dispatcher ?? null, href: '/tasks' },
@@ -255,12 +254,12 @@
       <text x="862" y="222" font-size="11.5" fill="var(--muted-2)" text-anchor="start">llm /v1</text>
 
       <!-- convergence band: three palette stripes -->
-      <rect x="107" y="178" width="786" height="2" fill="var(--olives)" opacity=".8"/>
-      <rect x="107" y="180" width="786" height="2" fill="var(--sauce)" opacity=".8"/>
-      <rect x="107" y="182" width="786" height="2" fill="var(--ham)" opacity=".8"/>
+      <rect x="107" y="178" width="746" height="2" fill="var(--olives)" opacity=".8"/>
+      <rect x="107" y="180" width="746" height="2" fill="var(--sauce)" opacity=".8"/>
+      <rect x="107" y="182" width="746" height="2" fill="var(--ham)" opacity=".8"/>
 
       <!-- tri-color drops into every agent (each is fed by all three sources) -->
-      {#each [110, 305, 500, 695, 890] as x}
+      {#each [110, 305, 500, 695] as x}
         <rect x={x - 3} y="140" width="2" height="38" fill="var(--olives)" opacity=".7"/>
         <rect x={x - 1} y="140" width="2" height="40" fill="var(--sauce)" opacity=".7"/>
         <rect x={x + 1} y="140" width="2" height="42" fill="var(--ham)" opacity=".7"/>

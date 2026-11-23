@@ -20,7 +20,7 @@ through an automated review chain: a read-only reviewer agent checks the diff
 | `runner` (my-runner) | Regular Gitea Actions runner (runc), label `ubuntu-latest` — ordinary CI, incl. the `security-scan` gate (gitleaks + semgrep on every PR) |
 | `android-runner` | Dedicated runner for native Android builds, label `android`, job image `gitea-android:latest` (JDK 21 + Android SDK + warm Gradle cache) |
 | `2pizzas` | Webhook-driven AI agent dispatcher: receives Gitea webhooks, queues tasks in sqlite, runs each as an ephemeral gVisor-sandboxed container. Web UI on `:3001` (dashboard, tasks, live chat, backend management) + a zero-dependency terminal TUI (`node 2pizzas/tui.mjs`) |
-| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image (git, node, gitleaks, semgrep with baked rule packs) + one variant per agent (pi, opencode, infra=pi+docker CLI, review=opencode+code-review skill), each preconfigured with the inference backends from `inference.json` |
+| `agent-sandbox:*` images | Docker images the agent tasks run in: a base image (git, node, gitleaks, semgrep with baked rule packs) + one variant per agent (pi, opencode, review=opencode+code-review skill), each preconfigured with the inference backends from `inference.json` |
 | `inference.json` | Registry of inference backends (any OpenAI-compatible `/v1` endpoint — local llama.cpp, vLLM, Ollama, OpenRouter, …). 2pizzas walks them by priority with failover; `setup.sh` bakes the same list into the agent images |
 
 The **template repo `owner/agents-actions`** is a thin README (the old agent
@@ -72,7 +72,7 @@ seeded stack:
 3. **`.env`** — generated (or finished) interactively: Gitea URL, admin user,
    postgres creds (auto-generated password), managed repos, CPU plan
 4. **images** — builds `2pizzas`, `gitea-pages`, `agent-sandbox:{base,pi,
-   opencode,review,infra,ops}` and (asked) `gitea-android`
+   opencode,review,ops}` and (asked) `gitea-android`
 5. **Gitea + Postgres** — `compose up -d db server`, waits for health
 6. **seed** — runs `seed.sh` (users, tokens, repos, runners, global webhook)
 7. **full stack** — `compose up -d` for everything
@@ -199,6 +199,4 @@ Human review comments on a worker's PR are picked up: 2pizzas enqueues a
 `review` task when someone leaves an inline diff comment — the worker
 addresses it (changes, commit, push to the PR head branch). Separately,
 every work push goes through the automatic review chain (read-only
-`agent-review` → `rework` rounds, capped — see AGENTS.md), and `@infra` on
-this repo runs the infra agent, which repairs the stack itself (it is also
-auto-enqueued on infra-class task failures).
+`agent-review` → `rework` rounds, capped — see AGENTS.md).

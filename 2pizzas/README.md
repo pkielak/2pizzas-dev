@@ -1,7 +1,7 @@
 # 2pizzas
 
 The webhook-driven AI agent dispatcher + dashboard. Gitea mention
-(`@pi`/`@opencode`/`@infra`) → sqlite queue → one-shot gVisor-sandboxed agent
+(`@pi`/`@opencode`) → sqlite queue → one-shot gVisor-sandboxed agent
 container → reply posted back. Also hosts the dashboard UI, the agent chat,
 and the inference backend registry.
 
