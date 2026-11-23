@@ -5,6 +5,7 @@
   import { navigate } from '../lib/router.mjs';
   import { fmtTok } from '../lib/fmt.mjs';
   import { parseLine } from '../lib/hl.mjs';
+  import { pushTranscriptLine } from '../lib/transcript.mjs';
   import TranscriptBlocks from '../components/TranscriptBlocks.svelte';
   import EndedChat from '../components/EndedChat.svelte';
   import Loading from '../components/Loading.svelte';
@@ -28,83 +29,13 @@
   const scrollDown = () => { if (box && stick) box.scrollTop = box.scrollHeight; };
   const onscroll = () => { if (box) stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60; };
 
-  // the delta-built (un-settled) text block, if the last block is one
-  const curText = () => {
-    const last = blocks[blocks.length - 1];
-    return last && last.kind === 'text' && !last.settled ? last : null;
-  };
-
-  // the delta-built (un-settled) THINKING block, if the last block is one —
-  // thinking arrives as a transient live lane (never logged/replayed), so
-  // each phase builds a fresh collapsible block and is finalized the moment
-  // the next phase (text/tool/settle) starts
-  const curThinking = () => {
-    const last = blocks[blocks.length - 1];
-    return last && last.kind === 'thinking' && !last.settled ? last : null;
-  };
-  const settleThinking = () => {
-    const t = curThinking();
-    if (t) t.settled = true;
-  };
-
+  // one line → transcript blocks — the SAME shared accumulator the task
+  // view uses for its live log tail (lib/transcript.mjs)
   const handle = (line) => {
-    let e;
-    try { e = JSON.parse(line); }
-    catch {
-      // non-JSON line: only the server's [2pizzas] markers reach here
-      if (line.startsWith('[2pizzas]')) { blocks.push({ kind: 'settle', text: line }); scrollDown(); }
-      return;
-    }
-    // transcript events (user_message, text_block, tool_call, settle,
-    // gitea_ref, compacted, error) are REPLAYED on (re)connect — they
-    // rebuild the full conversation; live events (text_delta, thinking_delta,
-    // working, tool_end, auto_retry, compaction, ctx) are not replayed —
-    // they only drive the status line + incremental text/thinking
-    if (e.type === 'user_message') {
-      blocks.push({ kind: 'user', text: e.message });
-    } else if (e.type === 'text_delta') {
-      settleThinking();
-      let t = curText();
-      if (!t) {
-        if (!e.delta || !e.delta.trim()) return; // don't start a block for whitespace-only deltas
-        t = { kind: 'text', text: '', settled: false };
-        blocks.push(t);
-      }
-      t.text += e.delta;
-      status = 'writing…';
-    } else if (e.type === 'text_block') {
-      // settled block: finalize the delta-built block (same text — a visual
-      // no-op) and mark it settled so the next live delta starts a FRESH
-      // block; replay clients get it whole
-      settleThinking();
-      let t = curText();
-      if (!t) t = { kind: 'text', text: '', settled: false };
-      t.text = e.text;
-      t.settled = true;
-    } else if (e.type === 'gitea_ref') {
-      blocks.push({ kind: 'ref', refKind: e.kind, number: e.number, url: e.url });
-    } else if (e.type === 'tool_call') {
-      settleThinking();
-      blocks.push({ kind: 'tool', name: e.name, arg: String(e.arg).slice(0, 200) });
-      status = `running ${e.name}…`;
-    } else if (e.type === 'tool_end') status = 'thinking…';
-    else if (e.type === 'thinking_delta') {
-      let t = curThinking();
-      if (!t) {
-        if (!e.delta || !e.delta.trim()) return; // don't start a block for whitespace-only deltas
-        t = { kind: 'thinking', text: '', settled: false };
-        blocks.push(t);
-      }
-      t.text += e.delta;
-      status = 'thinking…';
-    }
-    else if (e.type === 'working') status = 'working…';
-    else if (e.type === 'settle') { status = ''; settleThinking(); blocks.push({ kind: 'settle', text: 'settled' }); }
-    else if (e.type === 'auto_retry') status = `retrying (${e.attempt}/${e.max})…`;
-    else if (e.type === 'compaction') status = 'compacting context…';
-    else if (e.type === 'compacted') blocks.push({ kind: 'compacted' });
-    else if (e.type === 'ctx') ctx = { t: e.tokens, w: e.window };
-    else if (e.type === 'error') { status = ''; blocks.push({ kind: 'error', message: e.message }); }
+    pushTranscriptLine(blocks, line, {
+      onStatus: (s) => { status = s; },
+      onCtx: (t, w) => { ctx = { t, w }; },
+    });
     scrollDown();
   };
 

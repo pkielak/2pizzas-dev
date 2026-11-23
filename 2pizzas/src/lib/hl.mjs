@@ -30,15 +30,6 @@ export const hlText = (raw) => {
   return out + esc(raw.slice(last));
 };
 
-// console/log line → escaped HTML; the pi filter's thinking-phase marker
-// ("  └ thinking") gets a dimmed span so thinking lines read apart from the
-// rest of the log
-export const hlConsoleLine = (line) => {
-  const esc = String(line).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  return /^\s*└ thinking\b/.test(line) ? `<span class="think">${esc}</span>` : esc;
-};
-export const hlConsole = (raw) => String(raw).split('\n').map(hlConsoleLine).join('\n');
-
 // one transcript line (event JSON string or plain marker text) → a block
 // object for TranscriptBlocks.svelte. Returns null for live-only events
 // (they never reach the persisted log). Tolerates an already-parsed
@@ -59,4 +50,68 @@ export const parseLine = (line) => {
     case 'error': return { kind: 'error', message: e.message };
     default: return null;
   }
+};
+
+// OLD task logs are plain console text (the pre-transcript filter format).
+// The agent-relevant lines map onto the SAME block kinds the transcript
+// uses — agent text renders as .mtext exactly like the chat, thinking as
+// the collapsible .mthinking (the old filters dropped the thinking text,
+// so its body is empty), tools as .mtool — leaving only the `$ …`
+// bootstrap noise as a dim `console` block. [2pizzas] / [opencode]
+// markers are handled by the callers.
+export const parseLegacyLine = (line) => {
+  const t = String(line);
+  if (t.startsWith('[2pizzas]')) return null;
+  const tool = /^  ▸ (\S+)\s*(.*)$/.exec(t);
+  if (tool) return { kind: 'tool', name: tool[1], arg: tool[2].slice(0, 200) };
+  if (/^  └ thinking\s*$/.test(t)) return { kind: 'thinking', text: '', settled: true };
+  // old pi filter's toolcall_start line: `  └ <toolName>`
+  const tstart = /^  └ (\S+)\s*$/.exec(t);
+  if (tstart) return { kind: 'tool', name: tstart[1], arg: '' };
+  const failed = /^  ✗ (.+)$/.exec(t);
+  if (failed) return { kind: 'error', message: failed[1] };
+  const oe = /^\[opencode\] ERROR:\s*(.*)$/.exec(t);
+  if (oe) return { kind: 'error', message: oe[1] };
+  if (t.startsWith('$ ')) return { kind: 'console', text: t };
+  if (t.trim()) return { kind: 'text', text: t, settled: true };
+  return null;
+};
+
+// parseLine + task-log fallback. Lines that DO parse as JSON are live-only
+// events (text_delta, working, tool_end, …) — the settled view never
+// renders them (the settled text_block carries the text). Unparseable
+// lines are old-format console text — parseLegacyLine maps them onto the
+// chat block kinds. A few [2pizzas] markers get a better home than the
+// generic settle block: the usage marker is carried by the ctx footer,
+// and an ERROR marker is an error block.
+export const parseTaskLine = (line) => {
+  const b = parseLine(line);
+  if (b) {
+    if (b.kind === 'settle' && typeof b.text === 'string') {
+      if (b.text.startsWith('[2pizzas] usage:')) return null;
+      if (b.text.startsWith('[2pizzas] ERROR:'))
+        return { kind: 'error', message: b.text.slice('[2pizzas] ERROR:'.length).trim() };
+    }
+    return b;
+  }
+  if (typeof line !== 'string' || !line.trim()) return null;
+  try { JSON.parse(line); return null; } // parseable JSON = live-only event
+  catch { return parseLegacyLine(line); }
+};
+
+// whole old/new task log → blocks; consecutive agent-text lines merge into
+// one block (a paragraph is one .mtext, not one per line)
+export const parseTaskLog = (log) => {
+  const blocks = [];
+  for (const line of String(log).split('\n')) {
+    const b = parseTaskLine(line);
+    if (!b) continue;
+    const last = blocks[blocks.length - 1];
+    if (b.kind === 'text' && last && last.kind === 'text' && last.settled) {
+      last.text += '\n' + b.text;
+      continue;
+    }
+    blocks.push(b);
+  }
+  return blocks;
 };

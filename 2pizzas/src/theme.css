@@ -186,8 +186,6 @@ a.item:hover .l2,a.item:hover .meta,.item.chatrow:hover .l2,.item.chatrow:hover 
 .chathead .back{margin:0}
 .chid{font-weight:900;font-size:13px}
 .chclose{margin-left:auto}
-/* console: shared stream surface for task logs AND chat */
-.console{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid var(--line);border-radius:0;padding:14px 16px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;margin-top:12px;max-height:calc(100vh - 240px);max-height:calc(100dvh - 240px);box-shadow:4px 4px 0 var(--sauce)}
 pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid var(--line);border-radius:0;padding:14px 16px;overflow-x:auto;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55}
 .bar{height:8px;background:var(--track);border:2px solid var(--line);margin-top:8px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--sauce);border-radius:0}
@@ -222,9 +220,8 @@ pre{background:var(--color-console-bg,#121212);color:#eaeaea;border:2px solid va
    — the status line re-keys on change, so it pulses on each status swap */
 #msgs>*{animation:blockIn .25s ease-out}
 @keyframes blockIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-/* thinking-phase marker line in task consoles — dimmed + italic (the log
-   carries only the marker, never the thoughts themselves) */
-.console .think{color:#8f8f8f;font-style:italic}
+/* plain console line (pre-transcript task logs) — dim monospace block */
+.mconsole{color:var(--muted-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;margin:2px 0}
 .mend{color:var(--sauce-dark);font-size:12.5px;font-weight:700;margin:12px 0;text-align:center;border-top:2px solid var(--line);padding-top:10px}
 .chatin{display:flex;gap:8px;align-items:stretch;flex:none;margin-top:4px}
 .ctxline{flex:none;margin-top:6px;min-height:1em}

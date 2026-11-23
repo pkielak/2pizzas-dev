@@ -32,6 +32,7 @@ const routes = [
     re: /^\/task\/(\d+)$/,
     component: TaskDetail,
     title: (m) => `task ${m[1]}`,
+    app: true, // full-height .chatapp layout, same as the chat session views
     props: (m) => ({ taskId: +m[1] }),
   },
   // the LIST page uses the normal scrolling layout (no app) — only the

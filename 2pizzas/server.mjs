@@ -550,15 +550,42 @@ const server = http.createServer(async (req, res) => {
     const kids = db.prepare('SELECT id FROM tasks WHERE parent_id = ?').all(t.id).map((k) => k.id);
     return send(200, 'application/json', JSON.stringify({ ...t, kids }));
   }
-  // settled log tail (last 400 lines) for the SPA task view
+  // settled log tail (last 400 renderable lines) for the SPA task view
+  // Does a raw log line render in the settled view? Server-side twin of
+  // parseTaskLine (src/lib/hl.mjs) — true iff parseTaskLine(line) is
+  // non-null: settled event JSON (user_message/text_block/tool_call/
+  // gitea_ref/settle/compacted/error) + plain console text + [2pizzas]
+  // markers, EXCEPT [2pizzas] usage: (carried by the ctx footer) and the
+  // live-only events the filters also write to the log (text_delta,
+  // thinking_delta, tool_end, working, auto_retry, …).
+  const settledLineRenders = (line) => {
+    if (typeof line !== 'string' || !line.trim()) return false;
+    if (line.startsWith('[2pizzas] usage:')) return false;
+    try {
+      return ['user_message', 'text_block', 'tool_call', 'gitea_ref', 'settle', 'compacted', 'error']
+        .includes(JSON.parse(line).type);
+    } catch { return true; } // non-JSON string → console block / [2pizzas] marker
+  };
   const taskLogMatch = url.pathname.match(/^\/api\/task\/(\d+)\/log$/);
   if (taskLogMatch && req.method === 'GET') {
     const t = db.prepare('SELECT id FROM tasks WHERE id=?').get(+taskLogMatch[1]);
     if (!t) return send(404, 'application/json', '{}');
     const f = logPath(t.id);
-    const log = fs.existsSync(f)
-      ? fs.readFileSync(f, 'utf8').split('\n').slice(-400).join('\n')
-      : '(no log yet)';
+    // Serve the tail PRE-FILTERED to the renderable lines. The filters write
+    // live-only events (text_delta, thinking_delta, tool_end, working, …) to
+    // the log too, and the settled parse skips them — slicing raw lines would
+    // push the rendered events out of the window (a long delta-heavy final
+    // response leaves only the last block visible). Take the last 400 of the
+    // renderable lines, not the raw ones. Fall back to raw only if nothing
+    // renders (degenerate/in-progress log), so the view is never blank.
+    // an absent log is an EMPTY log — '(no log yet)' would parse as an
+    // agent text block in the view; the page shows its own placeholder
+    let log = '';
+    if (fs.existsSync(f)) {
+      const lines = fs.readFileSync(f, 'utf8').split('\n');
+      const rendered = lines.filter(settledLineRenders);
+      log = (rendered.length ? rendered : lines).slice(-400).join('\n');
+    }
     return send(200, 'application/json', JSON.stringify({ log }));
   }
   const streamMatch = url.pathname.match(/^\/task\/(\d+)\/stream$/);

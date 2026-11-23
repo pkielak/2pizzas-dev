@@ -459,7 +459,17 @@ function renderLog(d, title) {
   const bodyH = H() - 7;
   const end = d.pin == null ? d.lines.length : d.pin + 1;
   const start = Math.max(0, end - bodyH);
-  for (const l of d.lines.slice(start, end)) out.push(fit(clean(l), W() - 1));
+  // task logs are the SAME transcript events as the chat (the filters emit
+  // compact JSON) — render through chatLine, the same way the chat view
+  // does (raw JSON lines would be a wall of noise). One transient status
+  // line at most — the newest replaces the last.
+  const rendered = [];
+  for (const l of d.lines.slice(start, end)) for (const r of chatLine(l)) rendered.push(r);
+  for (let i = rendered.length - 2; i >= 0; i--) if (rendered[i].transient) rendered.splice(i, 1);
+  // bodyH limits RENDERED rows (a long text_block wraps to many) — trim
+  // from the top so the frame never overflows the terminal
+  for (const r of rendered.slice(Math.max(0, rendered.length - bodyH)))
+    out.push(r.pre + fit(clean(r.text), W() - vis(r.pre) - 1));
   // H()-3: the frame ends with hr + hint → H()-1 rows total; the bottom row
   // must stay EMPTY (a corner write auto-scrolls the terminal and shifts
   // the whole frame — the "top bar phase")

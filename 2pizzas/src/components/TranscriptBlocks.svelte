@@ -25,5 +25,8 @@
     <div class="mcompacted">— context compacted —</div>
   {:else if b.kind === 'error'}
     <div class="merr">error: {b.message}</div>
+  {:else if b.kind === 'console'}
+    <!-- plain console line (pre-transcript task logs) — dim monospace -->
+    <div class="mconsole">{b.text}</div>
   {/if}
 {/each}

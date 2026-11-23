@@ -172,7 +172,14 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   degrades gracefully if Gitea is down. Result persists in
   `data-2pizzas/theme.json` (10-min TTL); the first page after a cold start
   renders with the fallback palette for ~15s until discovery finishes.
-  Finished tasks show the last 400 lines statically.
+  Finished tasks show the last 400 lines statically — the task detail
+  view renders the log the same way as chat (`TranscriptBlocks` in the
+  `.chatapp` chrome; the filters emit the same compact transcript events as
+  `chat.mjs`'s piLine, so a task log is a parseable transcript). Old
+  plain-text logs map onto the SAME chat block kinds via `parseTaskLine()`
+  in `src/lib/hl.mjs` (parseLine + `parseLegacyLine` fallback: agent text
+  → .mtext, `  ▸`/`  └`/`  ✗` markers → tool/thinking/error, only `$`
+  bootstrap noise stays a dim console block) — don't drop that fallback.
 - **Agent chat** (`/chat`): live conversations with pi in LONG-LIVED
   runsc containers (the counterpart of the one-shot task containers).
   pi runs `pi --mode rpc` (JSONL over stdin/stdout). The raw pi stream is
@@ -291,7 +298,7 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
 | `2pizzas/probe.sh` | CLI to probe a backend FROM 2pizzas's container vantage (the `POST /api/backends/test` endpoint) — `./2pizzas/probe.sh [url] [key]`; the diagnostic for a loopback-bound backend |
 | `2pizzas/Dockerfile` | 2pizzas image (node + docker-cli) |
 | `2pizzas/assets/post-comment.sh` | posts the agent reply, stamps `<!-- via:agent -->` |
-| `2pizzas/assets/output_filter.mjs` | filters pi's `--mode json` stream into a readable log (node, NOT jq — jq buffers piped output) |
+| `2pizzas/assets/output_filter.mjs` | filters pi's `--mode json` stream into the SAME compact chat transcript events as `chat.mjs`'s piLine (text_block / tool_call / gitea_ref / settle / compacted / error + live text_delta/thinking_delta/working/tool_end/auto_retry) — a task log IS a parseable transcript the UI renders through TranscriptBlocks (node, NOT jq — jq buffers piped output) |
 | `2pizzas/assets/opencode_filter.mjs` | same for `opencode run --format json` (tokens = last step_finish total = peak ctx + output) |
 | `seed.sh` | idempotent bootstrap: users (admin + pi/opencode/infra/review + chat), tokens, repos, template, my-runner, **global webhook**, agent collaborators — safe to re-run |
 | `setup.sh` | one-command interactive setup wizard: preflight → agent model configs (from `.example` + live router model list AND each backend's live per-model `n_ctx` as `contextWindow`, 65536 floor — a baked window smaller than the real one makes pi plateau at the fake limit → "clean" no-action runs) → `.env` → image builds → compose up → seed → verify + summary. Idempotent; flags `--yes` / `--rebuild` / `--skip-build` / `--no-android`. Self-checks its own syntax at start (`bash -n` — a mid-file syntax error would otherwise abort the wizard AFTER partial changes) and VERIFIES THE BAKE of `agent-sandbox:pi` after build (baked `LLAMA_BASE_URL` must be routable + match `inference.json`, `LLAMA_API_KEY` non-empty, baked `models.json` == generated one — hard fail with a `--rebuild` hint, since a bare `docker build` silently bakes the broken Dockerfile defaults), probes backend reachability+auth from the image's own vantage, and runs a full runsc pi smoke (trivial prompt → `agent_settled`, no `finalError`) on fresh builds |
