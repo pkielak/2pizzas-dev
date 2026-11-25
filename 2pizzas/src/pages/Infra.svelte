@@ -22,10 +22,10 @@
 
   const blocks = $derived(d ? [
     // AGENTS (top row)
-    { x: 30, y: 40, w: 160, h: 100, title: '@' + d.agents.pi, lines: ['agent-sandbox:pi', busy('pi') ? 'task in flight' : 'idle'], ok: busy('pi') ? true : null },
-    { x: 225, y: 40, w: 160, h: 100, title: '@' + d.agents.opencode, lines: ['agent-sandbox:opencode', busy('opencode') ? 'task in flight' : 'idle'], ok: busy('opencode') ? true : null },
-    { x: 420, y: 40, w: 160, h: 100, title: '@' + d.agents.review, lines: ['agent-sandbox:review', busy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], ok: busy('review') ? true : null },
-    { x: 615, y: 40, w: 160, h: 100, title: 'chat containers', lines: ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], ok: chatN === null ? null : chatN > 0 },
+    { x: 70, y: 40, w: 160, h: 100, title: '@' + d.agents.pi, lines: ['agent-sandbox:pi', busy('pi') ? 'task in flight' : 'idle'], ok: busy('pi') ? true : null },
+    { x: 303, y: 40, w: 160, h: 100, title: '@' + d.agents.opencode, lines: ['agent-sandbox:opencode', busy('opencode') ? 'task in flight' : 'idle'], ok: busy('opencode') ? true : null },
+    { x: 537, y: 40, w: 160, h: 100, title: '@' + d.agents.review, lines: ['agent-sandbox:review', busy('review') ? 'task in flight' : 'read-only · idle', 'gitleaks + semgrep'], ok: busy('review') ? true : null },
+    { x: 770, y: 40, w: 160, h: 100, title: 'chat containers', lines: ['long-lived runsc', chatN === null ? 'chat user' : `chat user · ${chatN} active`], ok: chatN === null ? null : chatN > 0 },
     // FOUNDATIONS (middle row)
     { x: 30, y: 250, w: 240, h: 110, title: 'Gitea', lines: ['server :3000 · postgres db', `${d.managedN} managed repo${d.managedN === 1 ? '' : 's'} · agent + chat users`], ok: d.docker ? d.docker.gitea : null, href: giteaUrl() },
     { x: 380, y: 250, w: 240, h: 110, title: '2pizzas', lines: ['dispatcher :3001 · sqlite queue', 'webhook · task runner · chat'], ok: d.docker?.dispatcher ?? null, href: '/tasks' },
@@ -149,9 +149,9 @@
     svg.querySelectorAll('.blk').forEach((g) => {
       const r = g.querySelector('rect');
       if (!r) return;
-      const rx = +r.getAttribute('x'), rw = +r.getAttribute('width');
+      const rw = +r.getAttribute('width');
       g.querySelectorAll('text').forEach((t) => {
-        const maxW = rw - (+t.getAttribute('x') - rx) - 12;
+        const maxW = rw - 24;
         let s = t.textContent;
         if (t.getComputedTextLength() <= maxW) return;
         while (s.length > 1 && (t.textContent = s + '\u2026', t.getComputedTextLength()) > maxW) s = s.slice(0, -1);
@@ -187,7 +187,7 @@
     :global(#zrow){flex:none}
     :global(#diagWrap){flex:1;min-height:0}
     :global(#diagWrap svg){width:100%;height:100%}
-    :global(#diagfoot){flex:none;background:var(--bg);border-top:2px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+    :global(#diagfoot){flex:none;background:var(--bg);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
     :global(#diagfoot #legend){margin-top:0}
     :global(#diagfoot #notes){margin-top:6px}
   }
@@ -212,6 +212,7 @@
         <marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--olives)"/></marker>
         <marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sauce)"/></marker>
         <marker id="arr-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ham)"/></marker>
+        <marker id="arr-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink)"/></marker>
       </defs>
 
       {#each blocks as b}
@@ -219,61 +220,59 @@
           <a href={b.href} style="text-decoration:none"
             onclick={(e) => { if (b.href.startsWith('/') && navigate(b.href)) e.preventDefault(); }}>
             <g class="blk{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}">
+              <rect x={b.x + 4} y={b.y + 4} width={b.w} height={b.h} rx="0" fill="var(--shadow)"/>
               <rect x={b.x} y={b.y} width={b.w} height={b.h} rx="0" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>
-              <circle class="st{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}" cx={b.x + Math.round((b.h - 46) / 4)} cy={b.y + Math.round((b.h - 46) / 4)} r="5"/>
-              <text x={b.x + Math.round((b.h - 46) / 2)} y={b.y + Math.round((b.h - 46) / 2) + 10} font-size="14" font-weight="900" fill="var(--ink)">{b.title}</text>
+              <circle class="st{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}" cx={b.x + 14} cy={b.y + 14} r="5"/>
+              <text x={b.x + b.w / 2} y={b.y + Math.round(b.h / 2) - 4} font-size="14" font-weight="900" fill="var(--ink)" text-anchor="middle">{b.title}</text>
               {#each b.lines as l, i}
-                <text x={b.x + Math.round((b.h - 46) / 2)} y={b.y + Math.round((b.h - 46) / 2) + 28 + i * 16} font-size="12" fill="var(--muted-2)">{l}</text>
+                <text x={b.x + b.w / 2} y={b.y + Math.round(b.h / 2) + 14 + i * 16} font-size="12" fill="var(--muted-2)" text-anchor="middle">{l}</text>
               {/each}
             </g>
           </a>
         {:else}
           <g class="blk{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}">
+            <rect x={b.x + 4} y={b.y + 4} width={b.w} height={b.h} rx="0" fill="var(--shadow)"/>
             <rect x={b.x} y={b.y} width={b.w} height={b.h} rx="0" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>
-            <circle class="st{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}" cx={b.x + Math.round((b.h - 46) / 4)} cy={b.y + Math.round((b.h - 46) / 4)} r="5"/>
-            <text x={b.x + Math.round((b.h - 46) / 2)} y={b.y + Math.round((b.h - 46) / 2) + 10} font-size="14" font-weight="900" fill="var(--ink)">{b.title}</text>
+            <circle class="st{b.ok === true ? ' ok' : b.ok === false ? ' bad' : ''}" cx={b.x + 14} cy={b.y + 14} r="5"/>
+            <text x={b.x + b.w / 2} y={b.y + Math.round(b.h / 2) - 4} font-size="14" font-weight="900" fill="var(--ink)" text-anchor="middle">{b.title}</text>
             {#each b.lines as l, i}
-              <text x={b.x + Math.round((b.h - 46) / 2)} y={b.y + Math.round((b.h - 46) / 2) + 28 + i * 16} font-size="12" fill="var(--muted-2)">{l}</text>
+              <text x={b.x + b.w / 2} y={b.y + Math.round(b.h / 2) + 14 + i * 16} font-size="12" fill="var(--muted-2)" text-anchor="middle">{l}</text>
             {/each}
           </g>
         {/if}
       {/each}
 
-      <!-- gitea → 2pizzas · 2pizzas → llama (each line carries its SOURCE's color) -->
-      <path d="M 270 305 L 380 305" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
-      <text x="325" y="297" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">webhook</text>
-      <path d="M 620 305 L 730 305" stroke="var(--sauce)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr)"/>
-      <text x="675" y="297" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">model pick</text>
+      <!-- the runsc bus: ONE horizontal line spanning exactly between the
+           extreme agent arrows (150→850, no overhang). Every agent drops a
+           short arrow into it from below its block; the three middle-row
+           flows rise into it from above. -->
+      <path d="M 150 190 L 850 190" stroke="var(--line)" stroke-width="3" fill="none"/>
 
-      <!-- three sources rise from the convergence band to the middle row -->
-      <path d="M 150 184 L 150 250" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
-      <text x="138" y="222" font-size="11.5" fill="var(--muted-2)" text-anchor="end">agent work</text>
-      <path d="M 500 250 L 500 184" stroke="var(--sauce)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr)"/>
-      <text x="512" y="222" font-size="11.5" fill="var(--muted-2)" text-anchor="start">tasks</text>
-      <path d="M 850 250 L 850 184" stroke="var(--ham)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-p)"/>
-      <text x="862" y="222" font-size="11.5" fill="var(--muted-2)" text-anchor="start">llm /v1</text>
+      <!-- agents sit on the bus: one arrow per agent block, bottom (y=140)
+           down into the bus (y=190) -->
+      <path d="M 150 140 L 150 190" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-k)"/>
+      <path d="M 383 140 L 383 190" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-k)"/>
+      <path d="M 617 140 L 617 190" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-k)"/>
+      <path d="M 850 140 L 850 190" stroke="var(--ink)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-k)"/>
+      <text x="500" y="182" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">runsc one-shot / long-lived (chat)</text>
 
-      <!-- convergence band: three palette stripes -->
-      <rect x="107" y="178" width="746" height="2" fill="var(--olives)" opacity=".8"/>
-      <rect x="107" y="180" width="746" height="2" fill="var(--sauce)" opacity=".8"/>
-      <rect x="107" y="182" width="746" height="2" fill="var(--ham)" opacity=".8"/>
+      <!-- the three middle-row flows rise into the bus (y=250 → y=190) -->
+      <path d="M 150 250 L 150 190" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
+      <text x="138" y="226" font-size="11.5" fill="var(--muted-2)" text-anchor="end">agent work</text>
+      <path d="M 500 250 L 500 190" stroke="var(--sauce)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr)"/>
+      <text x="512" y="226" font-size="11.5" fill="var(--muted-2)" text-anchor="start">tasks</text>
+      <path d="M 850 250 L 850 190" stroke="var(--ham)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-p)"/>
+      <text x="862" y="226" font-size="11.5" fill="var(--muted-2)" text-anchor="start">llm /v1</text>
 
-      <!-- tri-color drops into every agent (each is fed by all three sources) -->
-      {#each [110, 305, 500, 695] as x}
-        <rect x={x - 3} y="140" width="2" height="38" fill="var(--olives)" opacity=".7"/>
-        <rect x={x - 1} y="140" width="2" height="40" fill="var(--sauce)" opacity=".7"/>
-        <rect x={x + 1} y="140" width="2" height="42" fill="var(--ham)" opacity=".7"/>
-      {/each}
-      <text x="325" y="220" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">runsc one-shot / long-lived (chat)</text>
-
-      <!-- gitea → runners + pages (CI bus) -->
-      <path d="M 150 360 L 150 410" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75"/>
-      <path d="M 150 410 L 750 410" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75"/>
+      <!-- gitea → runners + pages (CI) — a single bus: one rise, one horizontal
+           spanning exactly the row extremes (150→850, no overhang), three
+           clean vertical drops. Nothing crosses anything. -->
+      <path d="M 150 360 L 150 410 L 750 410" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75"/>
       <path d="M 250 410 L 250 460" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
       <path d="M 500 410 L 500 460" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
       <path d="M 750 410 L 750 460" stroke="var(--olives)" stroke-width="1.5" fill="none" opacity=".75" marker-end="url(#arr-g)"/>
-      <text x="375" y="402" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">Gitea Actions (CI)</text>
-      <text x="625" y="402" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">syncs gh-pages branch (60s)</text>
+      <text x="450" y="404" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">Gitea Actions (CI)</text>
+      <text x="650" y="404" font-size="11.5" fill="var(--muted-2)" text-anchor="middle">syncs gh-pages branch (60s)</text>
     </svg>
   </div>
   <div id="diagfoot">

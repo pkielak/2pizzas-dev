@@ -20,6 +20,11 @@ postgres/
 # Local working clone (not part of this repo's content)
 browser-llm-bench/
 
+# Task-clone runtime helpers — written by the 2pizzas bootstrap into each
+# work clone at run time; the live copies live in 2pizzas/assets/. Ignored so
+# a task-clone `git add -A` can't re-sweep them into a commit.
+.2pizzas/
+
 # Local TLS material for the pages HTTPS listeners (per-machine) — the
 # directory stays tracked via its README (discoverability), the pems don't
 pages/certs/*
