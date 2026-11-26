@@ -213,10 +213,25 @@ Gitea webhook ──► 2pizzas (sqlite queue) ──► docker run --runtime=ru
   task API via `host.docker.internal` only). Chat containers reach
   Gitea via `host.docker.internal:3000` — the runsc sandbox CANNOT use
   Docker's built-in DNS, so the compose service name `gitea` does not
-  resolve inside them. They die on 2pizzas restart
-  (orphans are reaped at startup via the `tea-chat-*` name filter) or
-  after `CHAT_IDLE_MINUTES` (default 30) — a streaming turn never counts
-  as idle (a long tool run emits no stream events). Every session is
+  resolve inside them. Chat containers run WITHOUT `--rm` and die with a
+  2pizzas restart (pi gets stdin EOF when the `docker run` client dies);
+  orphaned `tea-chat-*` containers are reaped at startup. Ordinary chats
+  also die after `CHAT_IDLE_MINUTES` (default 30) — a streaming turn never
+  counts as idle (a long tool run emits no stream events). The PERSISTENT
+  chat is the exception: one session is `pinned` in `chat_sessions` (the
+  idle killer skips it), and startup ALWAYS creates one — RESUMING the
+  previous pinned row's conversation by mounting its session dir and
+  passing pi the newest `.jsonl` (`createChat('pi', <rowid>, pin=true)` —
+  the same mechanism as the "continue" button). `GET /api/chat/persistent`
+  exposes it; the webui right sidebar carries a compact live widget
+  (`ChatWidget.svelte`) on every route, and a mobile FAB opens it as a
+  full-screen sheet. A pinned chat that crashes (container exited) is
+  respawned+resumed by `chatKill()`; a user-initiated close is honored
+  until the next startup. BOTH the startup create and the crash-respawn
+  go through `schedulePersistentStart()`: a failed start (e.g. the model
+  backend down at boot) is retried with backoff and RE-ARMS after 5 min —
+  never terminal, so a transient outage can't kill the always-on chat (the
+  3-attempt cap only rate-limits a broken environment). Every session is
   RECORDED in the `chat_sessions` sqlite table (agent, model, created/
   ended, end reason, message count, log file) — `/chat` lists past
   sessions and `/chat/<id>` of an ended session renders a read-only
@@ -422,7 +437,12 @@ docker exec gitea-db-1 psql -U postgres -d gitea -c "SELECT id, url, is_active F
 - **2pizzas talks to the host docker daemon**, so a container path like
   `/data/work/N` is NOT a host path — you cannot bind-mount it into the job
   container. The job container clones the repo itself (as the task's agent
-  user, authenticated remote → commits/PRs attribute to that user).
+  user, authenticated remote → commits/PRs attribute to that user). The one
+  bind mount 2pizzas DOES create — the chat session dir (`-v <dir>:/root/.pi/agent/sessions`)
+  — must be mapped through `DATA_HOST_DIR` (setup.sh writes the absolute
+  `$(PWD)/data-2pizzas` into `.env`): mounting the container path would make
+  the daemon auto-create a stray host dir and session resume would silently
+  never work.
 - **Loop prevention** is the `<!-- via:agent -->` marker (posted by
   `2pizzas/assets/post-comment.sh`, checked by `enqueue()`). Don't remove it
   from either side.

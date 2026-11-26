@@ -206,6 +206,13 @@ services:
       # UI mirrors the Gitea theme: reads it from the db + gitea binary (see server.mjs)
       - GITEA_DB_USER=${POSTGRES_USER}
       - GITEA_DB_NAME=${POSTGRES_DB}
+      # host-side ABSOLUTE path of the /data bind (./data-2pizzas) — chat
+      # session dirs are bind-mounted into chat containers via the host
+      # docker daemon, which resolves -v sources as host paths (a container
+      # path would auto-create a stray host dir and break session resume).
+      # setup.sh writes it to .env; a relative value would resolve against
+      # the daemon's cwd, not this file's
+      - DATA_HOST_DIR=${DATA_HOST_DIR:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

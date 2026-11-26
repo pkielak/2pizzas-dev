@@ -5,6 +5,7 @@ import { spawn, execFile } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CFG, isHostLocal } from './config.mjs';
 import { db } from './db.mjs';
+import { execFileP } from './util.mjs';
 import { apiGet } from './gitea.mjs';
 import { pickModel } from './inference.mjs';
 import { redact } from './redact.mjs';
@@ -24,11 +25,23 @@ import { liveBroadcast } from './live.mjs';
 // 2pizzas is a dumb bridge: browser SSE ⇄ agent stream, POST message ⇄ agent
 // command. Chat containers get NO Gitea token — they chat and can read the
 // 2pizzas task API (via host.docker.internal), they cannot push or post.
-// Sessions are in-memory (a 2pizzas restart abandons them — orphaned
-// tea-chat-* containers are reaped at startup, idle ones are killed after
-// CHAT_IDLE_MINUTES) but every session is RECORDED in the chat_sessions
-// table with its log file — the /chat page lists past sessions and
-// /chat/<id> renders the full transcript of a dead one from its log.
+// Every session is RECORDED in the chat_sessions table with its log file —
+// the /chat page lists past sessions and /chat/<id> renders the full
+// transcript of a dead one from its log.
+//
+// PERSISTENT CHAT (the pinned one): one session is flagged pinned in the db
+// (chat_sessions.pinned) — it is EXEMPT from the idle killer and there is
+// ALWAYS a live one: startup auto-creates it if none exists, and a failed
+// start is retried with backoff (self-re-arming — never terminal).
+// "Surviving a restart" is done by RESUME, not re-attach: the container runs WITHOUT
+// --rm, but when 2pizzas restarts the `docker run` client dies, pi gets
+// stdin EOF and exits — a "surviving" container is an empty shell. What
+// survives is the CONVERSATION: pi's session state lives in the mounted
+// session dir (a .jsonl that pi loads natively via --session, the same
+// mechanism the "continue" button on a past session uses). Startup reaps
+// the orphaned tea-chat-* containers, then re-creates the pinned chat with
+// createChat('pi', <pinned rowid>, pin=true), which mounts the same session
+// dir and passes the newest .jsonl — pi picks up the exact conversation.
 //
 // The raw pi JSONL is FILTERED (piLine) before it reaches the log, the
 // replay buffer, and the SSE clients — unfiltered it was every text/
@@ -43,6 +56,43 @@ import { liveBroadcast } from './live.mjs';
 
 export const chats = new Map(); // id -> session
 let chatSeq = 0;
+// consecutive persistent-chat start failures (container dies / fails to
+// start immediately — no docker, missing image, …). Capped so a broken
+// environment doesn't loop createChat forever; reset once a pinned chat
+// has stayed up (see the idle-killer interval below) and re-armed after 5m
+// of consecutive failures (see schedulePersistentStart)
+let pinnedRespawns = 0;
+
+// Bounded, self-re-arming start of the persistent (pinned) chat — shared by
+// the startup auto-create and the crash-respawn path. A single transient
+// createChat failure (e.g. pickModel() throwing "no backend reachable" while
+// the router is down/reloading at boot) must NOT be terminal: the "there is
+// ALWAYS a live one" invariant requires us to keep trying. The 3-attempt cap
+// prevents a tight create→fail→retry loop in a broken environment (docker
+// down, image missing); exhausting it RE-ARMS after 5 min (counter reset +
+// retry) instead of giving up forever — a transient outage of ANY length is
+// survived, only a permanently-broken environment needs a human.
+const schedulePersistentStart = (parent, delayMs) => {
+  // a live pinned chat already exists — nothing to start (also stops two
+  // concurrent start/respawn paths from double-creating)
+  for (const c of chats.values()) if (c.pinned && !c.dead) return;
+  if (pinnedRespawns >= 3) {
+    console.error(`[chat] persistent chat: ${pinnedRespawns} consecutive start failures — re-arming in 5m (check docker/images/backends)`);
+    setTimeout(() => { pinnedRespawns = 0; schedulePersistentStart(parent, 5000); }, 5 * 60_000).unref?.();
+    return;
+  }
+  pinnedRespawns++;
+  setTimeout(async () => {
+    try {
+      const c = await createChat('pi', parent, true);
+      console.log(`[chat] persistent chat ${c.id} ready (container ${c.name})${parent ? ` · resumed from r${parent}` : ''}`);
+    } catch (e) {
+      const nextDelay = Math.min(60_000, 2000 * 2 ** (pinnedRespawns - 1));
+      console.error(`[chat] persistent chat start failed (attempt ${pinnedRespawns}/3): ${e.message} — retrying in ${nextDelay}ms`);
+      schedulePersistentStart(parent, nextDelay);
+    }
+  }, delayMs).unref?.();
+};
 
 // find .jsonl session files in a pi session dir (host path). Returns
 // relative paths (from the dir root) sorted newest-first. Pi organizes
@@ -234,6 +284,17 @@ export const chatKill = (c, note) => {
   c.dead = true;
   db.prepare('UPDATE chat_sessions SET ended_at=datetime(\'now\'), end_reason=? WHERE rowid=? AND ended_at IS NULL')
     .run(note || 'ended', c.rowid);
+  // a pinned (persistent) chat that dies on its own (container exited, failed
+  // to start) is respawned a moment later, resuming from its own session dir
+  // (pi loads the .jsonl natively). A user-initiated close is honored as-is —
+  // the next 2pizzas startup auto-creates the persistent chat again
+  if (c.pinned && note !== 'closed by user') {
+    // a pinned chat that dies on its own is respawned (bounded-retry with
+    // backoff, self-re-arming — see schedulePersistentStart); a
+    // user-initiated close is honored as-is
+    const parent = findSessionFiles(c.sessionDir).length ? c.rowid : null;
+    schedulePersistentStart(parent, 1500);
+  }
   // killing the `docker run` client does NOT remove the container — rm it by name
   // (docker 29 no longer prints the container id on `docker run`)
   try { c.child.kill('SIGKILL'); } catch { /* already gone */ }
@@ -251,7 +312,20 @@ export const chatKill = (c, note) => {
 export const chatJson = (c) => ({
   id: c.id, agent: c.agent, model: c.model, isStreaming: c.isStreaming,
   lastActive: c.lastActive, startedAt: c.startedAt, modelCtx: c.modelCtx,
+  pinned: !!c.pinned,
 });
+
+// the persistent (pinned) chat — the always-on session the sidebar widget
+// and the mobile sheet connect to (auto-created at startup, resumed across
+// restarts). `live` is false in the brief window before startup's auto-
+// create finishes (or if it failed) — clients poll until it is live.
+export const persistentChat = () => {
+  const row = db.prepare('SELECT *, rowid FROM chat_sessions WHERE pinned=1 ORDER BY created_at DESC, rowid DESC LIMIT 1').get();
+  if (!row) return null;
+  const live = chatRowLive(row) ? chats.get(row.id) : null;
+  return { id: row.id, rowid: row.rowid, agent: row.agent, model: row.model,
+    live: !!live, isStreaming: live ? live.isStreaming : false, created_at: row.created_at };
+};
 
 // data for the SPA chat list's grant section: every repo on the instance
 // with the chat user's recorded grants. Drift cleanup: chat_grants is our
@@ -384,14 +458,16 @@ You can READ any repo you can see. You can only WRITE in repos where you
 have been granted collaborator access — if an API call fails with 403
 "permission denied", say so and stop trying other paths.` : ' You have no write access to Gitea — you can only observe task state.'}`;
 
-export async function createChat(agent, resumeFromRowid) {
+// pin = this is the PERSISTENT chat (exempt from the idle killer; exactly
+// one row is pinned at a time — pinning a new one unpins the previous).
+export async function createChat(agent, resumeFromRowid, pin = false) {
   if (agent !== 'pi') throw new Error(`unknown agent: ${agent}`);
   const modelSel = await pickModel();
   chatSeq++;
   const id = chatSeq;
   const c = {
     id, agent, model: modelSel ? `${modelSel.provider}/${modelSel.id}` : null,
-    isStreaming: false, dead: false,
+    isStreaming: false, dead: false, pinned: pin,
     clients: new Set(), lines: [],
     lastActive: Date.now(), startedAt: Date.now(),
     ctxUsed: 0, modelCtx: modelSel?.ctx ?? 0, // pi's get_session_stats refines both after the first turn
@@ -438,8 +514,9 @@ export async function createChat(agent, resumeFromRowid) {
   // rowid scopes later UPDATEs — chatSeq ids restart per run, so a bare
   // WHERE id=? would hit older rows sharing the same id
   const parentSession = resumeFromRowid || null;
-  c.rowid = db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file, session_dir, parent_session) VALUES (?,?,?,?,?,?)')
-    .run(id, agent, c.model, c.logFile, c.sessionDir, parentSession).lastInsertRowid;
+  c.rowid = db.prepare('INSERT INTO chat_sessions (id, agent, model, log_file, session_dir, parent_session, pinned) VALUES (?,?,?,?,?,?,?)')
+    .run(id, agent, c.model, c.logFile, c.sessionDir, parentSession, pin ? 1 : 0).lastInsertRowid;
+  if (pin) db.prepare('UPDATE chat_sessions SET pinned=0 WHERE pinned=1 AND rowid!=?').run(c.rowid);
   // start marker in the transcript (replayed on reconnect, and the first
   // line of the saved history)
   chatSay(c, `[2pizzas] chat started: @${agent}${c.model ? ` · model ${c.model}` : ''} · container ${c.name}${parentSession ? ` · resumed from r${parentSession}` : ''}${sessionArg.length ? ` · pi session ${sessionArg[1].split('/').pop()}` : ''}`);
@@ -453,8 +530,26 @@ export async function createChat(agent, resumeFromRowid) {
     ? ['-e', `GITEA_TOKEN=${CFG.chatGiteaToken}`, '-e', `GITEA_URL=http://${CFG.giteaHost}`]
     : [];
 
+  // the HOST-side source of the session-dir bind mount. 2pizzas talks to
+  // the host docker daemon (from inside a container), which resolves `-v`
+  // sources as HOST paths — c.sessionDir is a container path (/data/… =
+  // host ./data-2pizzas/…), so mounting it directly would make the daemon
+  // auto-create an empty host /data/chat-sessions/… and pi's .jsonl would
+  // land there while findSessionFiles() reads the (empty) container path —
+  // session resume would silently never work. Map through DATA_HOST_DIR.
+  let sessionMountSrc = c.sessionDir;
+  if (CFG.dataHostDir) {
+    sessionMountSrc = path.join(CFG.dataHostDir, path.relative(CFG.dataDir, c.sessionDir));
+  } else {
+    console.error(`[chat] DATA_HOST_DIR unset — session-dir bind mount (${c.sessionDir}) resolves as a HOST path; session resume will not work (set it in .env via ./setup.sh)`);
+  }
+
   c.child = spawn('docker', [
-    'run', '--rm', '-i',
+    // no --rm: the container outlives the `docker run` client (a 2pizzas
+    // restart). pi dies with the closed stdin — what survives is the
+    // mounted session dir, which startup resumes into a fresh container
+    // (see the persistent-chat note at the top of this file)
+    'run', '-i',
     '--runtime=runsc',
     // caps on a long-lived, user-spawned container (inference is on the
     // host's llama.cpp — this is just node + git + light builds)
@@ -464,7 +559,7 @@ export async function createChat(agent, resumeFromRowid) {
     '--add-host=host.docker.internal:host-gateway',
     '--name', c.name,
     // persistent pi session state (survives container death → resumable)
-    '-v', `${c.sessionDir}:/root/.pi/agent/sessions`,
+    '-v', `${sessionMountSrc}:/root/.pi/agent/sessions`,
     ...giteaEnv,
     CFG.images.pi,
     'pi', '--mode', 'rpc',
@@ -498,6 +593,9 @@ export async function createChat(agent, resumeFromRowid) {
     if (s) chatSay(c, `[stderr] ${s}`);
   });
   c.child.stdin.on('error', () => { /* EPIPE — the container is already gone */ });
+  // a spawn failure (docker down, image missing) emits 'error' — without a
+  // handler it would CRASH the whole dispatcher (uncaught 'error' event)
+  c.child.on('error', (e) => chatKill(c, `container failed to start: ${e.message}`));
   c.child.on('close', () => chatKill(c, 'container exited'));
   console.log(`[chat] ${id} started (@${agent}, model ${c.model}, container ${c.name})`);
   liveBroadcast('chat');
@@ -527,22 +625,41 @@ export function chatAbort(id) {
   c.child.stdin.write(JSON.stringify({ type: 'abort' }) + '\n');
 }
 
-// reap chat containers orphaned by a previous 2pizzas run (they are plain
-// docker containers — they outlive the dispatcher that spawned them) AND
-// close out their session rows (a kill-by-restart never ran chatKill, so
-// their ended_at is still NULL)
-execFile('docker', ['ps', '-aq', '--filter', 'name=tea-chat-', '--format', '{{.ID}}'],
-  (err, out) => {
-    if (err) return;
-    for (const cid of out.trim().split('\n')) if (cid) execFile('docker', ['rm', '-f', cid]);
-  });
-db.prepare(`UPDATE chat_sessions SET ended_at=created_at, end_reason='2pizzas restart' WHERE ended_at IS NULL`).run();
+// ── startup: the persistent (pinned) chat ──────────────────────────────────
+// Orphaned tea-chat-* containers are reaped (their pi already died with the
+// old `docker run` client — stdin EOF — so there is nothing to re-attach),
+// the previous run's session rows are closed out (a kill-by-restart never
+// ran chatKill, so their ended_at is still NULL), and a pinned chat is
+// created: RESUMED from the previous pinned row's session dir when it has
+// a .jsonl (pi loads the exact conversation natively), fresh otherwise.
+// A failed start is retried with backoff (self-re-arming — never terminal;
+// see schedulePersistentStart).
+(async () => {
+  try {
+    const out = await execFileP('docker', ['ps', '-aq', '--filter', 'name=tea-chat-', '--format', '{{.ID}}'], { timeout: 15000 });
+    for (const cid of out.trim().split('\n')) if (cid) execFile('docker', ['rm', '-f', cid], () => { /* gone */ });
+  } catch { /* docker unreachable — nothing to reap */ }
+  // read the pinned row BEFORE the close-out UPDATE below ends it
+  const pinnedRow = db.prepare('SELECT *, rowid FROM chat_sessions WHERE pinned=1 ORDER BY created_at DESC, rowid DESC LIMIT 1').get();
+  db.prepare(`UPDATE chat_sessions SET ended_at=COALESCE(ended_at, created_at), end_reason='2pizzas restart' WHERE ended_at IS NULL`).run();
+  let parent = null;
+  if (pinnedRow?.session_dir && findSessionFiles(pinnedRow.session_dir).length) parent = pinnedRow.rowid;
+  // bounded-retry start (self-re-arming) — a transient backend/docker
+  // failure at boot is NOT terminal (see schedulePersistentStart)
+  schedulePersistentStart(parent, 0);
+})();
 
 setInterval(() => {
-  for (const c of [...chats.values()])
+  for (const c of [...chats.values()]) {
+    // a pinned chat that has stayed up for a while was a SUCCESSFUL start —
+    // clear the consecutive-failure counter so a later crash can respawn
+    if (c.pinned && Date.now() - c.startedAt > 5 * 60_000) pinnedRespawns = 0;
+    // the pinned (persistent) chat is never idle-killed — it is the
+    // always-on chat the webui sidebar/sheet connects to
     // a streaming turn is never "idle": lastActive only moves on stream
     // events, so a long tool run with no output would otherwise SIGKILL a
     // live chat. isStreaming can't stick — pi always settles, and a dead
     // container kills the session via the close handler
-    if (!c.isStreaming && Date.now() - c.lastActive > CFG.chatIdleMs) chatKill(c, 'idle timeout');
+    if (!c.isStreaming && !c.pinned && Date.now() - c.lastActive > CFG.chatIdleMs) chatKill(c, 'idle timeout');
+  }
 }, 60_000).unref?.();

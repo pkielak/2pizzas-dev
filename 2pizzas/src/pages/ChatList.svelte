@@ -61,6 +61,7 @@
   {#each active as c (c.id)}
     <a class="item" href="/chat/{c.id}" onclick={(e) => { if (navigate(`/chat/${c.id}`)) e.preventDefault(); }}>
       <div class="l1">@{c.agent} <span>#{c.id}</span>
+        {#if c.pinned}<span class="badge badge-info">persistent</span>{/if}
         {#if c.isStreaming}<span class="running">streaming</span>{:else}<span class="success">idle</span>{/if}
       </div>
       <div class="l2">
@@ -99,8 +100,9 @@
       {:else}
         no Gitea token — it chats and can read the 2pizzas task API, but cannot push or post.
       {/if}
-      chats die on 2pizzas restart or after {repos?.idleMin ?? 30} min idle — their transcripts stay
-      readable above.
+      the <b>persistent</b> chat never dies (it survives restarts, resumed
+      automatically); other chats die on 2pizzas restart or after
+      {repos?.idleMin ?? 30} min idle. transcripts stay readable above.
     </div>
   </div>
 </div>

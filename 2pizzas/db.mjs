@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS managed_repos (
 );
 `);
 for (const col of ['tokens INTEGER', 'session_dir TEXT', 'parent_session INTEGER',
-  'log_error TEXT']) { // first transcript-save failure (shown in the ended-session window)
+  'log_error TEXT', // first transcript-save failure (shown in the ended-session window)
+  'pinned INTEGER NOT NULL DEFAULT 0']) { // the persistent (always-on) chat — exempt from the idle killer, auto-created/resumed at startup
   try { db.exec(`ALTER TABLE chat_sessions ADD COLUMN ${col}`); } catch { /* already present */ }
 } // live dbs from before these columns
 for (const col of ['body TEXT', 'model TEXT', 'model_ctx INTEGER', 'tokens INTEGER',

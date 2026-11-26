@@ -471,6 +471,13 @@ for k in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB GITEA_URL ADMIN_USER LLAMA_
 done
 ok ".env complete"
 
+# host-side absolute path of the data dir — chat session dirs are
+# bind-mounted into chat containers via the HOST docker daemon, which
+# resolves -v sources as host paths (a relative value would resolve against
+# the daemon's cwd); without it, session resume silently stops working
+set_env DATA_HOST_DIR "$(pwd)/data-2pizzas"
+ok "DATA_HOST_DIR: $(pwd)/data-2pizzas"
+
 
 v=$(env_get UI_TOKEN)
 if [[ -z $v ]]; then

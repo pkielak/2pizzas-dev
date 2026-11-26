@@ -64,6 +64,7 @@ export const pushTranscriptLine = (blocks, line, hooks = {}) => {
   };
   switch (e.type) {
     case 'user_message':
+      settleThinking(); // a thinking block left open from the previous turn closes at the new bubble
       blocks.push({ kind: 'user', text: e.message });
       break;
     case 'text_delta': {
@@ -79,16 +80,20 @@ export const pushTranscriptLine = (blocks, line, hooks = {}) => {
       onStatus('writing…');
       break;
     }
-    case 'text_block':
-      // settled block: finalize the delta-built block (same text — a visual
-      // no-op) and mark it settled so the next live delta starts a FRESH
-      // block; replay clients get it whole
+    case 'text_block': {
+      // settled block: the authoritative text for this message. If the last
+      // block is the delta-built (un-settled) version of it, finalize IN
+      // PLACE (same text — a visual no-op); otherwise push it whole. NOT
+      // idempotent for a duplicated settled event — curUnsettled() is null
+      // once the block is settled, so a duplicate would push a SECOND copy.
+      // The server therefore replays a SNAPSHOT of the lines (server.mjs)
+      // so every line is delivered exactly once
       settleThinking();
-      let t = curUnsettled(blocks, 'text');
-      if (!t) t = { kind: 'text', text: '', settled: false };
-      t.text = e.text;
-      t.settled = true;
+      const t = curUnsettled(blocks, 'text');
+      if (t) { t.text = e.text; t.settled = true; }
+      else blocks.push({ kind: 'text', text: e.text, settled: true });
       break;
+    }
     case 'gitea_ref':
       blocks.push({ kind: 'ref', refKind: e.kind, number: e.number, url: e.url });
       break;
@@ -117,6 +122,11 @@ export const pushTranscriptLine = (blocks, line, hooks = {}) => {
     case 'settle':
       onStatus('');
       settleThinking();
+      // a text block left un-settled (its settled text_block event was
+      // dropped) is finalized here — otherwise it lingers with the
+      // streaming cursor and looks like a missing/stuck response
+      const t = curUnsettled(blocks, 'text');
+      if (t) t.settled = true;
       blocks.push({ kind: 'settle', text: 'settled' });
       break;
     case 'auto_retry':

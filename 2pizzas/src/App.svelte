@@ -3,12 +3,14 @@
   import { fly } from 'svelte/transition';
   import { connectLive } from './lib/live.mjs';
   import { currentRoute, navigate } from './lib/router.mjs';
-  import ContextSidebar from './components/ContextSidebar.svelte';
+  import ChatWidget from './components/ChatWidget.svelte';
 
   let open = $state(false);
+  let sheet = $state(false); // mobile: FAB opens the full-screen chat sheet
 
-  // the right sidebar mounts only for routes that have a panel (the
-  // full-height chat session hides it) — .rsb-on drives the CSS layout
+  // the right sidebar is the persistent chat — it mounts on every route
+  // except the full-height chat session (which hides it). On smaller
+  // screens the same chat is reachable via the FAB → full-screen sheet.
   const rsbOn = $derived(!$currentRoute?.app);
 
   const nav = [
@@ -45,7 +47,7 @@
         }}
       >{label}</a>
     {/each}
-    <a class="navl sbfoot" href={location.protocol + '//' + location.hostname + ':3000'}>gitea ↗</a>
+    <a class="navl sbfoot" href={location.protocol + '//'+location.hostname + ':3000'}>gitea ↗</a>
   </aside>
   <main class:app={$currentRoute?.app}>
     {#if $currentRoute}
@@ -59,7 +61,22 @@
   </main>
   {#if rsbOn}
     <aside class="rsb">
-      <ContextSidebar />
+      <ChatWidget />
     </aside>
+  {/if}
+  {#if rsbOn}
+    <!-- mobile (<1200px): floating action button — hidden on desktop where
+         the sidebar widget is visible (CSS) -->
+    <button class="chatfab" aria-label="chat" onclick={() => (sheet = true)}>💬</button>
+  {/if}
+  {#if sheet && rsbOn}
+    <div class="chatsheet" role="dialog" aria-modal="true"
+         transition:fly={{ y: '100%', duration: 200, ease: (t) => 1 - Math.pow(1 - t, 3) }}>
+      <div class="sheethead">
+        <span class="shead">chat</span>
+        <button class="sheetx" aria-label="close" onclick={() => (sheet = false)}>✕</button>
+      </div>
+      <div class="sheetbody"><ChatWidget full /></div>
+    </div>
   {/if}
 </div>

@@ -262,28 +262,15 @@ a.item,.item.chatrow,.btn,.grantbtn,.navl,.del,.back,.access{
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--faint);border:1px solid var(--line);flex:none}
 .dot.ok{background:var(--olives);border-color:var(--olives)}
 .dot.bad{background:var(--sauce);border-color:var(--sauce)}
-/* ── contextual right sidebar ────────────────────────────────────────── */
+/* ── right sidebar: the persistent chat (chat-only — the old contextual
+      panels moved out, see the issue-33 sidebar note) ─────────────────── */
+/* proportions: 200px nav : fluid body (max 960px) : 528px chat — the chat
+   column is deliberately wide: it is a live conversation, not a status strip */
 .rsb{display:none}
-.rsb h3{margin:0 0 8px;font:900 11px var(--font-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2)}
-.rsb .list{box-shadow:none;border-width:2px;margin-bottom:0}
-.rsb .list::before{box-shadow:none}
-.rsb .item{padding:8px 11px}
-.rsb .l1{font-size:12.5px}
-.rsb .l2{font-size:11.5px}
-.rsb .sbrow{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:12.5px;border-bottom:1px solid var(--track)}
-.rsb .sbrow:last-child{border-bottom:none}
-.rsb .sbk{color:var(--muted-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rsb .sbn{margin-left:auto;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:nowrap}
-.rsb .sblinks a{display:block;text-decoration:none;color:var(--ink);font-weight:700;font-size:12.5px;padding:6px 8px;margin-top:4px;border:2px solid var(--line);background:var(--surface)}
-.rsb .sblinks a:hover{background:var(--cheese);color:var(--cheese-ink)}
-.rsb .note{color:var(--muted);font-size:11.5px;line-height:1.5}
-.rsb .sbbtns{display:flex;gap:8px;margin-top:8px}
-/* right sidebar appears only on wide screens AND when the route has a
-   panel (.rsb-on) — the full-height chat session hides it */
 @media (min-width:1200px){
-  .layout.rsb-on .rsb{display:flex;position:fixed;top:0;right:0;bottom:0;width:264px;flex-direction:column;gap:16px;overflow-y:auto;background:var(--sidebar-bg);border-left:2px solid var(--line);padding:18px 14px}
-  .layout.rsb-on #topbar{right:264px}
-  .layout.rsb-on main{margin-right:264px}
+  .layout.rsb-on .rsb{display:flex;flex-direction:column;position:fixed;top:0;right:0;bottom:0;width:528px;overflow-y:auto;background:var(--sidebar-bg);border-left:2px solid var(--line);padding:18px 16px}
+  .layout.rsb-on #topbar{right:528px}
+  .layout.rsb-on main{margin-right:528px}
 }
 @media (min-width:768px){
   .sidebar{transform:none}
@@ -294,13 +281,50 @@ a.item,.item.chatrow,.btn,.grantbtn,.navl,.del,.back,.access{
   main{margin-left:200px;padding:68px 32px 28px}
   main.app{padding:68px 24px 12px}
 }
+/* ── persistent chat widget (right sidebar) + mobile FAB/sheet ──────── */
+.chatwidget{display:flex;flex-direction:column;min-height:0;flex:1}
+.cwhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.cwt{font:900 11px var(--font-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2)}
+.cwid{font:800 11px var(--font-mono);color:var(--ink)}
+.cwstatus{font-size:11px;color:var(--sauce-dark);font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwfull{margin-left:auto;font-size:11px;font-weight:800;text-transform:uppercase;text-decoration:none;color:var(--ink);white-space:nowrap}
+.cwfull:hover{color:var(--sauce-dark);text-decoration:underline}
+/* compact mode (sidebar): the box grows to fill the column — the sidebar
+   IS the chat now, so no artificial max-height */
+.cwbox{flex:1;min-height:280px;overflow-y:auto;border:2px solid var(--line);background:var(--surface);padding:8px 10px;font-size:12px}
+.chatwidget.full .cwbox{flex:1;min-height:0}
+.cwbox .muser,.cwbox .mtext{font-size:12px;margin:6px 0;padding:2px 0}
+.cwbox .muser{padding:6px 9px}
+.cwbox .mtool{font-size:11px}
+.cwempty{color:var(--faint);font-size:11.5px;padding:8px 2px}
+.cwinput{display:flex;gap:6px;margin-top:8px}
+.cwinput input{flex:1;min-width:0;padding:6px 9px;font-size:12.5px}
+.cwinput button{background:var(--surface);border:2px solid var(--line);color:var(--ink);border-radius:0;padding:6px 12px;cursor:pointer;font-size:11.5px;font-weight:800;text-transform:uppercase;box-shadow:2px 2px 0 var(--shadow)}
+.cwinput button:hover:not(:disabled){background:var(--cheese);color:var(--cheese-ink);transform:translate(1px,1px);box-shadow:1px 1px 0 var(--shadow)}
+.cwinput button:disabled{opacity:.4;cursor:default;box-shadow:none}
+/* mobile (<1200px): floating action button, bottom-right. Hidden on
+   desktop where the sidebar widget is visible */
+.chatfab{display:none}
+@media (max-width:1199.98px){
+  .chatfab{display:flex;position:fixed;right:16px;bottom:16px;z-index:35;width:52px;height:52px;align-items:center;justify-content:center;border-radius:50%;border:2px solid var(--line);background:var(--cheese);color:var(--cheese-ink);font-size:22px;line-height:1;box-shadow:3px 3px 0 var(--shadow);cursor:pointer}
+  .chatfab:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--shadow)}
+}
+/* full-screen chat sheet (mobile): slides up over everything, the widget
+   fills it (full mode) */
+.chatsheet{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column}
+.sheethead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:2px solid var(--line);background:var(--sidebar-bg);flex:none}
+.shead{font:900 13px var(--font-mono);text-transform:uppercase;letter-spacing:.05em}
+.sheetx{background:var(--surface);border:2px solid var(--line);color:var(--ink);border-radius:0;width:32px;height:32px;cursor:pointer;font-size:15px;font-weight:900;box-shadow:2px 2px 0 var(--shadow)}
+.sheetx:active{transform:translate(1px,1px);box-shadow:none}
+.sheetbody{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 16px}
+.sheetbody .chatwidget{margin-top:0;height:100%}
 /* loading indicator — centered in the space BETWEEN the sidebars (fixed to
    the viewport vertically; the horizontal offset accounts for the 200px left
-   sidebar always, and the 264px right sidebar when .rsb-on). (vw-64)/2 = 50%-32px */
+   sidebar always, and the 528px right sidebar when .rsb-on). (vw-64)/2 = 50%-32px */
 .loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none}
 @media (min-width:768px){
   .loading{left:calc(50% + 100px)}
 }
 @media (min-width:1200px){
-  .layout.rsb-on .loading{left:calc(50% - 32px)}
+  .layout.rsb-on .loading{left:calc(50% - 164px)}
 }

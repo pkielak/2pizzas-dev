@@ -48,6 +48,7 @@
  *   GET  /chat         agent chat — live sessions (pi RPC)
  *   GET  /chat/<id>    chat view (SSE stream)
  *   GET  /api/chat     active chat sessions
+ *   GET  /api/chat/persistent   the pinned (always-on) chat — {id, live, …}
  *   GET  /api/chat/sessions   all sessions (live + past, from chat_sessions)
  *   POST /api/chat     start a chat session {agent: 'pi'}
  *   GET  /api/chat/<id>/history   transcript of a dead session
@@ -78,7 +79,7 @@ import { readRegistry, backendModels, pickModel, piDefaultModel, bakedProviderId
 import { verifySignature, handleWebhook } from './webhook.mjs';
 import { giteaTheme } from './theme.mjs';
 import { liveAdd, liveRemove, liveBroadcast } from './live.mjs';
-import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive, chatRepos } from './chat.mjs';
+import { chats, chatAuthed, chatJson, chatKill, createChat, chatMessage, chatAbort, CHAT_COOKIE, chatSessions, chatSessionRow, chatSessionByRowid, chatHistory, chatRowLive, chatRepos, persistentChat } from './chat.mjs';
 import { THEME_CSS, THEME_SCRIPT } from './ui/layout.mjs';
 import { androidRuns } from './gitea.mjs';
 import { statsData } from './ui/stats.mjs';
@@ -252,6 +253,14 @@ const server = http.createServer(async (req, res) => {
     if (!chatAuthed(req, url, res)) return chat401();
     return send(200, 'application/json', JSON.stringify(await chatRepos()));
   }
+  // the persistent (pinned) chat — the always-on session the sidebar chat
+  // widget and the mobile sheet connect to (auto-created at startup, the
+  // conversation resumed across restarts). `live:false` in the brief boot
+  // window — clients poll until it is live
+  if (url.pathname === '/api/chat/persistent' && req.method === 'GET') {
+    if (!chatAuthed(req, url, res)) return chat401();
+    return send(200, 'application/json', JSON.stringify(persistentChat() ?? { live: false }));
+  }
   if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
     if (!chatAuthed(req, url, res)) return chat401();
     // live status overlaid on the persisted rows (a live session's row has
@@ -335,9 +344,19 @@ const server = http.createServer(async (req, res) => {
     const c = chats.get(+chatStreamMatch[1]);
     if (!c) return send(404, 'text/plain', 'no such chat');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-    for (const line of c.lines) res.write(`data: ${line}\n\n`); // replay, then live
+    // add the client BEFORE writing the replay: a chatSay() in the window
+    // between the replay writes and a late add would be lost forever for
+    // this client (already replayed, not yet in the live set) — the
+    // response renders "missing" in the UI. With the add first, a racing
+    // chatSay reaches this client live. The replay then iterates a SNAPSHOT
+    // of the lines — a line appended mid-replay is already in the live set
+    // (delivered exactly once, live) and is NOT re-delivered by the replay;
+    // iterating the live array would deliver it twice (once live, once when
+    // the iterator reaches the appended element) — and the transcript
+    // reducer is NOT idempotent for a duplicated settled block
     c.clients.add(res);
     req.on('close', () => c.clients.delete(res));
+    for (const line of [...c.lines]) res.write(`data: ${line}\n\n`); // replay (snapshot), then live
     // chatKill may have run between chats.get() and the add above (it
     // clears the client set) — such a response would never be ended, so
     // end it ourselves (if the kill runs LATER, we are in its client set

@@ -28,6 +28,11 @@ export const isHostLocal = (req) => {
 export const CFG = {
   port: +(process.env.PORT || 3001),
   dataDir: process.env.DATA_DIR || '/data',
+  // the host-side ABSOLUTE path of dataDir. 2pizzas talks to the HOST docker
+  // daemon, which resolves `-v` sources as host paths — a container path
+  // (e.g. /data/chat-sessions/…) would auto-create a stray host dir and
+  // session resume would silently never work. setup.sh writes it to .env
+  dataHostDir: process.env.DATA_HOST_DIR || '',
   secret: process.env.WEBHOOK_SECRET || '',
   // Per-agent Gitea identities: each work agent is its OWN user (native
   // @mention autocomplete + per-agent commit/PR attribution). The review
